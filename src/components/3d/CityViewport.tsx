@@ -10,10 +10,11 @@ interface CityViewportProps {
   cameraSignal: CameraPreset | 'reset' | null;
   debugTiles: boolean;
   stableMode: boolean;
+  nightMode: boolean;
   onUpdateStats: (stats: RenderStats, streamingStats?: CityStreamingStats) => void;
 }
 
-export const CityViewport: React.FC<CityViewportProps> = ({ mapData, cameraSignal, debugTiles, stableMode, onUpdateStats }) => {
+export const CityViewport: React.FC<CityViewportProps> = ({ mapData, cameraSignal, debugTiles, stableMode, nightMode, onUpdateStats }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<CityRenderer | null>(null);
   const streamerRef = useRef<TileStreamer | null>(null);
@@ -50,13 +51,16 @@ export const CityViewport: React.FC<CityViewportProps> = ({ mapData, cameraSigna
     streamerRef.current = streamer;
     streamer.init();
 
-    // Orbit Controls
+    // Orbit Controls (Configured for ultra-smooth buttery inertia and damping)
     const controls = new OrbitControls(cityRenderer.camera, cityRenderer.renderer.domElement);
     controls.enableDamping = true;
-    controls.dampingFactor = 0.08;
+    controls.dampingFactor = 0.04; // Silky smooth deceleration
+    controls.rotateSpeed = 0.6;
+    controls.zoomSpeed = 0.8;
+    controls.panSpeed = 0.7;
     controls.maxPolarAngle = Math.PI / 2 - 0.02;
     controls.minDistance = 10;
-    controls.maxDistance = 15000;
+    controls.maxDistance = 25000;
     controls.target.set(0, 0, 0);
     controlsRef.current = controls;
 
@@ -114,13 +118,17 @@ export const CityViewport: React.FC<CityViewportProps> = ({ mapData, cameraSigna
     };
   }, [mapData]);
 
-  // Update Debug & Stable Mode Toggle States
+  // Update Debug, Stable Mode, & Night Mode Toggle States
   useEffect(() => {
+    if (rendererRef.current) {
+      rendererRef.current.setNightMode(nightMode);
+    }
     if (streamerRef.current) {
       streamerRef.current.setDebugMode(debugTiles);
       streamerRef.current.setStableMode(stableMode);
+      streamerRef.current.setNightMode(nightMode);
     }
-  }, [debugTiles, stableMode]);
+  }, [debugTiles, stableMode, nightMode]);
 
   // Handle Camera Presets
   useEffect(() => {

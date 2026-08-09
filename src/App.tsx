@@ -12,7 +12,8 @@ export default function App() {
 
   const [cameraSignal, setCameraSignal] = useState<CameraPreset | 'reset' | null>(null);
   const [debugTiles, setDebugTiles] = useState<boolean>(false);
-  const [stableMode, setStableMode] = useState<boolean>(true); // STABLE CITY MODE ON BY DEFAULT
+  const [stableMode, setStableMode] = useState<boolean>(true);
+  const [nightMode, setNightMode] = useState<boolean>(true); // Default to Night Mode
 
   const [renderStats, setRenderStats] = useState<RenderStats>({
     fps: 60,
@@ -97,6 +98,7 @@ export default function App() {
         cameraSignal={cameraSignal}
         debugTiles={debugTiles}
         stableMode={stableMode}
+        nightMode={nightMode}
         onUpdateStats={handleUpdateStats}
       />
 
@@ -107,8 +109,10 @@ export default function App() {
         streamingStats={streamingStats}
         debugTiles={debugTiles}
         stableMode={stableMode}
+        nightMode={nightMode}
         onToggleDebugTiles={() => setDebugTiles(prev => !prev)}
         onToggleStableMode={() => setStableMode(prev => !prev)}
+        onToggleNightMode={() => setNightMode(prev => !prev)}
         onCameraSignal={handleCameraSignal}
         onReloadOSM={loadOSMData}
       />

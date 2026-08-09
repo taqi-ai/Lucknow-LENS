@@ -1,0 +1,788 @@
+import * as THREE from 'three';
+import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { OSMMapData, RenderStats, OSMPoint } from '../types';
+
+// Helper for safe geometry merging regardless of index or attribute variations
+function safeMergeGeometries(geos: THREE.BufferGeometry[]): THREE.BufferGeometry | null {
+  if (!geos || geos.length === 0) return null;
+  const validGeos = geos.filter((g) => Boolean(g));
+  if (validGeos.length === 0) return null;
+  if (validGeos.length === 1) return validGeos[0].clone();
+
+  try {
+    const nonIndexed: THREE.BufferGeometry[] = [];
+    for (const g of validGeos) {
+      const ni = g.index ? g.toNonIndexed() : g.clone();
+      // Remove all attributes except position and normal so all geometries match attributes exactly
+      const keys = Object.keys(ni.attributes);
+      for (const k of keys) {
+        if (k !== 'position' && k !== 'normal') {
+          ni.deleteAttribute(k);
+        }
+      }
+      if (!ni.attributes.normal) {
+        ni.computeVertexNormals();
+      }
+      nonIndexed.push(ni);
+    }
+    if (nonIndexed.length === 0) return null;
+    return BufferGeometryUtils.mergeGeometries(nonIndexed, false);
+  } catch (err) {
+    console.warn('safeMergeGeometries error:', err);
+    return null;
+  }
+}
+
+// Simple Point-in-Polygon test for tree sampling inside park shapes
+function isPointInPolygon(point: OSMPoint, polygon: OSMPoint[]): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].x, zi = polygon[i].z;
+    const xj = polygon[j].x, zj = polygon[j].z;
+    const intersect = ((zi > point.z) !== (zj > point.z)) &&
+      (point.x < (xj - xi) * (point.z - zi) / (zj - zi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+export class CityRenderer {
+  public scene: THREE.Scene;
+  public camera: THREE.PerspectiveCamera;
+  public renderer: THREE.WebGLRenderer;
+  public mapData: OSMMapData;
+
+  private frameCount: number = 0;
+  private lastFpsTime: number = performance.now();
+  private currentFps: number = 60;
+
+  constructor(container: HTMLElement, mapData: OSMMapData) {
+    this.mapData = mapData;
+
+    // 1. Scene & Canvas Environment Setup
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0xf8fafc); // Architectural presentation off-white canvas
+    this.scene.fog = new THREE.FogExp2(0xf8fafc, 0.00018); // Soft horizon fog
+
+    // 2. Camera Setup
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+    this.camera = new THREE.PerspectiveCamera(38, width / height, 2, 9000);
+
+    // 3. WebGL Renderer Setup
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      powerPreference: 'high-performance',
+    });
+    this.renderer.setSize(width, height);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.15;
+
+    container.appendChild(this.renderer.domElement);
+
+    // 4. Build Optimized Layers
+    try { this.setupLighting(); } catch (e) { console.error('Lighting setup error:', e); }
+    try { this.createGroundTerrain(); } catch (e) { console.error('Ground terrain error:', e); }
+    try { this.createWaterways(); } catch (e) { console.error('Waterways error:', e); }
+    try { this.createGreenAreas(); } catch (e) { console.error('Green areas error:', e); }
+    try { this.createRoads(); } catch (e) { console.error('Roads error:', e); }
+    try { this.createExtrudedBuildings(); } catch (e) { console.error('Extruded buildings error:', e); }
+    try { this.createInstancedTrees(); } catch (e) { console.error('Instanced trees error:', e); }
+    try { this.createLandmarks(); } catch (e) { console.error('Landmarks error:', e); }
+
+    // Default framing
+    this.frameDataset();
+  }
+
+  // -------------------------------------------------------------
+  // LIGHTING
+  // -------------------------------------------------------------
+  private setupLighting() {
+    const maxExtent = Math.max(this.mapData.bounds.widthMeters, this.mapData.bounds.heightMeters, 1600);
+
+    // Key Sun Light
+    const sunLight = new THREE.DirectionalLight(0xfffbeb, 1.45);
+    sunLight.position.set(maxExtent * 0.75, maxExtent * 1.1, maxExtent * 0.6);
+    sunLight.castShadow = true;
+
+    sunLight.shadow.mapSize.width = 2048;
+    sunLight.shadow.mapSize.height = 2048;
+    sunLight.shadow.camera.near = 50;
+    sunLight.shadow.camera.far = maxExtent * 3.5;
+
+    const shadowD = maxExtent * 0.95;
+    sunLight.shadow.camera.left = -shadowD;
+    sunLight.shadow.camera.right = shadowD;
+    sunLight.shadow.camera.top = shadowD;
+    sunLight.shadow.camera.bottom = -shadowD;
+    sunLight.shadow.bias = -0.00015;
+    this.scene.add(sunLight);
+
+    // Soft Ambient Sky Light
+    const ambientLight = new THREE.AmbientLight(0xf1f5f9, 0.65);
+    this.scene.add(ambientLight);
+
+    // Hemisphere Fill Light
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x94a3b8, 0.35);
+    this.scene.add(hemiLight);
+  }
+
+  // -------------------------------------------------------------
+  // GROUND TERRAIN BASE
+  // -------------------------------------------------------------
+  private createGroundTerrain() {
+    const width = Math.max(this.mapData.bounds.widthMeters * 1.6, 2600);
+    const height = Math.max(this.mapData.bounds.heightMeters * 1.6, 2600);
+
+    const groundGeo = new THREE.PlaneGeometry(width, height);
+    const groundMat = new THREE.MeshStandardMaterial({
+      color: 0xe2e8f0, // Soft warm neutral architectural board
+      roughness: 0.95,
+      metalness: 0.05,
+    });
+
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -0.15;
+    ground.receiveShadow = true;
+    this.scene.add(ground);
+  }
+
+  // -------------------------------------------------------------
+  // GOMTI RIVER & WATERWAYS
+  // -------------------------------------------------------------
+  private createWaterways() {
+    const waterMat = new THREE.MeshStandardMaterial({
+      color: 0x0284c7, // Muted river blue
+      roughness: 0.18,
+      metalness: 0.75,
+      side: THREE.DoubleSide,
+    });
+
+    const riverBankMat = new THREE.MeshStandardMaterial({
+      color: 0x86efac, // Soft riverbank green verge
+      roughness: 0.9,
+    });
+
+    const waterGeos: THREE.BufferGeometry[] = [];
+    const bankGeos: THREE.BufferGeometry[] = [];
+
+    this.mapData.waterways.forEach((water) => {
+      if (water.isPolygon && water.points.length >= 3) {
+        const shape = new THREE.Shape();
+        shape.moveTo(water.points[0].x, -water.points[0].z);
+        for (let i = 1; i < water.points.length; i++) {
+          shape.lineTo(water.points[i].x, -water.points[i].z);
+        }
+
+        try {
+          const geo = new THREE.ShapeGeometry(shape);
+          geo.rotateX(-Math.PI / 2);
+          geo.translate(0, 0.04, 0);
+          waterGeos.push(geo);
+        } catch {
+          // Skip malformed geometry
+        }
+      } else if (water.points.length >= 2) {
+        // Line waterway (ribbon path)
+        const curvePoints = water.points.map((p) => new THREE.Vector3(p.x, 0.05, p.z));
+        const curve = new THREE.CatmullRomCurve3(curvePoints);
+        const wWidth = water.width || 35;
+        const riverGeo = new THREE.TubeGeometry(curve, Math.max(20, water.points.length * 3), wWidth / 2, 8, false);
+        riverGeo.scale(1, 0.02, 1);
+        waterGeos.push(riverGeo);
+
+        // Bank verge ribbon
+        const bankGeo = new THREE.TubeGeometry(curve, Math.max(20, water.points.length * 3), wWidth / 2 + 3, 8, false);
+        bankGeo.scale(1, 0.01, 1);
+        bankGeos.push(bankGeo);
+      }
+    });
+
+    if (bankGeos.length > 0) {
+      const mergedBank = safeMergeGeometries(bankGeos);
+      if (mergedBank) {
+        const bankMesh = new THREE.Mesh(mergedBank, riverBankMat);
+        bankMesh.receiveShadow = true;
+        this.scene.add(bankMesh);
+      }
+    }
+
+    if (waterGeos.length > 0) {
+      const mergedWater = safeMergeGeometries(waterGeos);
+      if (mergedWater) {
+        const waterMesh = new THREE.Mesh(mergedWater, waterMat);
+        waterMesh.receiveShadow = true;
+        this.scene.add(waterMesh);
+      }
+    }
+  }
+
+  // -------------------------------------------------------------
+  // PARKS & GREEN AREAS (OSM Polygons)
+  // -------------------------------------------------------------
+  private createGreenAreas() {
+    const greenMat = new THREE.MeshStandardMaterial({
+      color: 0x86efac, // Soft natural park green
+      roughness: 0.9,
+      metalness: 0.0,
+      side: THREE.DoubleSide,
+    });
+
+    const greenGeos: THREE.BufferGeometry[] = [];
+
+    this.mapData.greenAreas.forEach((area) => {
+      if (area.points.length < 3) return;
+
+      const shape = new THREE.Shape();
+      shape.moveTo(area.points[0].x, -area.points[0].z);
+      for (let i = 1; i < area.points.length; i++) {
+        shape.lineTo(area.points[i].x, -area.points[i].z);
+      }
+
+      try {
+        const geo = new THREE.ShapeGeometry(shape);
+        geo.rotateX(-Math.PI / 2);
+        geo.translate(0, 0.02, 0);
+        greenGeos.push(geo);
+      } catch {
+        // Skip invalid polygon
+      }
+    });
+
+    if (greenGeos.length > 0) {
+      const mergedGreen = safeMergeGeometries(greenGeos);
+      if (mergedGreen) {
+        const greenMesh = new THREE.Mesh(mergedGreen, greenMat);
+        greenMesh.receiveShadow = true;
+        this.scene.add(greenMesh);
+      }
+    }
+  }
+
+  // -------------------------------------------------------------
+  // ROADS (REAL OSM Highways + Sidewalks & Markings)
+  // -------------------------------------------------------------
+  private createRoads() {
+    const majorRoadMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.8 }); // Dark asphalt
+    const minorRoadMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.85 }); // Slate grey
+    const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.9 }); // Concrete sidewalk
+    const markingMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.6 }); // White lane marking
+
+    const majorRoadGeos: THREE.BufferGeometry[] = [];
+    const minorRoadGeos: THREE.BufferGeometry[] = [];
+    const sidewalkGeos: THREE.BufferGeometry[] = [];
+    const markingGeos: THREE.BufferGeometry[] = [];
+
+    this.mapData.roads.forEach((road) => {
+      if (road.points.length < 2) return;
+
+      const isMajor = road.isMajor;
+      const rWidth = road.width;
+
+      for (let i = 0; i < road.points.length - 1; i++) {
+        const p1 = road.points[i];
+        const p2 = road.points[i + 1];
+
+        const dx = p2.x - p1.x;
+        const dz = p2.z - p1.z;
+        const len = Math.hypot(dx, dz);
+        if (len < 0.2) continue;
+
+        const angle = Math.atan2(dz, dx);
+        const midX = (p1.x + p2.x) / 2;
+        const midZ = (p1.z + p2.z) / 2;
+
+        // Main Road Surface
+        const roadGeo = new THREE.BoxGeometry(len, 0.1, rWidth);
+        roadGeo.rotateY(-angle);
+        roadGeo.translate(midX, isMajor ? 0.08 : 0.06, midZ);
+
+        if (isMajor) {
+          majorRoadGeos.push(roadGeo);
+
+          // Add Sidewalks along Major / Secondary Roads
+          const swWidth = 1.8;
+          const leftSw = new THREE.BoxGeometry(len, 0.18, swWidth);
+          leftSw.rotateY(-angle);
+          const perpX = -Math.sin(-angle);
+          const perpZ = Math.cos(-angle);
+          const offDist = rWidth / 2 + swWidth / 2;
+
+          const leftSwPos = leftSw.clone();
+          leftSwPos.translate(midX + perpX * offDist, 0.12, midZ + perpZ * offDist);
+          sidewalkGeos.push(leftSwPos);
+
+          const rightSwPos = leftSw.clone();
+          rightSwPos.translate(midX - perpX * offDist, 0.12, midZ - perpZ * offDist);
+          sidewalkGeos.push(rightSwPos);
+
+          // Dashed Center Lane Markings
+          const dashLen = 3.5;
+          const gapLen = 4.5;
+          const step = dashLen + gapLen;
+          let distWalk = 0;
+
+          while (distWalk + dashLen <= len) {
+            const frac = (distWalk + dashLen / 2) / len - 0.5;
+            const markX = midX + Math.cos(angle) * (frac * len);
+            const markZ = midZ + Math.sin(angle) * (frac * len);
+
+            const dashGeo = new THREE.BoxGeometry(dashLen, 0.12, 0.4);
+            dashGeo.rotateY(-angle);
+            dashGeo.translate(markX, 0.14, markZ);
+            markingGeos.push(dashGeo);
+
+            distWalk += step;
+          }
+        } else {
+          minorRoadGeos.push(roadGeo);
+        }
+      }
+    });
+
+    // Merge and add Road Meshes (Drastically cuts draw calls)
+    if (majorRoadGeos.length > 0) {
+      const mergedMajor = safeMergeGeometries(majorRoadGeos);
+      if (mergedMajor) {
+        const mesh = new THREE.Mesh(mergedMajor, majorRoadMat);
+        mesh.receiveShadow = true;
+        this.scene.add(mesh);
+      }
+    }
+
+    if (minorRoadGeos.length > 0) {
+      const mergedMinor = safeMergeGeometries(minorRoadGeos);
+      if (mergedMinor) {
+        const mesh = new THREE.Mesh(mergedMinor, minorRoadMat);
+        mesh.receiveShadow = true;
+        this.scene.add(mesh);
+      }
+    }
+
+    if (sidewalkGeos.length > 0) {
+      const mergedSw = safeMergeGeometries(sidewalkGeos);
+      if (mergedSw) {
+        const mesh = new THREE.Mesh(mergedSw, sidewalkMat);
+        mesh.receiveShadow = true;
+        mesh.castShadow = true;
+        this.scene.add(mesh);
+      }
+    }
+
+    if (markingGeos.length > 0) {
+      const mergedMarkings = safeMergeGeometries(markingGeos);
+      if (mergedMarkings) {
+        const mesh = new THREE.Mesh(mergedMarkings, markingMat);
+        this.scene.add(mesh);
+      }
+    }
+  }
+
+  // -------------------------------------------------------------
+  // EXTRUDED BUILDINGS & ARCHITECTURAL MASSING (Merged)
+  // -------------------------------------------------------------
+  private createExtrudedBuildings() {
+    const wallGeosByColor: Record<string, THREE.BufferGeometry[]> = {
+      white: [],
+      stone: [],
+      beige: [],
+    };
+    const roofCapGeos: THREE.BufferGeometry[] = [];
+    const parapetGeos: THREE.BufferGeometry[] = [];
+
+    const whiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5, metalness: 0.05 });
+    const stoneMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.55, metalness: 0.05 });
+    const beigeMat = new THREE.MeshStandardMaterial({ color: 0xf5f5f4, roughness: 0.6, metalness: 0.05 });
+    const roofCapMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.7, metalness: 0.1 });
+    const parapetMat = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.6, metalness: 0.1 });
+
+    this.mapData.buildings.forEach((bld, idx) => {
+      if (bld.points.length < 3) return;
+
+      // Clean polygon points (remove duplicate consecutive points)
+      const cleanPts: OSMPoint[] = [];
+      for (let i = 0; i < bld.points.length; i++) {
+        const pt = bld.points[i];
+        if (cleanPts.length === 0) {
+          cleanPts.push(pt);
+        } else {
+          const last = cleanPts[cleanPts.length - 1];
+          if (Math.hypot(pt.x - last.x, pt.z - last.z) > 0.1) {
+            cleanPts.push(pt);
+          }
+        }
+      }
+
+      if (cleanPts.length < 3) return;
+
+      const shape = new THREE.Shape();
+      shape.moveTo(cleanPts[0].x, -cleanPts[0].z);
+      for (let i = 1; i < cleanPts.length; i++) {
+        shape.lineTo(cleanPts[i].x, -cleanPts[i].z);
+      }
+
+      try {
+        const extrudeSettings: THREE.ExtrudeGeometryOptions = {
+          depth: bld.height,
+          bevelEnabled: false,
+        };
+
+        const geo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+        geo.rotateX(-Math.PI / 2); // Stands building up along Y axis
+
+        // Categorize into material groups for batching
+        if (idx % 3 === 0) {
+          wallGeosByColor.white.push(geo);
+        } else if (idx % 3 === 1) {
+          wallGeosByColor.stone.push(geo);
+        } else {
+          wallGeosByColor.beige.push(geo);
+        }
+
+        // Roof Parapet Rim (0.5m perimeter lip)
+        try {
+          const parapetExtrude: THREE.ExtrudeGeometryOptions = {
+            depth: 0.5,
+            bevelEnabled: false,
+          };
+          const parapetGeo = new THREE.ExtrudeGeometry(shape, parapetExtrude);
+          parapetGeo.rotateX(-Math.PI / 2);
+          parapetGeo.translate(0, bld.height, 0);
+          parapetGeos.push(parapetGeo);
+        } catch {
+          // ignore
+        }
+
+        // Rooftop Box / Penthouse (~35% of buildings)
+        if (idx % 3 === 0) {
+          let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+          cleanPts.forEach((p) => {
+            minX = Math.min(minX, p.x);
+            maxX = Math.max(maxX, p.x);
+            minZ = Math.min(minZ, p.z);
+            maxZ = Math.max(maxZ, p.z);
+          });
+
+          const w = (maxX - minX) * 0.35;
+          const d = (maxZ - minZ) * 0.35;
+          if (w > 2 && d > 2) {
+            const centerX = (minX + maxX) / 2;
+            const centerZ = (minZ + maxZ) / 2;
+            const penthouseGeo = new THREE.BoxGeometry(w, 2.2, d);
+            penthouseGeo.translate(centerX, bld.height + 1.1, centerZ);
+            roofCapGeos.push(penthouseGeo);
+          }
+        }
+      } catch {
+        // Skip malformed footprint
+      }
+    });
+
+    // Merge and add Building Wall Meshes
+    if (wallGeosByColor.white.length > 0) {
+      const merged = safeMergeGeometries(wallGeosByColor.white);
+      if (merged) {
+        const mesh = new THREE.Mesh(merged, whiteMat);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        this.scene.add(mesh);
+      }
+    }
+
+    if (wallGeosByColor.stone.length > 0) {
+      const merged = safeMergeGeometries(wallGeosByColor.stone);
+      if (merged) {
+        const mesh = new THREE.Mesh(merged, stoneMat);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        this.scene.add(mesh);
+      }
+    }
+
+    if (wallGeosByColor.beige.length > 0) {
+      const merged = safeMergeGeometries(wallGeosByColor.beige);
+      if (merged) {
+        const mesh = new THREE.Mesh(merged, beigeMat);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        this.scene.add(mesh);
+      }
+    }
+
+    if (parapetGeos.length > 0) {
+      const mergedParapet = safeMergeGeometries(parapetGeos);
+      if (mergedParapet) {
+        const mesh = new THREE.Mesh(mergedParapet, parapetMat);
+        mesh.castShadow = true;
+        this.scene.add(mesh);
+      }
+    }
+
+    if (roofCapGeos.length > 0) {
+      const mergedRoofCaps = safeMergeGeometries(roofCapGeos);
+      if (mergedRoofCaps) {
+        const mesh = new THREE.Mesh(mergedRoofCaps, roofCapMat);
+        mesh.castShadow = true;
+        this.scene.add(mesh);
+      }
+    }
+  }
+
+  // -------------------------------------------------------------
+  // INSTANCED TREES (3,000+ TREES IN <6 DRAW CALLS)
+  // -------------------------------------------------------------
+  private createInstancedTrees() {
+    // 5 Tree Prototypes (Canopy + Trunk)
+    const treeMatFoliage1 = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.85 }); // Banyan/Neem deep green
+    const treeMatFoliage2 = new THREE.MeshStandardMaterial({ color: 0x22c55e, roughness: 0.8 }); // Vibrant park green
+    const treeMatFoliage3 = new THREE.MeshStandardMaterial({ color: 0x166534, roughness: 0.85 }); // Cypress dark pine
+    const treeMatFoliage4 = new THREE.MeshStandardMaterial({ color: 0x4ade80, roughness: 0.8 }); // Light avenue green
+    const treeMatTrunk = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.9 }); // Bark brown
+
+    // Prototype 1: Neem / Banyan Canopy
+    const p1Geo = new THREE.DodecahedronGeometry(3.2, 1);
+    p1Geo.translate(0, 5, 0);
+
+    // Prototype 2: Acacia Umbrella Canopy
+    const p2Geo = new THREE.CylinderGeometry(4.5, 2.5, 2.2, 7);
+    p2Geo.translate(0, 4.8, 0);
+
+    // Prototype 3: Cypress Slender Cone
+    const p3Geo = new THREE.ConeGeometry(2.0, 7.5, 6);
+    p3Geo.translate(0, 5.2, 0);
+
+    // Prototype 4: Street Maple Round Crown
+    const p4Geo = new THREE.IcosahedronGeometry(2.5, 1);
+    p4Geo.translate(0, 4.2, 0);
+
+    const trunkGeo = new THREE.CylinderGeometry(0.4, 0.6, 3.5, 6);
+    trunkGeo.translate(0, 1.75, 0);
+
+    // Build compound geometries for each tree type
+    const treeGeos = [
+      safeMergeGeometries([p1Geo, trunkGeo.clone()]) || new THREE.ConeGeometry(3, 7, 6),
+      safeMergeGeometries([p2Geo, trunkGeo.clone()]) || new THREE.CylinderGeometry(4, 2, 3, 6),
+      safeMergeGeometries([p3Geo, trunkGeo.clone()]) || new THREE.ConeGeometry(2, 7, 5),
+      safeMergeGeometries([p4Geo, trunkGeo.clone()]) || new THREE.SphereGeometry(3, 8, 8),
+    ];
+
+    const treeMaterials = [treeMatFoliage1, treeMatFoliage2, treeMatFoliage3, treeMatFoliage4];
+
+    // Collect tree placement positions (Parks, Riverbanks, Roadside avenues)
+    const treeTransforms: Array<{ pos: THREE.Vector3; scale: number; rotY: number; type: number }> = [];
+
+    // A. Park & Green Area Trees
+    this.mapData.greenAreas.forEach((area, aIdx) => {
+      if (area.points.length < 3) return;
+
+      let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+      area.points.forEach((p) => {
+        minX = Math.min(minX, p.x);
+        maxX = Math.max(maxX, p.x);
+        minZ = Math.min(minZ, p.z);
+        maxZ = Math.max(maxZ, p.z);
+      });
+
+      const areaSq = (maxX - minX) * (maxZ - minZ);
+      const targetCount = Math.min(120, Math.max(8, Math.floor(areaSq / 80)));
+
+      let placed = 0;
+      let attempts = 0;
+      while (placed < targetCount && attempts < targetCount * 3) {
+        attempts++;
+        const rx = minX + Math.random() * (maxX - minX);
+        const rz = minZ + Math.random() * (maxZ - minZ);
+
+        if (isPointInPolygon({ x: rx, z: rz }, area.points)) {
+          treeTransforms.push({
+            pos: new THREE.Vector3(rx, 0, rz),
+            scale: 0.8 + Math.random() * 0.5,
+            rotY: Math.random() * Math.PI * 2,
+            type: (aIdx + placed) % 4,
+          });
+          placed++;
+        }
+      }
+    });
+
+    // B. Riverbank Trees along Gomti River
+    this.mapData.waterways.forEach((water) => {
+      if (water.points.length < 2) return;
+
+      for (let i = 0; i < water.points.length - 1; i += 2) {
+        const p1 = water.points[i];
+        const p2 = water.points[i + 1];
+        const angle = Math.atan2(p2.z - p1.z, p2.x - p1.x);
+        const perpX = -Math.sin(angle);
+        const perpZ = Math.cos(angle);
+
+        const dist = (water.width || 35) / 2 + 6 + Math.random() * 8;
+
+        // Left bank tree
+        treeTransforms.push({
+          pos: new THREE.Vector3(p1.x + perpX * dist, 0, p1.z + perpZ * dist),
+          scale: 0.9 + Math.random() * 0.4,
+          rotY: Math.random() * Math.PI * 2,
+          type: 1, // Acacia / Banyan
+        });
+
+        // Right bank tree
+        treeTransforms.push({
+          pos: new THREE.Vector3(p1.x - perpX * dist, 0, p1.z - perpZ * dist),
+          scale: 0.9 + Math.random() * 0.4,
+          rotY: Math.random() * Math.PI * 2,
+          type: 0,
+        });
+      }
+    });
+
+    // C. Roadside Avenue Trees
+    this.mapData.roads.forEach((road) => {
+      if (!road.isMajor || road.points.length < 2) return;
+
+      for (let i = 0; i < road.points.length - 1; i++) {
+        const p1 = road.points[i];
+        const p2 = road.points[i + 1];
+        const dx = p2.x - p1.x;
+        const dz = p2.z - p1.z;
+        const len = Math.hypot(dx, dz);
+        if (len < 12) continue;
+
+        const angle = Math.atan2(dz, dx);
+        const perpX = -Math.sin(angle);
+        const perpZ = Math.cos(angle);
+        const offDist = road.width / 2 + 2.5;
+
+        const step = 22; // tree every 22m
+        for (let d = 5; d < len; d += step) {
+          const frac = d / len;
+          const cx = p1.x + dx * frac;
+          const cz = p1.z + dz * frac;
+
+          treeTransforms.push({
+            pos: new THREE.Vector3(cx + perpX * offDist, 0, cz + perpZ * offDist),
+            scale: 0.75 + Math.random() * 0.35,
+            rotY: Math.random() * Math.PI * 2,
+            type: 3, // Street tree
+          });
+
+          treeTransforms.push({
+            pos: new THREE.Vector3(cx - perpX * offDist, 0, cz - perpZ * offDist),
+            scale: 0.75 + Math.random() * 0.35,
+            rotY: Math.random() * Math.PI * 2,
+            type: 3,
+          });
+        }
+      }
+    });
+
+    // Group tree transforms by type and construct 4 InstancedMeshes
+    const transformsByType: Array<typeof treeTransforms> = [[], [], [], []];
+    treeTransforms.forEach((t) => transformsByType[t.type].push(t));
+
+    const dummy = new THREE.Object3D();
+
+    for (let t = 0; t < 4; t++) {
+      const items = transformsByType[t];
+      if (items.length === 0) continue;
+
+      const instMesh = new THREE.InstancedMesh(treeGeos[t], treeMaterials[t], items.length);
+      instMesh.castShadow = true;
+      instMesh.receiveShadow = true;
+
+      items.forEach((item, idx) => {
+        dummy.position.copy(item.pos);
+        dummy.rotation.set(0, item.rotY, 0);
+        dummy.scale.set(item.scale, item.scale, item.scale);
+        dummy.updateMatrix();
+        instMesh.setMatrixAt(idx, dummy.matrix);
+      });
+
+      instMesh.instanceMatrix.needsUpdate = true;
+      this.scene.add(instMesh);
+    }
+  }
+
+  // -------------------------------------------------------------
+  // LANDMARK MARKERS / DISTINCTIVE TOPS
+  // -------------------------------------------------------------
+  private createLandmarks() {
+    const lmGroup = new THREE.Group();
+
+    // Featured landmarks limit to prevent clutter
+    const featured = this.mapData.landmarks.slice(0, 16);
+
+    featured.forEach((lm) => {
+      // Beacon Pole & Pin
+      const poleGeo = new THREE.CylinderGeometry(0.7, 0.7, 28, 8);
+      const poleMat = new THREE.MeshStandardMaterial({ color: 0xd97706, metalness: 0.8 });
+      const pole = new THREE.Mesh(poleGeo, poleMat);
+      pole.position.set(lm.position.x, 14, lm.position.z);
+      pole.castShadow = true;
+      lmGroup.add(pole);
+
+      const topGeo = new THREE.SphereGeometry(3.2, 12, 12);
+      const topMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
+      const topMesh = new THREE.Mesh(topGeo, topMat);
+      topMesh.position.set(lm.position.x, 29, lm.position.z);
+      lmGroup.add(topMesh);
+    });
+
+    this.scene.add(lmGroup);
+  }
+
+  // -------------------------------------------------------------
+  // CAMERA FRAMING
+  // -------------------------------------------------------------
+  public frameDataset() {
+    const w = this.mapData.bounds.widthMeters;
+    const h = this.mapData.bounds.heightMeters;
+
+    const maxDim = Math.max(w, h, 800);
+    const dist = maxDim * 1.1;
+
+    // High-angle oblique aerial camera view
+    this.camera.position.set(dist * 0.45, dist * 0.72, dist * 0.65);
+    this.camera.lookAt(0, 0, 0);
+  }
+
+  // -------------------------------------------------------------
+  // RENDER LOOP & STATS
+  // -------------------------------------------------------------
+  public update() {
+    this.frameCount++;
+    const now = performance.now();
+    if (now - this.lastFpsTime >= 1000) {
+      this.currentFps = Math.round((this.frameCount * 1000) / (now - this.lastFpsTime));
+      this.frameCount = 0;
+      this.lastFpsTime = now;
+    }
+
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  public getRenderStats(): RenderStats {
+    const info = this.renderer.info;
+    return {
+      fps: this.currentFps,
+      drawCalls: info.render.calls,
+      triangles: info.render.triangles,
+      geometries: info.memory.geometries,
+      textures: info.memory.textures,
+    };
+  }
+
+  public handleResize(width: number, height: number) {
+    this.camera.aspect = width / height;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(width, height);
+  }
+
+  public dispose() {
+    this.renderer.dispose();
+  }
+}

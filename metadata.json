@@ -1,0 +1,6 @@
+{
+  "name": "Lucknow 3D Architectural GIS City",
+  "description": "3D architectural city massing model generated directly from real Lucknow OpenStreetMap GIS data with instanced foliage, Gomti river, merged geometry optimizations, and interactive camera controls.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

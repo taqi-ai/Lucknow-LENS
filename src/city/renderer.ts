@@ -61,13 +61,13 @@ export class CityRenderer {
 
     // 1. Scene & Canvas Environment Setup
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0xf8fafc); // Architectural presentation off-white canvas
-    this.scene.fog = new THREE.FogExp2(0xf8fafc, 0.00018); // Soft horizon fog
+    this.scene.background = new THREE.Color(0x0f172a); // Slate-900 architectural canvas background (NO WHITE-OUT)
+    // No white exponential fog to prevent distant city fading
 
     // 2. Camera Setup
     const width = container.clientWidth;
     const height = container.clientHeight;
-    this.camera = new THREE.PerspectiveCamera(38, width / height, 2, 9000);
+    this.camera = new THREE.PerspectiveCamera(38, width / height, 2, 60000); // 60km far plane for full city overview
 
     // 3. WebGL Renderer Setup
     this.renderer = new THREE.WebGLRenderer({
@@ -83,17 +83,10 @@ export class CityRenderer {
 
     container.appendChild(this.renderer.domElement);
 
-    // 4. Build Optimized Layers
+    // 4. Setup Lighting
     try { this.setupLighting(); } catch (e) { console.error('Lighting setup error:', e); }
-    try { this.createGroundTerrain(); } catch (e) { console.error('Ground terrain error:', e); }
-    try { this.createWaterways(); } catch (e) { console.error('Waterways error:', e); }
-    try { this.createGreenAreas(); } catch (e) { console.error('Green areas error:', e); }
-    try { this.createRoads(); } catch (e) { console.error('Roads error:', e); }
-    try { this.createExtrudedBuildings(); } catch (e) { console.error('Extruded buildings error:', e); }
-    try { this.createInstancedTrees(); } catch (e) { console.error('Instanced trees error:', e); }
-    try { this.createLandmarks(); } catch (e) { console.error('Landmarks error:', e); }
 
-    // Default framing
+    // Initial framing
     this.frameDataset();
   }
 
@@ -121,34 +114,13 @@ export class CityRenderer {
     sunLight.shadow.bias = -0.00015;
     this.scene.add(sunLight);
 
-    // Soft Ambient Sky Light
-    const ambientLight = new THREE.AmbientLight(0xf1f5f9, 0.65);
+    // Ambient Sky Light
+    const ambientLight = new THREE.AmbientLight(0x38bdf8, 0.45);
     this.scene.add(ambientLight);
 
     // Hemisphere Fill Light
-    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x94a3b8, 0.35);
+    const hemiLight = new THREE.HemisphereLight(0x38bdf8, 0x0f172a, 0.55);
     this.scene.add(hemiLight);
-  }
-
-  // -------------------------------------------------------------
-  // GROUND TERRAIN BASE
-  // -------------------------------------------------------------
-  private createGroundTerrain() {
-    const width = Math.max(this.mapData.bounds.widthMeters * 1.6, 2600);
-    const height = Math.max(this.mapData.bounds.heightMeters * 1.6, 2600);
-
-    const groundGeo = new THREE.PlaneGeometry(width, height);
-    const groundMat = new THREE.MeshStandardMaterial({
-      color: 0xe2e8f0, // Soft warm neutral architectural board
-      roughness: 0.95,
-      metalness: 0.05,
-    });
-
-    const ground = new THREE.Mesh(groundGeo, groundMat);
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -0.15;
-    ground.receiveShadow = true;
-    this.scene.add(ground);
   }
 
   // -------------------------------------------------------------

@@ -85,5 +85,82 @@ export interface RenderStats {
   textures: number;
 }
 
-export type CameraPreset = 'overview' | 'neighborhood' | 'street' | 'top' | 'frame';
+export type CameraPreset = 'fullcity' | 'overview' | 'neighborhood' | 'street' | 'top' | 'frame';
+
+export type LODLevel = 0 | 1 | 2 | 3;
+
+export interface TileBounds {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+}
+
+export interface TileManifestItem {
+  id: string;
+  tileX: number;
+  tileZ: number;
+  bounds: TileBounds;
+  center: { x: number; z: number };
+  bldgsLOD1?: number;
+  bldgsLOD2?: number;
+  roadsCount: number;
+  treesCount: number;
+}
+
+export interface OverviewData {
+  majorRoads: RoadSegmentOSM[];
+  waterways: WaterwayOSM[];
+  greenAreas: GreenAreaOSM[];
+  buildingDensityBlocks: Array<{ x: number; z: number; count: number; avgHeight: number }>;
+  landmarks: LandmarkOSM[];
+}
+
+export interface TileManifest {
+  version: string;
+  generatedAt: string;
+  tileSize: number;
+  centerLat: number;
+  centerLon: number;
+  bounds: { minLat: number; maxLat: number; minLon: number; maxLon: number };
+  spatialExtent: { minX: number; maxX: number; minZ: number; maxZ: number };
+  totalTiles: number;
+  tiles: TileManifestItem[];
+}
+
+export interface TileJSONData {
+  id: string;
+  tileX: number;
+  tileZ: number;
+  bounds: TileBounds;
+  center: { x: number; z: number };
+  lod1: {
+    buildings: BuildingFootprint[];
+    roads: RoadSegmentOSM[];
+    waterways: WaterwayOSM[];
+    greenAreas: GreenAreaOSM[];
+  };
+  lod2: {
+    buildings: BuildingFootprint[];
+    roads: RoadSegmentOSM[];
+    waterways: WaterwayOSM[];
+    greenAreas: GreenAreaOSM[];
+    trees: Array<{ x: number; y: number; z: number; scale: number }>;
+  };
+  landmarks: LandmarkOSM[];
+}
+
+export interface CityStreamingStats {
+  loadedTiles: number;
+  visibleTiles: number;
+  totalBuildings: number;
+  totalRoads: number;
+  totalTrees: number;
+  currentLOD: LODLevel;
+  zoomScaleName: 'FULL CITY' | 'DISTRICT' | 'NEIGHBORHOOD' | 'STREET';
+  stableMode: boolean;
+  pendingLoads: number;
+}
+
+
 

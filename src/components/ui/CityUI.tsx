@@ -1,11 +1,16 @@
 import React, { useState } from 'react';
-import { CameraPreset, OSMMapData, RenderStats } from '../../types';
+import { CameraPreset, OSMMapData, RenderStats, CityStreamingStats } from '../../types';
 import { ReportModal } from './ReportModal';
-import { Compass, Building2, FileText, Activity, Map, Navigation, Maximize2, MapPin } from 'lucide-react';
+import { Compass, Building2, FileText, Activity, Map, Navigation, Maximize2, MapPin, Grid, Globe, ShieldCheck } from 'lucide-react';
 
 interface CityUIProps {
   mapData: OSMMapData;
   renderStats: RenderStats;
+  streamingStats?: CityStreamingStats;
+  debugTiles: boolean;
+  stableMode: boolean;
+  onToggleDebugTiles: () => void;
+  onToggleStableMode: () => void;
   onCameraSignal: (signal: CameraPreset) => void;
   onReloadOSM: () => void;
 }
@@ -13,6 +18,11 @@ interface CityUIProps {
 export const CityUI: React.FC<CityUIProps> = ({
   mapData,
   renderStats,
+  streamingStats,
+  debugTiles,
+  stableMode,
+  onToggleDebugTiles,
+  onToggleStableMode,
   onCameraSignal,
 }) => {
   const [isReportOpen, setIsReportOpen] = useState(false);
@@ -28,14 +38,14 @@ export const CityUI: React.FC<CityUIProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xs sm:text-sm font-extrabold text-white tracking-tight">
-                LUCKNOW REAL GIS MAP (map.osm)
+                LUCKNOW CITY DIGITAL TWIN
               </h1>
               <span className="bg-emerald-500/20 text-emerald-300 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-emerald-500/30">
-                REAL DATA
+                {stableMode ? 'STABLE CITY MODE' : 'DYNAMIC LOD'}
               </span>
             </div>
             <p className="text-[11px] text-slate-400 font-medium">
-              Central Lucknow • Latitude {mapData.bounds.centerLat.toFixed(4)}°, Longitude {mapData.bounds.centerLon.toFixed(4)}°
+              Lucknow Bounds • Lat {mapData.bounds.centerLat.toFixed(4)}°, Lon {mapData.bounds.centerLon.toFixed(4)}°
             </p>
           </div>
         </div>
@@ -45,27 +55,53 @@ export const CityUI: React.FC<CityUIProps> = ({
       <div className="absolute top-4 right-4 z-20 pointer-events-none flex flex-wrap items-center gap-2 justify-end">
         <div className="pointer-events-auto flex items-center gap-1.5 bg-slate-900/90 border border-slate-700/80 backdrop-blur-xl rounded-2xl p-1.5 shadow-2xl">
           <button
-            onClick={() => onCameraSignal('frame')}
-            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold rounded-xl transition-all shadow-md shadow-amber-500/20 flex items-center gap-1.5"
-            title="Reset Camera to Frame Full Imported OSM Dataset"
+            onClick={onToggleStableMode}
+            className={`px-3 py-1.5 text-xs font-extrabold rounded-xl transition-all flex items-center gap-1.5 border ${
+              stableMode
+                ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-lg shadow-emerald-500/20'
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border-slate-700'
+            }`}
+            title="Toggle Stable Mode (Zero-Flicker Consistent Representation)"
           >
-            <Maximize2 className="w-3.5 h-3.5" />
-            <span>FRAME CITY</span>
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>[STABLE CITY MODE]</span>
+          </button>
+
+          <button
+            onClick={() => onCameraSignal('fullcity')}
+            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold rounded-xl transition-all shadow-lg shadow-amber-500/25 flex items-center gap-1.5"
+            title="Frame Complete Lucknow Dataset Bounding Box"
+          >
+            <Globe className="w-3.5 h-3.5" />
+            <span>[ FULL CITY ]</span>
+          </button>
+
+          <button
+            onClick={onToggleDebugTiles}
+            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 border ${
+              debugTiles
+                ? 'bg-sky-500 text-slate-950 border-sky-400 shadow-lg shadow-sky-500/20'
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border-slate-700'
+            }`}
+            title="Toggle Spatial 500m Grid Tile Boundaries & IDs"
+          >
+            <Grid className="w-3.5 h-3.5" />
+            <span>DEBUG TILES</span>
           </button>
 
           <button
             onClick={() => onCameraSignal('overview')}
             className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition-all border border-slate-700/60 flex items-center gap-1.5"
-            title="Grand Aerial Oblique City Overview"
+            title="District Overview Perspective"
           >
             <Compass className="w-3.5 h-3.5 text-amber-400" />
-            <span className="hidden sm:inline">OVERVIEW</span>
+            <span className="hidden sm:inline">DISTRICT</span>
           </button>
 
           <button
             onClick={() => onCameraSignal('neighborhood')}
             className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition-all border border-slate-700/60 flex items-center gap-1.5"
-            title="Medium Zoom onto Central Neighborhood"
+            title="Neighborhood Level Perspective"
           >
             <Navigation className="w-3.5 h-3.5 text-sky-400" />
             <span>NEIGHBORHOOD</span>
@@ -74,7 +110,7 @@ export const CityUI: React.FC<CityUIProps> = ({
           <button
             onClick={() => onCameraSignal('street')}
             className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition-all border border-slate-700/60 flex items-center gap-1.5"
-            title="Low Angle Street Perspective"
+            title="Low Angle Street Level"
           >
             <Building2 className="w-3.5 h-3.5 text-emerald-400" />
             <span>STREET</span>
@@ -88,59 +124,59 @@ export const CityUI: React.FC<CityUIProps> = ({
             <Map className="w-3.5 h-3.5 text-indigo-400" />
             <span className="hidden sm:inline">TOP MAP</span>
           </button>
-
-          <button
-            onClick={() => setIsReportOpen(true)}
-            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-indigo-600/20 flex items-center gap-1.5"
-            title="View Technical Architectural Report"
-          >
-            <FileText className="w-3.5 h-3.5 text-amber-300" />
-            <span>REPORT</span>
-          </button>
         </div>
       </div>
 
-      {/* Bottom Left DEBUG PANEL (Mandated by Spec) */}
+      {/* Bottom Left STREAMING ENGINE STATS PANEL */}
       <div className="absolute bottom-4 left-4 z-20 pointer-events-none">
-        <div className="pointer-events-auto bg-slate-900/95 border border-slate-700/80 backdrop-blur-xl rounded-2xl p-4 shadow-2xl text-xs text-slate-200 min-w-[280px]">
-          <div className="text-[10px] font-extrabold uppercase tracking-wider text-amber-400 mb-2.5 flex items-center gap-1.5 border-b border-slate-800 pb-2">
-            <Activity className="w-3.5 h-3.5 text-amber-400" />
-            <span>DEBUG INFORMATION (map.osm)</span>
+        <div className="pointer-events-auto bg-slate-900/95 border border-slate-700/80 backdrop-blur-xl rounded-2xl p-4 shadow-2xl text-xs text-slate-200 min-w-[320px]">
+          <div className="text-[10px] font-extrabold uppercase tracking-wider text-amber-400 mb-2.5 flex items-center justify-between border-b border-slate-800 pb-2">
+            <div className="flex items-center gap-1.5">
+              <Activity className="w-3.5 h-3.5 text-amber-400" />
+              <span>STABILITY ENGINE METRICS</span>
+            </div>
+            <span className="text-[9px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded font-mono font-bold">
+              {stableMode ? 'STABLE MODE' : 'DYNAMIC LOD'}
+            </span>
           </div>
 
           <div className="space-y-1.5 font-mono text-[11px]">
             <div className="flex justify-between items-center">
-              <span className="text-slate-400">Buildings loaded:</span>
-              <strong className="text-amber-300 font-sans font-bold">{mapData.stats.buildingsCount}</strong>
+              <span className="text-slate-400">Current Zoom Level:</span>
+              <strong className="text-amber-300 font-sans font-bold">{streamingStats?.zoomScaleName ?? 'FULL CITY'}</strong>
             </div>
 
             <div className="flex justify-between items-center">
-              <span className="text-slate-400">Roads loaded:</span>
-              <strong className="text-sky-300 font-sans font-bold">{mapData.stats.roadsCount}</strong>
+              <span className="text-slate-400">Active LOD:</span>
+              <strong className="text-emerald-400 font-sans font-bold">LOD {streamingStats?.currentLOD ?? 2}</strong>
             </div>
 
             <div className="flex justify-between items-center">
-              <span className="text-slate-400">Waterways loaded:</span>
-              <strong className="text-blue-400 font-sans font-bold">{mapData.stats.waterwaysCount}</strong>
+              <span className="text-slate-400">Loaded Tiles:</span>
+              <strong className="text-sky-300 font-sans font-bold">{streamingStats?.loadedTiles ?? 0} active</strong>
             </div>
 
             <div className="flex justify-between items-center">
-              <span className="text-slate-400">Green areas loaded:</span>
-              <strong className="text-emerald-400 font-sans font-bold">{mapData.stats.greenAreasCount}</strong>
+              <span className="text-slate-400">Visible Tiles:</span>
+              <strong className="text-indigo-300 font-sans font-bold">{streamingStats?.visibleTiles ?? 0} tiles</strong>
             </div>
 
-            <div className="pt-2 border-t border-slate-800 space-y-1">
-              <div className="flex justify-between items-center text-[10px]">
-                <span className="text-slate-400">Dataset width:</span>
-                <span className="text-slate-200 font-sans">~{mapData.stats.widthMeters} meters</span>
-              </div>
-              <div className="flex justify-between items-center text-[10px]">
-                <span className="text-slate-400">Dataset height:</span>
-                <span className="text-slate-200 font-sans">~{mapData.stats.heightMeters} meters</span>
-              </div>
+            <div className="flex justify-between items-center">
+              <span className="text-slate-400">Pending Tile Loads:</span>
+              <strong className="text-amber-400 font-sans font-bold">{streamingStats?.pendingLoads ?? 0}</strong>
             </div>
 
-            <div className="pt-2 border-t border-slate-800/80 flex justify-between items-center text-[10px]">
+            <div className="flex justify-between items-center">
+              <span className="text-slate-400">Buildings Rendered:</span>
+              <strong className="text-slate-200 font-sans font-bold">{(streamingStats?.totalBuildings ?? 0).toLocaleString()}</strong>
+            </div>
+
+            <div className="flex justify-between items-center">
+              <span className="text-slate-400">Trees Rendered:</span>
+              <strong className="text-emerald-300 font-sans font-bold">{(streamingStats?.totalTrees ?? 0).toLocaleString()}</strong>
+            </div>
+
+            <div className="pt-2 border-t border-slate-800 flex justify-between items-center text-[10px]">
               <div>
                 <span className="text-slate-400">FPS:</span>{' '}
                 <strong className={`font-sans ${renderStats.fps >= 45 ? 'text-emerald-400' : 'text-amber-400'}`}>
@@ -156,12 +192,12 @@ export const CityUI: React.FC<CityUIProps> = ({
         </div>
       </div>
 
-      {/* Bottom Right Named Locations / Landmarks Quick Finder */}
+      {/* Bottom Right Key Features Finder */}
       {mapData.landmarks.length > 0 && (
         <div className="absolute bottom-4 right-4 z-20 pointer-events-none hidden md:block">
           <div className="pointer-events-auto bg-slate-900/90 border border-slate-700/80 backdrop-blur-xl rounded-2xl p-3 shadow-2xl text-xs text-slate-300 max-w-[220px]">
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
-              <MapPin className="w-3 h-3 text-amber-400" /> Key Features
+              <MapPin className="w-3 h-3 text-amber-400" /> Lucknow Landmarks
             </div>
             <div className="space-y-1 max-h-[110px] overflow-y-auto text-[11px] pr-1">
               {mapData.landmarks.slice(0, 6).map((lm) => (
@@ -184,3 +220,4 @@ export const CityUI: React.FC<CityUIProps> = ({
     </>
   );
 };
+

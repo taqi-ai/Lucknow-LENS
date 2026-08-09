@@ -61,11 +61,20 @@ export class TileStreamer {
     pendingLoads: 0,
   };
 
+  private isNight = true;
+  private groundMaterial: THREE.MeshStandardMaterial;
+
   constructor(scene: THREE.Scene) {
     this.scene = scene;
     this.scene.add(this.overviewGroup);
     this.scene.add(this.tileGroupParent);
     this.scene.add(this.debugGroup);
+
+    this.groundMaterial = new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      roughness: 0.95,
+      metalness: 0.05,
+    });
 
     this.buildingMaterialHigh = new THREE.MeshStandardMaterial({
       color: 0xcbd5e1,
@@ -107,6 +116,29 @@ export class TileStreamer {
     this.treeMeshTemplate = new THREE.Mesh(foliageGeo, foliageMat);
   }
 
+  public setNightMode(night: boolean): void {
+    if (this.isNight === night) return;
+    this.isNight = night;
+
+    if (night) {
+      this.groundMaterial.color.setHex(0x1e293b);
+      this.buildingMaterialHigh.color.setHex(0xcbd5e1);
+      this.buildingMaterialMid.color.setHex(0x94a3b8);
+      this.roadMaterialMajor.color.setHex(0x475569);
+      this.roadMaterialMinor.color.setHex(0x334155);
+      this.waterMaterial.color.setHex(0x0284c7);
+      this.parkMaterial.color.setHex(0x16a34a);
+    } else {
+      this.groundMaterial.color.setHex(0xe2e8f0);
+      this.buildingMaterialHigh.color.setHex(0xffffff);
+      this.buildingMaterialMid.color.setHex(0xe2e8f0);
+      this.roadMaterialMajor.color.setHex(0x94a3b8);
+      this.roadMaterialMinor.color.setHex(0xcbd5e1);
+      this.waterMaterial.color.setHex(0x0ea5e9);
+      this.parkMaterial.color.setHex(0x22c55e);
+    }
+  }
+
   public async init(): Promise<void> {
     try {
       const respManifest = await fetch('/lucknow_tiles/manifest.json');
@@ -136,12 +168,7 @@ export class TileStreamer {
     const centerZ = (extent.minZ + extent.maxZ) / 2;
 
     const groundGeo = new THREE.PlaneGeometry(width, depth);
-    const groundMat = new THREE.MeshStandardMaterial({
-      color: 0x1e293b,
-      roughness: 0.95,
-      metalness: 0.05,
-    });
-    const ground = new THREE.Mesh(groundGeo, groundMat);
+    const ground = new THREE.Mesh(groundGeo, this.groundMaterial);
     ground.rotation.x = -Math.PI / 2;
     ground.position.set(centerX, -0.5, centerZ);
     ground.receiveShadow = true;

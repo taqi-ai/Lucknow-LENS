@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { CameraPreset, OSMMapData, RenderStats, CityStreamingStats } from '../../types';
 import { ReportModal } from './ReportModal';
-import { Compass, Building2, FileText, Activity, Map, Navigation, Maximize2, MapPin, Grid, Globe, ShieldCheck } from 'lucide-react';
+import { Compass, Building2, FileText, Activity, Map, Navigation, Maximize2, MapPin, Grid, Globe, ShieldCheck, Sun, Moon } from 'lucide-react';
 
 interface CityUIProps {
   mapData: OSMMapData;
@@ -9,8 +9,10 @@ interface CityUIProps {
   streamingStats?: CityStreamingStats;
   debugTiles: boolean;
   stableMode: boolean;
+  nightMode: boolean;
   onToggleDebugTiles: () => void;
   onToggleStableMode: () => void;
+  onToggleNightMode: () => void;
   onCameraSignal: (signal: CameraPreset) => void;
   onReloadOSM: () => void;
 }
@@ -21,8 +23,10 @@ export const CityUI: React.FC<CityUIProps> = ({
   streamingStats,
   debugTiles,
   stableMode,
+  nightMode,
   onToggleDebugTiles,
   onToggleStableMode,
+  onToggleNightMode,
   onCameraSignal,
 }) => {
   const [isReportOpen, setIsReportOpen] = useState(false);
@@ -54,6 +58,19 @@ export const CityUI: React.FC<CityUIProps> = ({
       {/* Top Right Controls & Camera View Presets */}
       <div className="absolute top-4 right-4 z-20 pointer-events-none flex flex-wrap items-center gap-2 justify-end">
         <div className="pointer-events-auto flex items-center gap-1.5 bg-slate-900/90 border border-slate-700/80 backdrop-blur-xl rounded-2xl p-1.5 shadow-2xl">
+          <button
+            onClick={onToggleNightMode}
+            className={`px-3 py-1.5 text-xs font-extrabold rounded-xl transition-all flex items-center gap-1.5 border ${
+              nightMode
+                ? 'bg-indigo-600 text-amber-300 border-indigo-500 shadow-lg shadow-indigo-600/30'
+                : 'bg-amber-400 text-slate-950 border-amber-300 shadow-lg shadow-amber-400/30'
+            }`}
+            title="Toggle Day / Night Mode Atmosphere"
+          >
+            {nightMode ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5 text-slate-950" />}
+            <span>{nightMode ? 'NIGHT' : 'DAY'}</span>
+          </button>
+
           <button
             onClick={onToggleStableMode}
             className={`px-3 py-1.5 text-xs font-extrabold rounded-xl transition-all flex items-center gap-1.5 border ${

@@ -92,35 +92,74 @@ export class CityRenderer {
 
   // -------------------------------------------------------------
   // LIGHTING
+  private sunLight!: THREE.DirectionalLight;
+  private ambientLight!: THREE.AmbientLight;
+  private hemiLight!: THREE.HemisphereLight;
+  private isNight = true;
+
+  // -------------------------------------------------------------
+  // LIGHTING ENVIRONMENT (DAY / NIGHT DYNAMIC MODES)
   // -------------------------------------------------------------
   private setupLighting() {
     const maxExtent = Math.max(this.mapData.bounds.widthMeters, this.mapData.bounds.heightMeters, 1600);
 
     // Key Sun Light
-    const sunLight = new THREE.DirectionalLight(0xfffbeb, 1.45);
-    sunLight.position.set(maxExtent * 0.75, maxExtent * 1.1, maxExtent * 0.6);
-    sunLight.castShadow = true;
+    this.sunLight = new THREE.DirectionalLight(0xfffbeb, 1.45);
+    this.sunLight.position.set(maxExtent * 0.75, maxExtent * 1.1, maxExtent * 0.6);
+    this.sunLight.castShadow = true;
 
-    sunLight.shadow.mapSize.width = 2048;
-    sunLight.shadow.mapSize.height = 2048;
-    sunLight.shadow.camera.near = 50;
-    sunLight.shadow.camera.far = maxExtent * 3.5;
+    this.sunLight.shadow.mapSize.width = 2048;
+    this.sunLight.shadow.mapSize.height = 2048;
+    this.sunLight.shadow.camera.near = 50;
+    this.sunLight.shadow.camera.far = maxExtent * 3.5;
 
     const shadowD = maxExtent * 0.95;
-    sunLight.shadow.camera.left = -shadowD;
-    sunLight.shadow.camera.right = shadowD;
-    sunLight.shadow.camera.top = shadowD;
-    sunLight.shadow.camera.bottom = -shadowD;
-    sunLight.shadow.bias = -0.00015;
-    this.scene.add(sunLight);
+    this.sunLight.shadow.camera.left = -shadowD;
+    this.sunLight.shadow.camera.right = shadowD;
+    this.sunLight.shadow.camera.top = shadowD;
+    this.sunLight.shadow.camera.bottom = -shadowD;
+    this.sunLight.shadow.bias = -0.00015;
+    this.scene.add(this.sunLight);
 
     // Ambient Sky Light
-    const ambientLight = new THREE.AmbientLight(0x38bdf8, 0.45);
-    this.scene.add(ambientLight);
+    this.ambientLight = new THREE.AmbientLight(0x38bdf8, 0.45);
+    this.scene.add(this.ambientLight);
 
     // Hemisphere Fill Light
-    const hemiLight = new THREE.HemisphereLight(0x38bdf8, 0x0f172a, 0.55);
-    this.scene.add(hemiLight);
+    this.hemiLight = new THREE.HemisphereLight(0x38bdf8, 0x0f172a, 0.55);
+    this.scene.add(this.hemiLight);
+
+    this.applyDayNightState(true); // Default to Night Cyberpunk/Dark Slate Mode
+  }
+
+  public setNightMode(night: boolean): void {
+    if (this.isNight === night) return;
+    this.isNight = night;
+    this.applyDayNightState(night);
+  }
+
+  private applyDayNightState(night: boolean): void {
+    if (night) {
+      // Night Mode Colors & Lighting
+      this.scene.background = new THREE.Color(0x0f172a); // Deep Slate Night
+      this.sunLight.color.setHex(0x38bdf8);
+      this.sunLight.intensity = 0.45;
+      this.ambientLight.color.setHex(0x1e293b);
+      this.ambientLight.intensity = 0.65;
+      this.hemiLight.color.setHex(0x38bdf8);
+      this.hemiLight.groundColor.setHex(0x0f172a);
+      this.hemiLight.intensity = 0.4;
+    } else {
+      // Day Mode Warm Sun & Bright Architectural Canvas
+      this.scene.background = new THREE.Color(0xf1f5f9); // Crisp Architectural Light Canvas
+      this.sunLight.color.setHex(0xfffbeb);
+      this.sunLight.intensity = 1.65;
+      this.ambientLight.color.setHex(0xf8fafc);
+      this.ambientLight.intensity = 0.85;
+      this.hemiLight.color.setHex(0xbae6fd);
+      this.hemiLight.groundColor.setHex(0xe2e8f0);
+      this.hemiLight.intensity = 0.55;
+    }
   }
 
   // -------------------------------------------------------------

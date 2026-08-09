@@ -8,6 +8,5 @@ coverage/
 !.env.example
 
 # Large OSM & preprocessed tile artifacts
-public/export.osm
 public/lucknow_tiles/
 

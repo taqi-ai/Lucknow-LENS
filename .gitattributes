@@ -1,0 +1,1 @@
+public/export.osm filter=lfs diff=lfs merge=lfs -text

@@ -51,22 +51,24 @@ export const CityViewport: React.FC<CityViewportProps> = ({ mapData, cameraSigna
     streamerRef.current = streamer;
     streamer.init();
 
-    // Orbit Controls (Configured for ultra-smooth buttery inertia and damping)
+    // Orbit Controls (Google Earth style zoom-to-cursor, ultra-smooth damping & max view distance)
     const controls = new OrbitControls(cityRenderer.camera, cityRenderer.renderer.domElement);
     controls.enableDamping = true;
-    controls.dampingFactor = 0.04; // Silky smooth deceleration
-    controls.rotateSpeed = 0.6;
-    controls.zoomSpeed = 0.8;
+    controls.dampingFactor = 0.05; // Silky smooth deceleration
+    controls.rotateSpeed = 0.55;
+    controls.zoomSpeed = 1.0;
     controls.panSpeed = 0.7;
-    controls.maxPolarAngle = Math.PI / 2 - 0.02;
-    controls.minDistance = 10;
-    controls.maxDistance = 25000;
+    controls.zoomToCursor = true; // Zoom to mouse pointer location (Google Earth style)
+    controls.maxPolarAngle = Math.PI / 2 - 0.01;
+    controls.minDistance = 5;
+    controls.maxDistance = 50000; // Expanded to match camera far plane prevent flickering
     controls.target.set(0, 0, 0);
     controlsRef.current = controls;
 
     // Render Loop
     let animId: number;
     let lastStatsTime = 0;
+    let lastShadowUpdateTime = 0;
 
     const animate = (time: number) => {
       animId = requestAnimationFrame(animate);
@@ -74,7 +76,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({ mapData, cameraSigna
       if (cameraAnim.current.active) {
         const elapsed = time - cameraAnim.current.startTime;
         const progress = Math.min(elapsed / cameraAnim.current.duration, 1);
-        const ease = 1 - Math.pow(1 - progress, 3);
+        const ease = 1 - Math.pow(1 - progress, 3); // Cubic ease out
 
         cityRenderer.camera.position.lerpVectors(cameraAnim.current.startPos, cameraAnim.current.endPos, ease);
         controls.target.lerpVectors(cameraAnim.current.startTarget, cameraAnim.current.endTarget, ease);
@@ -85,6 +87,20 @@ export const CityViewport: React.FC<CityViewportProps> = ({ mapData, cameraSigna
         }
       } else {
         controls.update();
+      }
+
+      const altitude = cityRenderer.camera.position.y;
+
+      // Dynamic camera planes — adjust near/far per altitude for optimal depth precision
+      cityRenderer.updateCameraPlanes(altitude);
+
+      // Adaptive shadows — disable at high altitude for massive iGPU perf gain
+      cityRenderer.setAdaptiveShadows(altitude);
+
+      // Throttled shadow target update — only every 500ms, not every frame
+      if (time - lastShadowUpdateTime > 500) {
+        cityRenderer.updateSunShadowTarget(controls.target);
+        lastShadowUpdateTime = time;
       }
 
       // Update TileStreamer with current camera position

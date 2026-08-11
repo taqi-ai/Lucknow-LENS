@@ -61,25 +61,25 @@ export class CityRenderer {
 
     // 1. Scene & Canvas Environment Setup
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0f172a); // Slate-900 architectural canvas background (NO WHITE-OUT)
-    // No white exponential fog to prevent distant city fading
+    this.scene.background = new THREE.Color(0x0b1329);
 
     // 2. Camera Setup
     const width = container.clientWidth;
     const height = container.clientHeight;
-    this.camera = new THREE.PerspectiveCamera(38, width / height, 2, 60000); // 60km far plane for full city overview
+    this.camera = new THREE.PerspectiveCamera(38, width / height, 5, 80000);
 
-    // 3. WebGL Renderer Setup
+    // 3. WebGL Renderer Setup — logarithmic depth buffer eliminates z-fighting
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
       powerPreference: 'high-performance',
+      logarithmicDepthBuffer: true,
     });
     this.renderer.setSize(width, height);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // Cap at 1.5x for perf on HiDPI
+    this.renderer.shadowMap.enabled = false; // Shadows off by default — enabled adaptively at low altitude
+    this.renderer.shadowMap.type = THREE.BasicShadowMap; // Fastest shadow type when enabled
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.toneMappingExposure = 1.3;
 
     container.appendChild(this.renderer.domElement);
 
@@ -96,40 +96,86 @@ export class CityRenderer {
   private ambientLight!: THREE.AmbientLight;
   private hemiLight!: THREE.HemisphereLight;
   private isNight = true;
+  private shadowsActive = false;
 
   // -------------------------------------------------------------
   // LIGHTING ENVIRONMENT (DAY / NIGHT DYNAMIC MODES)
   // -------------------------------------------------------------
   private setupLighting() {
-    const maxExtent = Math.max(this.mapData.bounds.widthMeters, this.mapData.bounds.heightMeters, 1600);
-
-    // Key Sun Light
+    // Key Sun Light — shadow configured but disabled by default (enabled adaptively)
     this.sunLight = new THREE.DirectionalLight(0xfffbeb, 1.45);
-    this.sunLight.position.set(maxExtent * 0.75, maxExtent * 1.1, maxExtent * 0.6);
-    this.sunLight.castShadow = true;
+    this.sunLight.position.set(2500, 3500, 2000);
+    this.sunLight.castShadow = false; // Enabled adaptively at low altitude
 
-    this.sunLight.shadow.mapSize.width = 2048;
-    this.sunLight.shadow.mapSize.height = 2048;
-    this.sunLight.shadow.camera.near = 50;
-    this.sunLight.shadow.camera.far = maxExtent * 3.5;
+    this.sunLight.shadow.mapSize.width = 1024;
+    this.sunLight.shadow.mapSize.height = 1024;
+    this.sunLight.shadow.camera.near = 10;
+    this.sunLight.shadow.camera.far = 8000;
 
-    const shadowD = maxExtent * 0.95;
+    const shadowD = 2000;
     this.sunLight.shadow.camera.left = -shadowD;
     this.sunLight.shadow.camera.right = shadowD;
     this.sunLight.shadow.camera.top = shadowD;
     this.sunLight.shadow.camera.bottom = -shadowD;
-    this.sunLight.shadow.bias = -0.00015;
+    this.sunLight.shadow.bias = -0.0002;
     this.scene.add(this.sunLight);
+    this.scene.add(this.sunLight.target);
 
     // Ambient Sky Light
-    this.ambientLight = new THREE.AmbientLight(0x38bdf8, 0.45);
+    this.ambientLight = new THREE.AmbientLight(0x38bdf8, 0.65);
     this.scene.add(this.ambientLight);
 
     // Hemisphere Fill Light
-    this.hemiLight = new THREE.HemisphereLight(0x38bdf8, 0x0f172a, 0.55);
+    this.hemiLight = new THREE.HemisphereLight(0x38bdf8, 0x1e293b, 0.7);
     this.scene.add(this.hemiLight);
 
-    this.applyDayNightState(true); // Default to Night Cyberpunk/Dark Slate Mode
+    this.applyDayNightState(true);
+  }
+
+  /** Move sun shadow center to orbit target — call at throttled interval, not every frame */
+  public updateSunShadowTarget(target: THREE.Vector3): void {
+    if (this.sunLight) {
+      this.sunLight.position.set(target.x + 2500, target.y + 3500, target.z + 2000);
+      this.sunLight.target.position.copy(target);
+      this.sunLight.target.updateMatrixWorld();
+    }
+  }
+
+  /** Enable/disable shadows based on camera altitude — huge perf win at zoom-out */
+  public setAdaptiveShadows(altitude: number): void {
+    const shouldEnable = altitude < 3000;
+    if (shouldEnable === this.shadowsActive) return;
+    this.shadowsActive = shouldEnable;
+    this.renderer.shadowMap.enabled = shouldEnable;
+    this.sunLight.castShadow = shouldEnable;
+    // Mark all materials as needing shadow update
+    this.scene.traverse((obj) => {
+      if ((obj as THREE.Mesh).isMesh) {
+        const mat = (obj as THREE.Mesh).material;
+        if (mat && !Array.isArray(mat)) {
+          mat.needsUpdate = true;
+        }
+      }
+    });
+  }
+
+  /** Dynamically adjust camera near/far to maximize depth buffer precision at current altitude */
+  public updateCameraPlanes(altitude: number): void {
+    let near: number, far: number;
+    if (altitude < 200) {
+      near = 0.5; far = 5000;
+    } else if (altitude < 2000) {
+      near = 2; far = 20000;
+    } else if (altitude < 8000) {
+      near = 10; far = 50000;
+    } else {
+      near = 50; far = 80000;
+    }
+    if (this.camera.near !== near || this.camera.far !== far) {
+      this.camera.near = near;
+      this.camera.far = far;
+      this.camera.updateProjectionMatrix();
+    }
   }
 
   public setNightMode(night: boolean): void {
@@ -140,18 +186,20 @@ export class CityRenderer {
 
   private applyDayNightState(night: boolean): void {
     if (night) {
-      // Night Mode Colors & Lighting
-      this.scene.background = new THREE.Color(0x0f172a); // Deep Slate Night
-      this.sunLight.color.setHex(0x38bdf8);
-      this.sunLight.intensity = 0.45;
-      this.ambientLight.color.setHex(0x1e293b);
-      this.ambientLight.intensity = 0.65;
-      this.hemiLight.color.setHex(0x38bdf8);
-      this.hemiLight.groundColor.setHex(0x0f172a);
-      this.hemiLight.intensity = 0.4;
+      // Night Mode — rich navy/slate with clean visibility
+      this.scene.background = new THREE.Color(0x0b1329);
+      this.scene.fog = new THREE.FogExp2(0x0b1329, 0.000025); // Subtle atmospheric depth
+      this.sunLight.color.setHex(0x7dd3fc);
+      this.sunLight.intensity = 1.0;
+      this.ambientLight.color.setHex(0x475569);
+      this.ambientLight.intensity = 1.1;
+      this.hemiLight.color.setHex(0x7dd3fc);
+      this.hemiLight.groundColor.setHex(0x1e293b);
+      this.hemiLight.intensity = 0.8;
     } else {
-      // Day Mode Warm Sun & Bright Architectural Canvas
-      this.scene.background = new THREE.Color(0xf1f5f9); // Crisp Architectural Light Canvas
+      // Day Mode — warm sun and bright architectural canvas
+      this.scene.background = new THREE.Color(0xf1f5f9);
+      this.scene.fog = new THREE.FogExp2(0xe2e8f0, 0.000018); // Subtle haze
       this.sunLight.color.setHex(0xfffbeb);
       this.sunLight.intensity = 1.65;
       this.ambientLight.color.setHex(0xf8fafc);
@@ -528,7 +576,7 @@ export class CityRenderer {
       const mergedParapet = safeMergeGeometries(parapetGeos);
       if (mergedParapet) {
         const mesh = new THREE.Mesh(mergedParapet, parapetMat);
-        mesh.castShadow = true;
+        mesh.castShadow = false; // Tiny geometry — not worth shadow cost
         this.scene.add(mesh);
       }
     }
@@ -537,7 +585,7 @@ export class CityRenderer {
       const mergedRoofCaps = safeMergeGeometries(roofCapGeos);
       if (mergedRoofCaps) {
         const mesh = new THREE.Mesh(mergedRoofCaps, roofCapMat);
-        mesh.castShadow = true;
+        mesh.castShadow = false; // Tiny geometry — not worth shadow cost
         this.scene.add(mesh);
       }
     }
@@ -702,8 +750,8 @@ export class CityRenderer {
       if (items.length === 0) continue;
 
       const instMesh = new THREE.InstancedMesh(treeGeos[t], treeMaterials[t], items.length);
-      instMesh.castShadow = true;
-      instMesh.receiveShadow = true;
+      instMesh.castShadow = false; // Trees are the heaviest shadow casters — disabled for perf
+      instMesh.receiveShadow = false;
 
       items.forEach((item, idx) => {
         dummy.position.copy(item.pos);

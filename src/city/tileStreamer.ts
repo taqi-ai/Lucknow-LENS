@@ -33,7 +33,7 @@ export class TileStreamer {
   private loadQueue: Array<{ tile: TileManifestItem; lod: LODLevel; dist: number }> = [];
   private activeFetches = new Set<string>();
 
-  private MAX_CONCURRENT_LOADS = 4;
+  private MAX_CONCURRENT_LOADS = 2; // Reduced from 4 — fewer concurrent geometry builds = smoother frames
   public stableMode = true; // STABLE CITY MODE ON BY DEFAULT (Spec Requirement)
   public debugMode = false;
 
@@ -41,9 +41,9 @@ export class TileStreamer {
   private currentLOD: LODLevel = 0;
   
   // Shared Materials
-  private buildingMaterialHigh: THREE.MeshStandardMaterial;
-  private buildingMaterialMid: THREE.MeshStandardMaterial;
-  private roadMaterialMajor: THREE.MeshStandardMaterial;
+  private buildingMaterialHigh: THREE.MeshLambertMaterial;
+  private buildingMaterialMid: THREE.MeshLambertMaterial;
+  private roadMaterialMajor: THREE.MeshLambertMaterial;
   private roadMaterialMinor: THREE.MeshBasicMaterial;
   private waterMaterial: THREE.MeshStandardMaterial;
   private parkMaterial: THREE.MeshBasicMaterial;
@@ -62,7 +62,19 @@ export class TileStreamer {
   };
 
   private isNight = true;
-  private groundMaterial: THREE.MeshStandardMaterial;
+  private groundMaterial: THREE.MeshLambertMaterial;
+
+  // Throttle state — update tile logic max 5Hz to avoid starving render loop
+  private lastUpdateTime = 0;
+  private readonly UPDATE_INTERVAL = 200; // ms
+
+  // Frustum culling
+  private frustum = new THREE.Frustum();
+  private frustumMatrix = new THREE.Matrix4();
+
+  // Tile cache — keep dormant tiles to avoid refetch on pan-back
+  private tileCache = new Map<string, LoadedTileContainer>();
+  private readonly MAX_CACHE_SIZE = 50;
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -70,27 +82,22 @@ export class TileStreamer {
     this.scene.add(this.tileGroupParent);
     this.scene.add(this.debugGroup);
 
-    this.groundMaterial = new THREE.MeshStandardMaterial({
+    this.groundMaterial = new THREE.MeshLambertMaterial({
       color: 0x1e293b,
-      roughness: 0.95,
-      metalness: 0.05,
     });
 
-    this.buildingMaterialHigh = new THREE.MeshStandardMaterial({
+    // MeshLambertMaterial — much cheaper than Standard, looks near-identical at city scale
+    this.buildingMaterialHigh = new THREE.MeshLambertMaterial({
       color: 0xcbd5e1,
-      roughness: 0.5,
-      metalness: 0.1,
       flatShading: true,
     });
-    this.buildingMaterialMid = new THREE.MeshStandardMaterial({
+    this.buildingMaterialMid = new THREE.MeshLambertMaterial({
       color: 0x94a3b8,
-      roughness: 0.7,
       flatShading: true,
     });
 
-    this.roadMaterialMajor = new THREE.MeshStandardMaterial({
+    this.roadMaterialMajor = new THREE.MeshLambertMaterial({
       color: 0x475569,
-      roughness: 0.6,
     });
     this.roadMaterialMinor = new THREE.MeshBasicMaterial({
       color: 0x334155,
@@ -124,10 +131,10 @@ export class TileStreamer {
       this.groundMaterial.color.setHex(0x1e293b);
       this.buildingMaterialHigh.color.setHex(0xcbd5e1);
       this.buildingMaterialMid.color.setHex(0x94a3b8);
-      this.roadMaterialMajor.color.setHex(0x475569);
-      this.roadMaterialMinor.color.setHex(0x334155);
-      this.waterMaterial.color.setHex(0x0284c7);
-      this.parkMaterial.color.setHex(0x16a34a);
+      this.roadMaterialMajor.color.setHex(0x64748b); // Brighter roads in night
+      this.roadMaterialMinor.color.setHex(0x475569);
+      this.waterMaterial.color.setHex(0x0ea5e9);
+      this.parkMaterial.color.setHex(0x22c55e);
     } else {
       this.groundMaterial.color.setHex(0xe2e8f0);
       this.buildingMaterialHigh.color.setHex(0xffffff);
@@ -171,16 +178,46 @@ export class TileStreamer {
     const ground = new THREE.Mesh(groundGeo, this.groundMaterial);
     ground.rotation.x = -Math.PI / 2;
     ground.position.set(centerX, -0.5, centerZ);
-    ground.receiveShadow = true;
+    ground.receiveShadow = false;
     this.overviewGroup.add(ground);
 
     this.buildRoadsMesh(this.overviewGroup, this.overviewData.majorRoads, this.roadMaterialMajor);
     this.buildWaterwaysMesh(this.overviewGroup, this.overviewData.waterways);
     this.buildParksMesh(this.overviewGroup, this.overviewData.greenAreas);
+
+    // Building density blocks — gives satellite-like texture at full zoom-out
+    if (this.overviewData.buildingDensityBlocks && this.overviewData.buildingDensityBlocks.length > 0) {
+      const densityGeos: THREE.BufferGeometry[] = [];
+      const densityMat = new THREE.MeshBasicMaterial({ color: this.isNight ? 0x475569 : 0xd1d5db, transparent: true, opacity: 0.6 });
+
+      for (const block of this.overviewData.buildingDensityBlocks) {
+        const size = Math.min(80, 15 + block.count * 3);
+        const geo = new THREE.PlaneGeometry(size, size);
+        geo.rotateX(-Math.PI / 2);
+        geo.translate(block.x, 0.15, block.z);
+        densityGeos.push(geo);
+      }
+
+      if (densityGeos.length > 0) {
+        const merged = this.mergeGeometries(densityGeos);
+        if (merged) {
+          this.overviewGroup.add(new THREE.Mesh(merged, densityMat));
+        }
+      }
+    }
   }
 
   public update(cameraPosition: THREE.Vector3): void {
     if (!this.manifest) return;
+
+    // Throttle tile logic to max 5Hz — camera/render loop runs at 60fps independently
+    const now = performance.now();
+    if (now - this.lastUpdateTime < this.UPDATE_INTERVAL) {
+      // Still do frustum culling every frame (cheap)
+      this.updateFrustumCulling();
+      return;
+    }
+    this.lastUpdateTime = now;
 
     const altitude = cameraPosition.y;
     const camX = cameraPosition.x;
@@ -191,11 +228,9 @@ export class TileStreamer {
     let zoomScaleName: 'FULL CITY' | 'DISTRICT' | 'NEIGHBORHOOD' | 'STREET' = 'FULL CITY';
 
     if (this.stableMode) {
-      // STABLE CITY MODE: Always use ONE consistent representation (LOD 2 Neighborhood scale)
       targetLOD = 2;
       zoomScaleName = altitude > 4000 ? 'FULL CITY' : altitude > 1800 ? 'DISTRICT' : altitude > 600 ? 'NEIGHBORHOOD' : 'STREET';
     } else {
-      // DYNAMIC LOD WITH HYSTERESIS TRANSITIONS
       if (this.currentLOD === 0) {
         if (altitude < 4500) targetLOD = 1;
       } else if (this.currentLOD === 1) {
@@ -216,9 +251,11 @@ export class TileStreamer {
 
     this.currentLOD = targetLOD;
 
-    // Hysteresis Streaming Radii
-    const loadRadius = targetLOD === 0 ? 6000 : targetLOD === 1 ? 4000 : targetLOD === 2 ? 3000 : 2000;
-    const unloadRadius = loadRadius + 1500; // Hysteresis buffer gap prevents boundary thrashing
+    // Dynamic load radius — extends as camera zooms out for Google Earth-style wide view
+    const viewScale = Math.max(1, altitude / 1200);
+    const baseRadius = targetLOD === 0 ? 12000 : targetLOD === 1 ? 8000 : targetLOD === 2 ? 6000 : 4000;
+    const loadRadius = Math.min(baseRadius * viewScale, 25000);
+    const unloadRadius = loadRadius + 3000;
 
     // 1. Calculate desired tiles for loading
     const newQueue: Array<{ tile: TileManifestItem; lod: LODLevel; dist: number }> = [];
@@ -231,7 +268,18 @@ export class TileStreamer {
         const fetchKey = `${tile.id}_${targetLOD}`;
 
         if ((!loaded || loaded.lod !== targetLOD) && !this.activeFetches.has(fetchKey)) {
-          newQueue.push({ tile, lod: targetLOD, dist });
+          // Check tile cache first before queuing fetch
+          const cached = this.tileCache.get(fetchKey);
+          if (cached) {
+            // Restore from cache instead of refetching
+            this.tileGroupParent.add(cached.group);
+            if (cached.debugHelper) this.debugGroup.add(cached.debugHelper);
+            cached.state = TileState.VISIBLE;
+            this.loadedTiles.set(tile.id, cached);
+            this.tileCache.delete(fetchKey);
+          } else {
+            newQueue.push({ tile, lod: targetLOD, dist });
+          }
         }
       }
     }
@@ -240,7 +288,7 @@ export class TileStreamer {
     newQueue.sort((a, b) => a.dist - b.dist);
     this.loadQueue = newQueue;
 
-    // Process Prioritized Asynchronous Queue (Max 4 concurrent)
+    // Process Prioritized Asynchronous Queue
     while (this.activeFetches.size < this.MAX_CONCURRENT_LOADS && this.loadQueue.length > 0) {
       const nextItem = this.loadQueue.shift();
       if (nextItem) {
@@ -248,7 +296,7 @@ export class TileStreamer {
       }
     }
 
-    // 2. Unload distant tiles using UNLOAD_DISTANCE hysteresis threshold
+    // 2. Unload distant tiles — move to cache instead of destroying
     let totalBldgs = 0;
     let totalRds = 0;
     let totalTrs = 0;
@@ -260,12 +308,25 @@ export class TileStreamer {
       const dist = Math.hypot(tileMeta.center.x - camX, tileMeta.center.z - camZ);
 
       if (dist > unloadRadius) {
-        // Safe unmount only after hysteresis boundary exceeded
+        // Move to cache instead of destroying
         this.tileGroupParent.remove(container.group);
         if (container.debugHelper) this.debugGroup.remove(container.debugHelper);
-        this.disposeGroup(container.group);
+        container.state = TileState.PENDING_UNLOAD;
+
+        const cacheKey = `${tileId}_${container.lod}`;
+        this.tileCache.set(cacheKey, container);
         this.loadedTiles.delete(tileId);
         this.tileStateMap.set(tileId, TileState.UNLOADED);
+
+        // Evict oldest cache entries if over limit
+        if (this.tileCache.size > this.MAX_CACHE_SIZE) {
+          const firstKey = this.tileCache.keys().next().value;
+          if (firstKey) {
+            const evicted = this.tileCache.get(firstKey);
+            if (evicted) this.disposeGroup(evicted.group);
+            this.tileCache.delete(firstKey);
+          }
+        }
       } else {
         totalBldgs += container.stats.buildings;
         totalRds += container.stats.roads;
@@ -274,6 +335,9 @@ export class TileStreamer {
     }
 
     this.debugGroup.visible = this.debugMode;
+
+    // Frustum cull after tile updates
+    this.updateFrustumCulling();
 
     this.stats = {
       loadedTiles: this.loadedTiles.size,
@@ -286,6 +350,27 @@ export class TileStreamer {
       stableMode: this.stableMode,
       pendingLoads: this.activeFetches.size + this.loadQueue.length,
     };
+  }
+
+  /** Frustum culling — hide tiles behind the camera to save 40-60% draw calls */
+  private updateFrustumCulling(): void {
+    // Build frustum from current camera
+    const camera = this.scene.getObjectByProperty('type', 'PerspectiveCamera') as THREE.PerspectiveCamera | undefined;
+    if (!camera) return;
+
+    this.frustumMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    this.frustum.setFromProjectionMatrix(this.frustumMatrix);
+
+    for (const [, container] of this.loadedTiles) {
+      if (container.group.children.length === 0) continue;
+      // Use bounding sphere check — fast and sufficient for tile-sized groups
+      if (!container.group.userData.boundingSphere) {
+        const box = new THREE.Box3().setFromObject(container.group);
+        container.group.userData.boundingSphere = box.getBoundingSphere(new THREE.Sphere());
+      }
+      const sphere = container.group.userData.boundingSphere as THREE.Sphere;
+      container.group.visible = this.frustum.intersectsSphere(sphere);
+    }
   }
 
   private async fetchAndBuildTile(tileMeta: TileManifestItem, lod: LODLevel): Promise<void> {

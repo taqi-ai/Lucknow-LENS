@@ -1,0 +1,14 @@
+{
+  "last_release": "2026-07-22.0",
+  "last_run": "2026-08-11T17:29:53.297002+00:00",
+  "theme": "base",
+  "type": "land_use",
+  "bbox": {
+    "xmin": 80.935,
+    "ymin": 26.84,
+    "xmax": 80.955,
+    "ymax": 26.855
+  },
+  "backend": "geojson",
+  "output": "D:\\LKO LENSE\\data\\overture_land_use.geojson"
+}

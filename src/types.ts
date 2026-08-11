@@ -15,6 +15,7 @@ export interface BuildingFootprint {
   height: number;
   stories: number;
   color: string;
+  detailLevel?: 'simple' | 'medium' | 'detailed';
 }
 
 export interface RoadSegmentOSM {
@@ -112,7 +113,7 @@ export interface OverviewData {
   majorRoads: RoadSegmentOSM[];
   waterways: WaterwayOSM[];
   greenAreas: GreenAreaOSM[];
-  buildingDensityBlocks: Array<{ x: number; z: number; count: number; avgHeight: number }>;
+  buildingDensityBlocks: Array<{ x: number; z: number; density: number; avgHeight?: number }>;
   landmarks: LandmarkOSM[];
 }
 

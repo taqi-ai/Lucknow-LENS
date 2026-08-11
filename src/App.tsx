@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { CameraPreset, OSMMapData, RenderStats, CityStreamingStats } from './types';
-import { parseOSMFile } from './osm/osmParser';
 import { CityViewport } from './components/3d/CityViewport';
 import { CityUI } from './components/ui/CityUI';
 import { MapPin, RefreshCw, AlertCircle } from 'lucide-react';
+import { parseOvertureGeoJSON } from './osm/overtureParser';
 
 export default function App() {
   const [mapData, setMapData] = useState<OSMMapData | null>(null);
@@ -25,24 +25,24 @@ export default function App() {
 
   const [streamingStats, setStreamingStats] = useState<CityStreamingStats | undefined>(undefined);
 
-  const loadOSMData = useCallback(async () => {
+  const loadCityData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await parseOSMFile('/map.osm');
+      const data = await parseOvertureGeoJSON();
       setMapData(data);
       setCameraSignal('frame');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      setError(`Failed to parse map.osm: ${message}`);
+      setError(`Failed to load Overture city data: ${message}`);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    loadOSMData();
-  }, [loadOSMData]);
+    loadCityData();
+  }, [loadCityData]);
 
   const handleCameraSignal = (signal: CameraPreset) => {
     setCameraSignal(signal);
@@ -62,11 +62,11 @@ export default function App() {
         </div>
         <h2 className="text-xl font-bold mb-2">Initializing Lucknow City Engine</h2>
         <p className="text-sm text-slate-400 mb-6 text-center max-w-md">
-          Preparing spatial tile streamer and loading city origin coordinates...
+          Preparing spatial tile streamer and loading Overture Maps data...
         </p>
         <div className="flex items-center gap-2 text-amber-400 text-xs font-semibold">
           <RefreshCw className="w-4 h-4 animate-spin" />
-          <span>Starting Tile Streamer...</span>
+          <span>Loading Overture GIS Data...</span>
         </div>
       </div>
     );
@@ -78,10 +78,10 @@ export default function App() {
         <div className="w-16 h-16 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center mb-4 text-rose-400">
           <AlertCircle className="w-8 h-8" />
         </div>
-        <h2 className="text-xl font-bold mb-2 text-rose-300">OSM Data Import Error</h2>
+        <h2 className="text-xl font-bold mb-2 text-rose-300">Overture Data Import Error</h2>
         <p className="text-sm text-slate-400 mb-6 text-center max-w-md">{error}</p>
         <button
-          onClick={loadOSMData}
+          onClick={loadCityData}
           className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 flex items-center gap-2"
         >
           <RefreshCw className="w-4 h-4" /> Retry Loading Map
@@ -114,7 +114,7 @@ export default function App() {
         onToggleStableMode={() => setStableMode(prev => !prev)}
         onToggleNightMode={() => setNightMode(prev => !prev)}
         onCameraSignal={handleCameraSignal}
-        onReloadOSM={loadOSMData}
+        onReloadOSM={loadCityData}
       />
     </div>
   );

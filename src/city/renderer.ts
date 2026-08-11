@@ -502,22 +502,27 @@ export class CityRenderer {
           wallGeosByColor.beige.push(geo);
         }
 
-        // Roof Parapet Rim (0.5m perimeter lip)
-        try {
-          const parapetExtrude: THREE.ExtrudeGeometryOptions = {
-            depth: 0.5,
-            bevelEnabled: false,
-          };
-          const parapetGeo = new THREE.ExtrudeGeometry(shape, parapetExtrude);
-          parapetGeo.rotateX(-Math.PI / 2);
-          parapetGeo.translate(0, bld.height, 0);
-          parapetGeos.push(parapetGeo);
-        } catch {
-          // ignore
+        // Determine effective detail level
+        const detailLevel = bld.detailLevel || (bld.height > 12 ? 'detailed' : bld.height > 8 ? 'medium' : 'simple');
+
+        // Roof Parapet Rim (0.5m perimeter lip) - only for medium & detailed buildings
+        if (detailLevel !== 'simple') {
+          try {
+            const parapetExtrude: THREE.ExtrudeGeometryOptions = {
+              depth: 0.4,
+              bevelEnabled: false,
+            };
+            const parapetGeo = new THREE.ExtrudeGeometry(shape, parapetExtrude);
+            parapetGeo.rotateX(-Math.PI / 2);
+            parapetGeo.translate(0, bld.height, 0);
+            parapetGeos.push(parapetGeo);
+          } catch {
+            // ignore
+          }
         }
 
-        // Rooftop Box / Penthouse (~35% of buildings)
-        if (idx % 3 === 0) {
+        // Rooftop Box / Penthouse - only for detailed buildings
+        if (detailLevel === 'detailed') {
           let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
           cleanPts.forEach((p) => {
             minX = Math.min(minX, p.x);
@@ -528,7 +533,7 @@ export class CityRenderer {
 
           const w = (maxX - minX) * 0.35;
           const d = (maxZ - minZ) * 0.35;
-          if (w > 2 && d > 2) {
+          if (w > 2.5 && d > 2.5) {
             const centerX = (minX + maxX) / 2;
             const centerZ = (minZ + maxZ) / 2;
             const penthouseGeo = new THREE.BoxGeometry(w, 2.2, d);

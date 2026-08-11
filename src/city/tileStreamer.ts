@@ -148,12 +148,11 @@ export class TileStreamer {
 
   public async init(): Promise<void> {
     try {
-      const respManifest = await fetch('/lucknow_tiles/manifest.json');
-      if (respManifest.ok) {
-        this.manifest = await respManifest.json();
-      }
+      const respManifest = await fetch('/overture_tiles_full/manifest.json');
+      if (!respManifest.ok) throw new Error(`Manifest fetch failed: ${respManifest.statusText}`);
+      this.manifest = await respManifest.json();
 
-      const respOverview = await fetch('/lucknow_tiles/overview.json');
+      const respOverview = await fetch('/overture_tiles_full/overview.json');
       if (respOverview.ok) {
         this.overviewData = await respOverview.json();
         this.buildGlobalOverview();
@@ -191,7 +190,7 @@ export class TileStreamer {
       const densityMat = new THREE.MeshBasicMaterial({ color: this.isNight ? 0x475569 : 0xd1d5db, transparent: true, opacity: 0.6 });
 
       for (const block of this.overviewData.buildingDensityBlocks) {
-        const size = Math.min(80, 15 + block.count * 3);
+        const size = 20 + (block.density || 0) * 80;
         const geo = new THREE.PlaneGeometry(size, size);
         geo.rotateX(-Math.PI / 2);
         geo.translate(block.x, 0.15, block.z);
@@ -228,7 +227,7 @@ export class TileStreamer {
     let zoomScaleName: 'FULL CITY' | 'DISTRICT' | 'NEIGHBORHOOD' | 'STREET' = 'FULL CITY';
 
     if (this.stableMode) {
-      targetLOD = 2;
+      targetLOD = altitude > 4000 ? 0 : altitude > 1800 ? 1 : altitude > 600 ? 2 : 3;
       zoomScaleName = altitude > 4000 ? 'FULL CITY' : altitude > 1800 ? 'DISTRICT' : altitude > 600 ? 'NEIGHBORHOOD' : 'STREET';
     } else {
       if (this.currentLOD === 0) {
@@ -253,7 +252,7 @@ export class TileStreamer {
 
     // Dynamic load radius — extends as camera zooms out for Google Earth-style wide view
     const viewScale = Math.max(1, altitude / 1200);
-    const baseRadius = targetLOD === 0 ? 12000 : targetLOD === 1 ? 8000 : targetLOD === 2 ? 6000 : 4000;
+    const baseRadius = targetLOD === 0 ? 0 : targetLOD === 1 ? 8000 : targetLOD === 2 ? 6000 : 4000;
     const loadRadius = Math.min(baseRadius * viewScale, 25000);
     const unloadRadius = loadRadius + 3000;
 
@@ -379,7 +378,7 @@ export class TileStreamer {
     this.tileStateMap.set(tileMeta.id, TileState.LOADING);
 
     try {
-      const resp = await fetch(`/lucknow_tiles/${tileMeta.id}.json`);
+      const resp = await fetch(`/overture_tiles_full/${tileMeta.id}.json`);
       if (!resp.ok) return;
       const data: TileJSONData = await resp.json();
 
@@ -391,8 +390,8 @@ export class TileStreamer {
       let treeCount = 0;
 
       // Extract complete features (Buildings, Roads, Water, Green Areas, Instanced Trees)
-      const bldgList = (lod >= 2 || this.stableMode) ? data.lod2.buildings : (data.lod1?.buildings || data.lod2.buildings);
-      const roadList = (lod >= 2 || this.stableMode) ? data.lod2.roads : (data.lod1?.roads || data.lod2.roads);
+      const bldgList = lod === 1 ? (data.lod1?.buildings || []) : (lod >= 2 ? data.lod2.buildings : []);
+      const roadList = lod === 1 ? (data.lod1?.roads || []) : (lod >= 2 ? data.lod2.roads : []);
       const waterList = data.lod2.waterways || data.lod1?.waterways || [];
       const parkList = data.lod2.greenAreas || data.lod1?.greenAreas || [];
       const treeList = data.lod2.trees || [];

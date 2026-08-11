@@ -28,6 +28,7 @@ export const CityUI: React.FC<CityUIProps> = ({
   onToggleStableMode,
   onToggleNightMode,
   onCameraSignal,
+  onReloadOSM,
 }) => {
   const [isReportOpen, setIsReportOpen] = useState(false);
 

@@ -29,19 +29,19 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, mapDa
             <Cpu className="w-6 h-6" />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-white">Real Lucknow GIS OpenStreetMap Evaluation</h2>
-            <p className="text-xs text-slate-400">Parsed from public/map.osm • Central Lucknow Bounding Box</p>
+            <h2 className="text-xl font-bold text-white">Real Lucknow GIS Overture Maps Evaluation</h2>
+            <p className="text-xs text-slate-400">Parsed from public/overture/ • Hazratganj Lucknow Bounding Box</p>
           </div>
         </div>
 
         {/* Quick Metrics Banner */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6 bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4">
           <div>
-            <div className="text-[10px] text-slate-400 uppercase font-semibold">OSM Buildings</div>
+            <div className="text-[10px] text-slate-400 uppercase font-semibold">Overture Buildings</div>
             <div className="text-lg font-bold text-amber-400">{mapData.stats.buildingsCount}</div>
           </div>
           <div>
-            <div className="text-[10px] text-slate-400 uppercase font-semibold">OSM Highways</div>
+            <div className="text-[10px] text-slate-400 uppercase font-semibold">Overture Roads</div>
             <div className="text-lg font-bold text-sky-400">{mapData.stats.roadsCount}</div>
           </div>
           <div>

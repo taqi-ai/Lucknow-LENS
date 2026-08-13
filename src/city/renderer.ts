@@ -61,12 +61,12 @@ export class CityRenderer {
 
     // 1. Scene & Canvas Environment Setup
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0b1329);
+    this.scene.background = null; // Sky dome provides the backdrop
 
     // 2. Camera Setup
     const width = container.clientWidth;
     const height = container.clientHeight;
-    this.camera = new THREE.PerspectiveCamera(38, width / height, 5, 80000);
+    this.camera = new THREE.PerspectiveCamera(38, width / height, 5, 150000);
 
     // 3. WebGL Renderer Setup — logarithmic depth buffer eliminates z-fighting
     this.renderer = new THREE.WebGLRenderer({
@@ -159,25 +159,6 @@ export class CityRenderer {
     });
   }
 
-  /** Dynamically adjust camera near/far to maximize depth buffer precision at current altitude */
-  public updateCameraPlanes(altitude: number): void {
-    let near: number, far: number;
-    if (altitude < 200) {
-      near = 0.5; far = 5000;
-    } else if (altitude < 2000) {
-      near = 2; far = 20000;
-    } else if (altitude < 8000) {
-      near = 10; far = 50000;
-    } else {
-      near = 50; far = 80000;
-    }
-    if (this.camera.near !== near || this.camera.far !== far) {
-      this.camera.near = near;
-      this.camera.far = far;
-      this.camera.updateProjectionMatrix();
-    }
-  }
-
   public setNightMode(night: boolean): void {
     if (this.isNight === night) return;
     this.isNight = night;
@@ -185,10 +166,12 @@ export class CityRenderer {
   }
 
   private applyDayNightState(night: boolean): void {
+    // scene.background = null — the AtmosphericSky dome provides the backdrop
+    this.scene.background = null;
+
     if (night) {
       // Night Mode — rich navy/slate with clean visibility
-      this.scene.background = new THREE.Color(0x0b1329);
-      this.scene.fog = new THREE.FogExp2(0x0b1329, 0.000025); // Subtle atmospheric depth
+      this.scene.fog = new THREE.FogExp2(0x0c1628, 0.000022); // Match sky horizon
       this.sunLight.color.setHex(0x7dd3fc);
       this.sunLight.intensity = 1.0;
       this.ambientLight.color.setHex(0x475569);
@@ -198,8 +181,7 @@ export class CityRenderer {
       this.hemiLight.intensity = 0.8;
     } else {
       // Day Mode — warm sun and bright architectural canvas
-      this.scene.background = new THREE.Color(0xf1f5f9);
-      this.scene.fog = new THREE.FogExp2(0xe2e8f0, 0.000018); // Subtle haze
+      this.scene.fog = new THREE.FogExp2(0xc8dae8, 0.000018); // Match sky horizon
       this.sunLight.color.setHex(0xfffbeb);
       this.sunLight.intensity = 1.65;
       this.ambientLight.color.setHex(0xf8fafc);

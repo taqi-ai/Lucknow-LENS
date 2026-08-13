@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { TileManifest, TileManifestItem, TileJSONData, OverviewData, BuildingFootprint, RoadSegmentOSM, WaterwayOSM, GreenAreaOSM, CityStreamingStats, LODLevel } from '../types';
+import { BuildingVisuals } from './buildingVisuals';
+import { SeededRNG } from './rng';
 
 export enum TileState {
   UNLOADED = 'UNLOADED',
@@ -40,14 +42,12 @@ export class TileStreamer {
   // Hysteresis Thresholds for LOD & Distance Streaming
   private currentLOD: LODLevel = 0;
   
-  // Shared Materials
-  private buildingMaterialHigh: THREE.MeshLambertMaterial;
-  private buildingMaterialMid: THREE.MeshLambertMaterial;
-  private roadMaterialMajor: THREE.MeshLambertMaterial;
-  private roadMaterialMinor: THREE.MeshBasicMaterial;
+  // Visuals & Materials
+  private buildingVisuals: BuildingVisuals;
+  private roadMaterials: Record<string, THREE.MeshLambertMaterial | THREE.MeshBasicMaterial>;
+  private parkMaterials: THREE.MeshBasicMaterial[];
   private waterMaterial: THREE.MeshStandardMaterial;
-  private parkMaterial: THREE.MeshBasicMaterial;
-  private treeMeshTemplate: THREE.Mesh;
+  private treeMeshTemplates: THREE.Mesh[] = [];
 
   private stats: CityStreamingStats = {
     loadedTiles: 0,
@@ -87,22 +87,14 @@ export class TileStreamer {
       color: 0x1e293b,
     });
 
-    // MeshLambertMaterial — much cheaper than Standard, looks near-identical at city scale
-    this.buildingMaterialHigh = new THREE.MeshLambertMaterial({
-      color: 0xcbd5e1,
-      flatShading: true,
-    });
-    this.buildingMaterialMid = new THREE.MeshLambertMaterial({
-      color: 0x94a3b8,
-      flatShading: true,
-    });
+    this.buildingVisuals = new BuildingVisuals();
 
-    this.roadMaterialMajor = new THREE.MeshLambertMaterial({
-      color: 0x475569,
-    });
-    this.roadMaterialMinor = new THREE.MeshBasicMaterial({
-      color: 0x334155,
-    });
+    this.roadMaterials = {
+      motorway: new THREE.MeshLambertMaterial({ color: 0x475569 }),
+      arterial: new THREE.MeshLambertMaterial({ color: 0x94a3b8 }),
+      normal: new THREE.MeshLambertMaterial({ color: 0xcbd5e1 }),
+      pedestrian: new THREE.MeshBasicMaterial({ color: 0xe2e8f0 })
+    };
 
     this.waterMaterial = new THREE.MeshStandardMaterial({
       color: 0x0284c7,
@@ -112,38 +104,75 @@ export class TileStreamer {
       opacity: 0.85,
     });
 
-    this.parkMaterial = new THREE.MeshBasicMaterial({
-      color: 0x16a34a,
-      transparent: true,
-      opacity: 0.45,
-    });
+    this.parkMaterials = [
+      new THREE.MeshBasicMaterial({ color: 0x5c7a5c, transparent: true, opacity: 0.6 }), // Muted natural green
+      new THREE.MeshBasicMaterial({ color: 0x6b8a64, transparent: true, opacity: 0.6 }), // Lighter muted
+      new THREE.MeshBasicMaterial({ color: 0x4d664d, transparent: true, opacity: 0.6 })  // Darker muted
+    ];
 
-    const foliageGeo = new THREE.ConeGeometry(2.2, 5.5, 5);
-    foliageGeo.translate(0, 3, 0);
-    const foliageMat = new THREE.MeshBasicMaterial({ color: 0x15803d });
-    this.treeMeshTemplate = new THREE.Mesh(foliageGeo, foliageMat);
+    // 4 Distinct Tree Prototypes
+    // 1. Dark Green Cone (Cypress/Pine)
+    const coneGeo = new THREE.ConeGeometry(2.5, 7, 5);
+    coneGeo.translate(0, 3.5, 0);
+    const coneMat = new THREE.MeshBasicMaterial({ color: 0x14532d });
+
+    // 2. Medium Green Sphere (Mango/Neem)
+    const sphereGeo = new THREE.SphereGeometry(3.5, 6, 6);
+    sphereGeo.translate(0, 4, 0);
+    const sphereMat = new THREE.MeshBasicMaterial({ color: 0x15803d });
+
+    // 3. Light Green Dodecahedron (Smaller avenue trees)
+    const dodecGeo = new THREE.DodecahedronGeometry(2.8, 0);
+    dodecGeo.translate(0, 3.5, 0);
+    const dodecMat = new THREE.MeshBasicMaterial({ color: 0x4ade80 });
+
+    // 4. Olive Green Cylinder/Umbrella (Banyan/Acacia)
+    const cylGeo = new THREE.CylinderGeometry(4, 3, 5, 6);
+    cylGeo.translate(0, 4.5, 0);
+    const cylMat = new THREE.MeshBasicMaterial({ color: 0x4d7c0f });
+
+    this.treeMeshTemplates = [
+      new THREE.Mesh(coneGeo, coneMat),
+      new THREE.Mesh(sphereGeo, sphereMat),
+      new THREE.Mesh(dodecGeo, dodecMat),
+      new THREE.Mesh(cylGeo, cylMat)
+    ];
   }
 
   public setNightMode(night: boolean): void {
     if (this.isNight === night) return;
     this.isNight = night;
 
+    this.buildingVisuals.setNightMode(night);
+
     if (night) {
-      this.groundMaterial.color.setHex(0x1e293b);
-      this.buildingMaterialHigh.color.setHex(0xcbd5e1);
-      this.buildingMaterialMid.color.setHex(0x94a3b8);
-      this.roadMaterialMajor.color.setHex(0x64748b); // Brighter roads in night
-      this.roadMaterialMinor.color.setHex(0x475569);
+      this.groundMaterial.color.setHex(0x0c1628); // matches atmosphericSky night horizon
+      this.roadMaterials.motorway.color.setHex(0x18181b);
+      this.roadMaterials.arterial.color.setHex(0x27272a);
+      this.roadMaterials.normal.color.setHex(0x3f3f46);
+      this.roadMaterials.pedestrian.color.setHex(0x52525b);
       this.waterMaterial.color.setHex(0x0ea5e9);
-      this.parkMaterial.color.setHex(0x22c55e);
+      this.parkMaterials[0].color.setHex(0x2f3e2f);
+      this.parkMaterials[1].color.setHex(0x384734);
+      this.parkMaterials[2].color.setHex(0x273627);
+      (this.treeMeshTemplates[0].material as THREE.MeshBasicMaterial).color.setHex(0x064e3b);
+      (this.treeMeshTemplates[1].material as THREE.MeshBasicMaterial).color.setHex(0x065f46);
+      (this.treeMeshTemplates[2].material as THREE.MeshBasicMaterial).color.setHex(0x059669);
+      (this.treeMeshTemplates[3].material as THREE.MeshBasicMaterial).color.setHex(0x166534);
     } else {
-      this.groundMaterial.color.setHex(0xe2e8f0);
-      this.buildingMaterialHigh.color.setHex(0xffffff);
-      this.buildingMaterialMid.color.setHex(0xe2e8f0);
-      this.roadMaterialMajor.color.setHex(0x94a3b8);
-      this.roadMaterialMinor.color.setHex(0xcbd5e1);
+      this.groundMaterial.color.setHex(0xc8dae8); // matches atmosphericSky day horizon
+      this.roadMaterials.motorway.color.setHex(0x3f3f46);
+      this.roadMaterials.arterial.color.setHex(0x52525b);
+      this.roadMaterials.normal.color.setHex(0x9ca3af);
+      this.roadMaterials.pedestrian.color.setHex(0xd1d5db);
       this.waterMaterial.color.setHex(0x0ea5e9);
-      this.parkMaterial.color.setHex(0x22c55e);
+      this.parkMaterials[0].color.setHex(0x5c7a5c);
+      this.parkMaterials[1].color.setHex(0x6b8a64);
+      this.parkMaterials[2].color.setHex(0x4d664d);
+      (this.treeMeshTemplates[0].material as THREE.MeshBasicMaterial).color.setHex(0x14532d);
+      (this.treeMeshTemplates[1].material as THREE.MeshBasicMaterial).color.setHex(0x15803d);
+      (this.treeMeshTemplates[2].material as THREE.MeshBasicMaterial).color.setHex(0x4ade80);
+      (this.treeMeshTemplates[3].material as THREE.MeshBasicMaterial).color.setHex(0x4d7c0f);
     }
   }
 
@@ -182,37 +211,21 @@ export class TileStreamer {
     const centerX = (extent.minX + extent.maxX) / 2;
     const centerZ = (extent.minZ + extent.maxZ) / 2;
 
-    const groundGeo = new THREE.PlaneGeometry(width, depth);
+    // Use a massive circular ground plane (150km radius) matching the max camera far plane.
+    // A circle ensures that even if the geometry is somehow clipped or rendered near the edge,
+    // it forms a natural curved horizon instead of a straight diagonal rectangular edge.
+    const groundRadius = 150000;
+    const groundGeo = new THREE.CircleGeometry(groundRadius, 64);
     const ground = new THREE.Mesh(groundGeo, this.groundMaterial);
     ground.rotation.x = -Math.PI / 2;
     ground.position.set(centerX, -0.5, centerZ);
     ground.receiveShadow = false;
     this.overviewGroup.add(ground);
 
-    this.buildRoadsMesh(this.overviewGroup, this.overviewData.majorRoads, this.roadMaterialMajor);
+    this.buildRoadsMesh(this.overviewGroup, this.overviewData.majorRoads);
     this.buildWaterwaysMesh(this.overviewGroup, this.overviewData.waterways);
     this.buildParksMesh(this.overviewGroup, this.overviewData.greenAreas);
 
-    // Building density blocks — gives satellite-like texture at full zoom-out
-    if (this.overviewData.buildingDensityBlocks && this.overviewData.buildingDensityBlocks.length > 0) {
-      const densityGeos: THREE.BufferGeometry[] = [];
-      const densityMat = new THREE.MeshBasicMaterial({ color: this.isNight ? 0x475569 : 0xd1d5db, transparent: true, opacity: 0.6 });
-
-      for (const block of this.overviewData.buildingDensityBlocks) {
-        const size = 20 + (block.density || 0) * 80;
-        const geo = new THREE.PlaneGeometry(size, size);
-        geo.rotateX(-Math.PI / 2);
-        geo.translate(block.x, 0.15, block.z);
-        densityGeos.push(geo);
-      }
-
-      if (densityGeos.length > 0) {
-        const merged = this.mergeGeometries(densityGeos);
-        if (merged) {
-          this.overviewGroup.add(new THREE.Mesh(merged, densityMat));
-        }
-      }
-    }
   }
 
   public update(camera: THREE.PerspectiveCamera): void {
@@ -265,9 +278,10 @@ export class TileStreamer {
 
     // Dynamic load radius — extends as camera zooms out for Google Earth-style wide view
     const viewScale = Math.max(1, altitude / 1200);
-    const baseRadius = targetLOD === 0 ? 0 : targetLOD === 1 ? 8000 : targetLOD === 2 ? 6000 : 4000;
+    const baseRadius = targetLOD === 0 ? 12000 : targetLOD === 1 ? 8000 : targetLOD === 2 ? 6000 : 4000;
     const loadRadius = Math.min(baseRadius * viewScale, 25000);
-    const unloadRadius = loadRadius + 3000;
+    // Increase hysteresis slightly for smoother transitions
+    const unloadRadius = loadRadius + 4000;
 
     // 1. Calculate desired tiles for loading
     const newQueue: Array<{ tile: TileManifestItem; lod: LODLevel; dist: number }> = [];
@@ -416,14 +430,14 @@ export class TileStreamer {
       let roadCount = 0;
       let treeCount = 0;
 
-      const bldgList = lod === 1 ? (data.lod1?.buildings || []) : (lod >= 2 ? data.lod2.buildings : []);
-      const roadList = lod === 1 ? (data.lod1?.roads || []) : (lod >= 2 ? data.lod2.roads : []);
+      const bldgList = lod <= 1 ? (data.lod1?.buildings || []) : (lod >= 2 ? data.lod2.buildings : []);
+      const roadList = lod <= 1 ? (data.lod1?.roads || []) : (lod >= 2 ? data.lod2.roads : []);
       const waterList = data.lod2.waterways || data.lod1?.waterways || [];
       const parkList = data.lod2.greenAreas || data.lod1?.greenAreas || [];
       const treeList = data.lod2.trees || [];
 
-      bldgCount = this.buildBuildingsMesh(tileGroup, bldgList, lod >= 2 ? this.buildingMaterialHigh : this.buildingMaterialMid);
-      roadCount = this.buildRoadsMesh(tileGroup, roadList, this.roadMaterialMajor);
+      bldgCount = this.buildBuildingsMesh(tileGroup, bldgList, lod);
+      roadCount = this.buildRoadsMesh(tileGroup, roadList);
       this.buildWaterwaysMesh(tileGroup, waterList);
       this.buildParksMesh(tileGroup, parkList);
       treeCount = this.buildInstancedTrees(tileGroup, treeList);
@@ -461,13 +475,17 @@ export class TileStreamer {
     }
   }
 
-  private buildBuildingsMesh(parent: THREE.Group, buildings: BuildingFootprint[], material: THREE.Material): number {
+  private buildBuildingsMesh(parent: THREE.Group, buildings: BuildingFootprint[], lod: LODLevel): number {
     if (!buildings || buildings.length === 0) return 0;
 
-    const geometries: THREE.BufferGeometry[] = [];
+    const wallGeos: THREE.BufferGeometry[][] = [[], [], [], [], []];
+    const roofGeos: THREE.BufferGeometry[][] = [[], [], [], [], []];
 
     for (const bldg of buildings) {
       if (!bldg.points || bldg.points.length < 3) continue;
+
+      const matIndex = this.buildingVisuals.getMaterialIndexForId(bldg.id);
+      const bldgHeight = bldg.height || 10;
 
       const shape = new THREE.Shape();
       shape.moveTo(bldg.points[0].x, -bldg.points[0].z);
@@ -476,31 +494,71 @@ export class TileStreamer {
       }
       shape.closePath();
 
-      const geo = new THREE.ExtrudeGeometry(shape, { depth: bldg.height || 10, bevelEnabled: false });
+      const geo = new THREE.ExtrudeGeometry(shape, { depth: bldgHeight, bevelEnabled: false });
       geo.rotateX(-Math.PI / 2);
-      geometries.push(geo);
+      wallGeos[matIndex].push(geo);
+
+      // LOD 3 (Street level): Add roof caps for buildings to give visual definition
+      if (lod === 3) {
+        let roofDepth = 0.3; // Mid-rise default
+        if (bldgHeight < 8) {
+          roofDepth = 0.1; // Low-rise: very subtle parapet
+        } else if (bldgHeight >= 15) {
+          roofDepth = 0.6; // High-rise: prominent roof structure
+        }
+
+        const roofGeo = new THREE.ExtrudeGeometry(shape, { depth: roofDepth, bevelEnabled: false });
+        roofGeo.rotateX(-Math.PI / 2);
+        roofGeo.translate(0, bldgHeight, 0);
+        
+        // Use a slightly different material index to add visual variation for high rises if desired,
+        // or keep consistent. We will keep consistent to ensure matched palettes.
+        roofGeos[matIndex].push(roofGeo);
+      }
     }
 
-    if (geometries.length > 0) {
-      const mergedGeo = this.mergeGeometries(geometries);
-      if (mergedGeo) {
-        const mesh = new THREE.Mesh(mergedGeo, material);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        parent.add(mesh);
+    for (let i = 0; i < 5; i++) {
+      if (wallGeos[i].length > 0) {
+        const mergedWall = this.mergeGeometries(wallGeos[i]);
+        if (mergedWall) {
+          const mesh = new THREE.Mesh(mergedWall, this.buildingVisuals.wallMaterials[i]);
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+          parent.add(mesh);
+        }
+      }
+      
+      if (roofGeos[i].length > 0) {
+        const mergedRoof = this.mergeGeometries(roofGeos[i]);
+        if (mergedRoof) {
+          const mesh = new THREE.Mesh(mergedRoof, this.buildingVisuals.roofMaterials[i]);
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+          parent.add(mesh);
+        }
       }
     }
 
     return buildings.length;
   }
 
-  private buildRoadsMesh(parent: THREE.Group, roads: RoadSegmentOSM[], material: THREE.Material): number {
+  private buildRoadsMesh(parent: THREE.Group, roads: RoadSegmentOSM[]): number {
     if (!roads || roads.length === 0) return 0;
 
-    const roadGeometries: THREE.BufferGeometry[] = [];
+    const geos: Record<string, THREE.BufferGeometry[]> = {
+      motorway: [],
+      arterial: [],
+      normal: [],
+      pedestrian: []
+    };
 
     for (const road of roads) {
       if (!road.points || road.points.length < 2) continue;
+
+      let category = 'normal';
+      if (road.type === 'motorway' || road.type === 'trunk') category = 'motorway';
+      else if (road.type === 'primary' || road.type === 'secondary') category = 'arterial';
+      else if (road.type === 'footway' || road.type === 'path' || road.type === 'pedestrian') category = 'pedestrian';
 
       for (let i = 0; i < road.points.length - 1; i++) {
         const p1 = road.points[i];
@@ -512,23 +570,26 @@ export class TileStreamer {
         if (len < 0.1) continue;
 
         const angle = Math.atan2(dz, dx);
-        const w = road.width || 6;
+        const w = road.width || (category === 'motorway' ? 12 : category === 'arterial' ? 8 : category === 'pedestrian' ? 2 : 6);
 
         const planeGeo = new THREE.PlaneGeometry(len, w);
         planeGeo.rotateX(-Math.PI / 2);
         planeGeo.rotateY(-angle);
-        planeGeo.translate((p1.x + p2.x) / 2, 0.1, (p1.z + p2.z) / 2);
+        const yOff = category === 'motorway' ? 0.13 : category === 'arterial' ? 0.12 : category === 'normal' ? 0.11 : 0.14;
+        planeGeo.translate((p1.x + p2.x) / 2, yOff, (p1.z + p2.z) / 2);
 
-        roadGeometries.push(planeGeo);
+        geos[category].push(planeGeo);
       }
     }
 
-    if (roadGeometries.length > 0) {
-      const mergedGeo = this.mergeGeometries(roadGeometries);
-      if (mergedGeo) {
-        const mesh = new THREE.Mesh(mergedGeo, material);
-        mesh.receiveShadow = true;
-        parent.add(mesh);
+    for (const cat of Object.keys(geos)) {
+      if (geos[cat].length > 0) {
+        const mergedGeo = this.mergeGeometries(geos[cat]);
+        if (mergedGeo) {
+          const mesh = new THREE.Mesh(mergedGeo, this.roadMaterials[cat]);
+          mesh.receiveShadow = true;
+          parent.add(mesh);
+        }
       }
     }
 
@@ -581,8 +642,13 @@ export class TileStreamer {
   private buildParksMesh(parent: THREE.Group, greenAreas: GreenAreaOSM[]): void {
     if (!greenAreas || greenAreas.length === 0) return;
 
+    const geos: THREE.BufferGeometry[][] = [[], [], []];
+
     for (const park of greenAreas) {
       if (!park.points || park.points.length < 3) continue;
+
+      const hash = SeededRNG.hashString(park.id || '');
+      const matIndex = hash % 3;
 
       const shape = new THREE.Shape();
       shape.moveTo(park.points[0].x, -park.points[0].z);
@@ -593,9 +659,18 @@ export class TileStreamer {
 
       const geo = new THREE.ShapeGeometry(shape);
       geo.rotateX(-Math.PI / 2);
-      const mesh = new THREE.Mesh(geo, this.parkMaterial);
-      mesh.position.y = 0.05;
-      parent.add(mesh);
+      geo.translate(0, 0.05, 0);
+      geos[matIndex].push(geo);
+    }
+
+    for (let i = 0; i < 3; i++) {
+      if (geos[i].length > 0) {
+        const merged = this.mergeGeometries(geos[i]);
+        if (merged) {
+          const mesh = new THREE.Mesh(merged, this.parkMaterials[i]);
+          parent.add(mesh);
+        }
+      }
     }
   }
 
@@ -603,19 +678,44 @@ export class TileStreamer {
     if (!trees || trees.length === 0) return 0;
 
     const count = trees.length;
-    const instancedMesh = new THREE.InstancedMesh(this.treeMeshTemplate.geometry, this.treeMeshTemplate.material, count);
-    const dummy = new THREE.Object3D();
+    const buckets: number[][] = [[], [], [], []];
 
     for (let i = 0; i < count; i++) {
       const t = trees[i];
-      dummy.position.set(t.x, t.y, t.z);
-      dummy.scale.set(t.scale, t.scale, t.scale);
-      dummy.updateMatrix();
-      instancedMesh.setMatrixAt(i, dummy.matrix);
+      const hash = SeededRNG.hashString(`${t.x.toFixed(2)},${t.z.toFixed(2)}`);
+      const bucketIdx = hash % 4;
+      buckets[bucketIdx].push(i);
     }
 
-    instancedMesh.instanceMatrix.needsUpdate = true;
-    parent.add(instancedMesh);
+    const dummy = new THREE.Object3D();
+
+    for (let b = 0; b < 4; b++) {
+      const indices = buckets[b];
+      if (indices.length === 0) continue;
+
+      const template = this.treeMeshTemplates[b];
+      const instancedMesh = new THREE.InstancedMesh(template.geometry, template.material, indices.length);
+
+      for (let j = 0; j < indices.length; j++) {
+        const t = trees[indices[j]];
+        const hash = SeededRNG.hashString(`${t.x.toFixed(2)},${t.z.toFixed(2)}`);
+        
+        dummy.position.set(t.x, t.y, t.z);
+        
+        const scaleMod = 0.8 + ((hash % 100) / 100) * 0.6; // 0.8 to 1.4
+        const finalScale = (t.scale || 1) * scaleMod;
+        
+        dummy.scale.set(finalScale, finalScale, finalScale);
+        dummy.rotation.set(0, ((hash % 360) * Math.PI) / 180, 0);
+        
+        dummy.updateMatrix();
+        instancedMesh.setMatrixAt(j, dummy.matrix);
+      }
+
+      instancedMesh.instanceMatrix.needsUpdate = true;
+      parent.add(instancedMesh);
+    }
+
     return count;
   }
 
@@ -698,5 +798,12 @@ export class TileStreamer {
 
   public getManifest(): TileManifest | null {
     return this.manifest;
+  }
+
+  public getSpatialExtent(): { minX: number; maxX: number; minZ: number; maxZ: number } {
+    if (this.manifest?.spatialExtent) {
+      return this.manifest.spatialExtent;
+    }
+    return { minX: -15000, maxX: 15000, minZ: -15000, maxZ: 15000 };
   }
 }

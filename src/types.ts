@@ -151,6 +151,14 @@ export interface TileJSONData {
   landmarks: LandmarkOSM[];
 }
 
+export interface BoundaryDebugInfo {
+  camX: number;
+  camZ: number;
+  distToEdge: number;
+  insidePlayable: boolean;
+  horizonActive: boolean;
+}
+
 export interface CityStreamingStats {
   loadedTiles: number;
   visibleTiles: number;
@@ -161,6 +169,7 @@ export interface CityStreamingStats {
   zoomScaleName: 'FULL CITY' | 'DISTRICT' | 'NEIGHBORHOOD' | 'STREET';
   stableMode: boolean;
   pendingLoads: number;
+  boundaryDebug?: BoundaryDebugInfo;
 }
 
 

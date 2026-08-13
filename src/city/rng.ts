@@ -46,4 +46,18 @@ export class SeededRNG {
   chance(probability: number): boolean {
     return this.next() < probability;
   }
+
+  /**
+   * Fast, simple string hash for deterministic material assignment
+   */
+  static hashString(str: string): number {
+    let hash = 0;
+    if (str.length === 0) return hash;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash |= 0; // Convert to 32bit int
+    }
+    return Math.abs(hash);
+  }
 }

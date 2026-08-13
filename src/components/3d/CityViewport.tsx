@@ -5,6 +5,8 @@ import { CityRenderer } from '../../city/renderer';
 import { TileStreamer } from '../../city/tileStreamer';
 import { LabelManager } from '../../city/labelManager';
 import { CameraController } from '../../city/cameraController';
+import { HorizonCity } from '../../city/horizonCity';
+import { AtmosphericSky } from '../../city/atmosphericSky';
 
 interface CityViewportProps {
   mapData: OSMMapData;
@@ -32,8 +34,10 @@ export const CityViewport: React.FC<CityViewportProps> = ({
   const streamerRef = useRef<TileStreamer | null>(null);
   const controlsRef = useRef<CameraController | null>(null);
   const labelManagerRef = useRef<LabelManager | null>(null);
+  const horizonRef = useRef<HorizonCity | null>(null);
+  const skyRef = useRef<AtmosphericSky | null>(null);
 
-  // Initialize Three.js Renderer, TileStreamer & LabelManager
+  // Initialize Three.js Renderer, TileStreamer, LabelManager, HorizonCity & AtmosphericSky
   useEffect(() => {
     if (!mountRef.current) return;
 
@@ -43,7 +47,6 @@ export const CityViewport: React.FC<CityViewportProps> = ({
 
     const streamer = new TileStreamer(cityRenderer.scene);
     streamerRef.current = streamer;
-    streamer.init();
 
     // Initialize label manager and load label data
     const labelManager = new LabelManager(cityRenderer.scene);
@@ -52,12 +55,40 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     labelManager.setViewport(container.clientWidth, container.clientHeight);
     labelManager.loadData(); // async, non-blocking
 
+    // Create horizon city and atmospheric sky instances
+    const horizon = new HorizonCity();
+    horizonRef.current = horizon;
+
+    const sky = new AtmosphericSky();
+    skyRef.current = sky;
+
     // Custom Target-Orbit Navigation
     const controls = new CameraController(cityRenderer.camera, cityRenderer.renderer.domElement);
     controlsRef.current = controls;
     if (onCameraControllerReady) {
       onCameraControllerReady(controls);
     }
+
+    // Build atmospheric sky dome IMMEDIATELY — before async init so there's
+    // never a frame showing raw background color
+    sky.build(cityRenderer.scene);
+
+    // TileStreamer init — then build horizon and set camera bounds
+    streamer.init().then(() => {
+      const extent = streamer.getSpatialExtent();
+
+      // Build outer-city horizon ring (purely visual perimeter)
+      horizon.build(cityRenderer.scene, extent);
+
+      // Set camera boundary — inset by 1500m from the data extent edges
+      const boundaryBuffer = 1500;
+      controls.setBounds(
+        extent.minX + boundaryBuffer,
+        extent.maxX - boundaryBuffer,
+        extent.minZ + boundaryBuffer,
+        extent.maxZ - boundaryBuffer,
+      );
+    });
 
     // Render Loop
     let animId: number;
@@ -69,10 +100,17 @@ export const CityViewport: React.FC<CityViewportProps> = ({
 
       controls.update(time);
 
-      const altitude = cityRenderer.camera.position.y;
+      // Keep sky dome centered on camera every frame and animate shaders
+      sky.update(cityRenderer.camera, time);
 
-      // Dynamic camera planes — adjust near/far per altitude for optimal depth precision
-      cityRenderer.updateCameraPlanes(altitude);
+      // Lock camera clipping planes. 
+      // The renderer uses logarithmicDepthBuffer: true, so we don't need dynamic scaling.
+      // This prevents the horizon geometry from being sharply clipped before it reaches the fog fade-out distance.
+      cityRenderer.camera.near = 2.0;
+      cityRenderer.camera.far = 150000;
+      cityRenderer.camera.updateProjectionMatrix();
+
+      const altitude = cityRenderer.camera.position.y;
 
       // Adaptive shadows — disable at high altitude for massive iGPU perf gain
       cityRenderer.setAdaptiveShadows(altitude);
@@ -89,6 +127,15 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       // Update label manager — pass current LOD from streamer stats
       const streamingStats = streamer.getStats();
       labelManager.update(cityRenderer.camera.position, streamingStats.currentLOD);
+
+      // Inject boundary debug info when debug mode is active
+      const boundaryInfo = controls.getBoundaryDebug();
+      if (boundaryInfo && streamerRef.current) {
+        streamingStats.boundaryDebug = {
+          ...boundaryInfo,
+          horizonActive: horizon.isActive(),
+        };
+      }
 
       cityRenderer.update();
 
@@ -113,6 +160,8 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       cancelAnimationFrame(animId);
       controls.dispose();
       labelManager.dispose();
+      horizon.dispose();
+      sky.dispose();
       cityRenderer.dispose();
       if (container.contains(cityRenderer.renderer.domElement)) {
         container.removeChild(cityRenderer.renderer.domElement);
@@ -133,6 +182,13 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     if (labelManagerRef.current) {
       labelManagerRef.current.setNightMode(nightMode);
       labelManagerRef.current.enabled = showLabels;
+    }
+    // Forward night mode to horizon and sky systems
+    if (horizonRef.current) {
+      horizonRef.current.setNightMode(nightMode);
+    }
+    if (skyRef.current) {
+      skyRef.current.setNightMode(nightMode);
     }
   }, [debugTiles, stableMode, nightMode, showLabels]);
 
@@ -189,3 +245,4 @@ export const CityViewport: React.FC<CityViewportProps> = ({
 
   return <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing select-none" />;
 };
+

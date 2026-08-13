@@ -229,6 +229,42 @@ export const CityUI: React.FC<CityUIProps> = ({
               </div>
             </div>
           </div>
+
+          {/* Boundary Debug Info — only shown when DEBUG TILES is active */}
+          {debugTiles && streamingStats?.boundaryDebug && (
+            <div className="mt-3 pt-2.5 border-t border-cyan-500/30">
+              <div className="text-[9px] font-extrabold uppercase tracking-wider text-cyan-400 mb-1.5 flex items-center gap-1">
+                <MapPin className="w-3 h-3" />
+                <span>BOUNDARY DEBUG</span>
+              </div>
+              <div className="space-y-1 font-mono text-[10px]">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Camera X/Z:</span>
+                  <span className="text-cyan-300">
+                    {Math.round(streamingStats.boundaryDebug.camX)}, {Math.round(streamingStats.boundaryDebug.camZ)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Dist to Edge:</span>
+                  <span className={streamingStats.boundaryDebug.distToEdge < 2000 ? 'text-amber-400' : 'text-emerald-300'}>
+                    {Math.round(streamingStats.boundaryDebug.distToEdge)}m
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Inside Playable:</span>
+                  <span className={streamingStats.boundaryDebug.insidePlayable ? 'text-emerald-400' : 'text-rose-400'}>
+                    {streamingStats.boundaryDebug.insidePlayable ? 'YES' : 'NO'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Horizon Active:</span>
+                  <span className={streamingStats.boundaryDebug.horizonActive ? 'text-emerald-400' : 'text-slate-500'}>
+                    {streamingStats.boundaryDebug.horizonActive ? 'YES' : 'NO'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

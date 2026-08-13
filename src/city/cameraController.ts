@@ -42,6 +42,13 @@ export class CameraController {
   private startState = { target: new THREE.Vector3(), azimuth: 0, pitch: 0, distance: 0 };
   private endState = { target: new THREE.Vector3(), azimuth: 0, pitch: 0, distance: 0 };
 
+  // Soft position boundary — constrains destTarget XZ only
+  private hasBounds = false;
+  private boundsMinX = -Infinity;
+  private boundsMaxX = Infinity;
+  private boundsMinZ = -Infinity;
+  private boundsMaxZ = Infinity;
+
   constructor(camera: THREE.PerspectiveCamera, domElement: HTMLElement) {
     this.camera = camera;
     this.domElement = domElement;
@@ -157,6 +164,9 @@ export class CameraController {
       
       this.destTarget.x -= fwdX * dy * panSens;
       this.destTarget.z -= fwdZ * dy * panSens;
+
+      // Soft boundary clamp after pan
+      this.softClampPosition();
     }
   };
 
@@ -191,6 +201,69 @@ export class CameraController {
   private clampDesiredState() {
     this.destPitch = Math.max(CAMERA_CONFIG.MIN_PITCH, Math.min(CAMERA_CONFIG.MAX_PITCH, this.destPitch));
     this.destDistance = Math.max(CAMERA_CONFIG.MIN_DISTANCE, Math.min(CAMERA_CONFIG.MAX_DISTANCE, this.destDistance));
+  }
+
+  // --- Soft Position Boundary ---
+
+  /**
+   * Set the playable boundary rectangle. The camera target (orbit center)
+   * will be gently pushed back if it leaves these bounds.
+   * Only constrains XZ position — heading, tilt, zoom are never affected.
+   */
+  public setBounds(minX: number, maxX: number, minZ: number, maxZ: number): void {
+    this.hasBounds = true;
+    this.boundsMinX = minX;
+    this.boundsMaxX = maxX;
+    this.boundsMinZ = minZ;
+    this.boundsMaxZ = maxZ;
+  }
+
+  /**
+   * Rubber-band pushback: if destTarget is outside bounds, exponentially
+   * pull it back. Strength increases with overshoot distance, giving a
+   * natural elastic feel rather than hard clamping.
+   */
+  private softClampPosition(): void {
+    if (!this.hasBounds) return;
+
+    const pushStrength = 0.15; // How aggressively to push back (0–1)
+
+    if (this.destTarget.x < this.boundsMinX) {
+      const overshoot = this.boundsMinX - this.destTarget.x;
+      this.destTarget.x += overshoot * pushStrength;
+    } else if (this.destTarget.x > this.boundsMaxX) {
+      const overshoot = this.destTarget.x - this.boundsMaxX;
+      this.destTarget.x -= overshoot * pushStrength;
+    }
+
+    if (this.destTarget.z < this.boundsMinZ) {
+      const overshoot = this.boundsMinZ - this.destTarget.z;
+      this.destTarget.z += overshoot * pushStrength;
+    } else if (this.destTarget.z > this.boundsMaxZ) {
+      const overshoot = this.destTarget.z - this.boundsMaxZ;
+      this.destTarget.z -= overshoot * pushStrength;
+    }
+  }
+
+  /**
+   * Returns boundary debug info for the HUD overlay.
+   * Returns null if no bounds are set.
+   */
+  public getBoundaryDebug(): { camX: number; camZ: number; distToEdge: number; insidePlayable: boolean } | null {
+    if (!this.hasBounds) return null;
+
+    const x = this.target.x;
+    const z = this.target.z;
+
+    const dLeft   = x - this.boundsMinX;
+    const dRight  = this.boundsMaxX - x;
+    const dTop    = z - this.boundsMinZ;
+    const dBottom = this.boundsMaxZ - z;
+
+    const distToEdge = Math.min(dLeft, dRight, dTop, dBottom);
+    const insidePlayable = dLeft >= 0 && dRight >= 0 && dTop >= 0 && dBottom >= 0;
+
+    return { camX: x, camZ: z, distToEdge, insidePlayable };
   }
 
   // --- Public UI Controls ---
@@ -273,6 +346,9 @@ export class CameraController {
         this.presetActive = false;
       }
     } else {
+      // Soft boundary clamp every frame to ensure smooth convergence
+      this.softClampPosition();
+
       // Damping
       // Base damping factor is 0.15. Adjust with move multiplier for pan/rotate, and zoom multiplier for distance
       // Clamp to max 1.0 to prevent physics explosion

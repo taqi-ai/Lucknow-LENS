@@ -1,9 +1,10 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CameraPreset, OSMMapData, RenderStats, CityStreamingStats } from '../../types';
 import { CityRenderer } from '../../city/renderer';
 import { TileStreamer } from '../../city/tileStreamer';
+import { LabelManager } from '../../city/labelManager';
+import { CameraController } from '../../city/cameraController';
 
 interface CityViewportProps {
   mapData: OSMMapData;
@@ -11,35 +12,28 @@ interface CityViewportProps {
   debugTiles: boolean;
   stableMode: boolean;
   nightMode: boolean;
+  showLabels: boolean;
   onUpdateStats: (stats: RenderStats, streamingStats?: CityStreamingStats) => void;
+  onCameraControllerReady?: (controller: CameraController) => void;
 }
 
-export const CityViewport: React.FC<CityViewportProps> = ({ mapData, cameraSignal, debugTiles, stableMode, nightMode, onUpdateStats }) => {
+export const CityViewport: React.FC<CityViewportProps> = ({
+  mapData,
+  cameraSignal,
+  debugTiles,
+  stableMode,
+  nightMode,
+  showLabels,
+  onUpdateStats,
+  onCameraControllerReady,
+}) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<CityRenderer | null>(null);
   const streamerRef = useRef<TileStreamer | null>(null);
-  const controlsRef = useRef<OrbitControls | null>(null);
+  const controlsRef = useRef<CameraController | null>(null);
+  const labelManagerRef = useRef<LabelManager | null>(null);
 
-  // Smooth camera interpolation state
-  const cameraAnim = useRef<{
-    active: boolean;
-    startTime: number;
-    duration: number;
-    startPos: THREE.Vector3;
-    endPos: THREE.Vector3;
-    startTarget: THREE.Vector3;
-    endTarget: THREE.Vector3;
-  }>({
-    active: false,
-    startTime: 0,
-    duration: 1200,
-    startPos: new THREE.Vector3(),
-    endPos: new THREE.Vector3(),
-    startTarget: new THREE.Vector3(),
-    endTarget: new THREE.Vector3(),
-  });
-
-  // Initialize Three.js Renderer & TileStreamer
+  // Initialize Three.js Renderer, TileStreamer & LabelManager
   useEffect(() => {
     if (!mountRef.current) return;
 
@@ -51,19 +45,19 @@ export const CityViewport: React.FC<CityViewportProps> = ({ mapData, cameraSigna
     streamerRef.current = streamer;
     streamer.init();
 
-    // Orbit Controls (Google Earth style zoom-to-cursor, ultra-smooth damping & max view distance)
-    const controls = new OrbitControls(cityRenderer.camera, cityRenderer.renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.05; // Silky smooth deceleration
-    controls.rotateSpeed = 0.55;
-    controls.zoomSpeed = 1.0;
-    controls.panSpeed = 0.7;
-    controls.zoomToCursor = true; // Zoom to mouse pointer location (Google Earth style)
-    controls.maxPolarAngle = Math.PI / 2 - 0.01;
-    controls.minDistance = 5;
-    controls.maxDistance = 50000; // Expanded to match camera far plane prevent flickering
-    controls.target.set(0, 0, 0);
+    // Initialize label manager and load label data
+    const labelManager = new LabelManager(cityRenderer.scene);
+    labelManagerRef.current = labelManager;
+    labelManager.setCamera(cityRenderer.camera);
+    labelManager.setViewport(container.clientWidth, container.clientHeight);
+    labelManager.loadData(); // async, non-blocking
+
+    // Custom Target-Orbit Navigation
+    const controls = new CameraController(cityRenderer.camera, cityRenderer.renderer.domElement);
     controlsRef.current = controls;
+    if (onCameraControllerReady) {
+      onCameraControllerReady(controls);
+    }
 
     // Render Loop
     let animId: number;
@@ -73,21 +67,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({ mapData, cameraSigna
     const animate = (time: number) => {
       animId = requestAnimationFrame(animate);
 
-      if (cameraAnim.current.active) {
-        const elapsed = time - cameraAnim.current.startTime;
-        const progress = Math.min(elapsed / cameraAnim.current.duration, 1);
-        const ease = 1 - Math.pow(1 - progress, 3); // Cubic ease out
-
-        cityRenderer.camera.position.lerpVectors(cameraAnim.current.startPos, cameraAnim.current.endPos, ease);
-        controls.target.lerpVectors(cameraAnim.current.startTarget, cameraAnim.current.endTarget, ease);
-        controls.update();
-
-        if (progress >= 1) {
-          cameraAnim.current.active = false;
-        }
-      } else {
-        controls.update();
-      }
+      controls.update(time);
 
       const altitude = cityRenderer.camera.position.y;
 
@@ -104,12 +84,16 @@ export const CityViewport: React.FC<CityViewportProps> = ({ mapData, cameraSigna
       }
 
       // Update TileStreamer with current camera position
-      streamer.update(cityRenderer.camera.position);
+      streamer.update(cityRenderer.camera);
+
+      // Update label manager — pass current LOD from streamer stats
+      const streamingStats = streamer.getStats();
+      labelManager.update(cityRenderer.camera.position, streamingStats.currentLOD);
 
       cityRenderer.update();
 
       if (time - lastStatsTime > 400) {
-        onUpdateStats(cityRenderer.getRenderStats(), streamer.getStats());
+        onUpdateStats(cityRenderer.getRenderStats(), streamingStats);
         lastStatsTime = time;
       }
     };
@@ -119,6 +103,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({ mapData, cameraSigna
     const handleResize = () => {
       if (!mountRef.current || !rendererRef.current) return;
       rendererRef.current.handleResize(mountRef.current.clientWidth, mountRef.current.clientHeight);
+      labelManager.setViewport(mountRef.current.clientWidth, mountRef.current.clientHeight);
     };
 
     window.addEventListener('resize', handleResize);
@@ -127,14 +112,15 @@ export const CityViewport: React.FC<CityViewportProps> = ({ mapData, cameraSigna
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animId);
       controls.dispose();
+      labelManager.dispose();
       cityRenderer.dispose();
       if (container.contains(cityRenderer.renderer.domElement)) {
         container.removeChild(cityRenderer.renderer.domElement);
       }
     };
-  }, [mapData]);
+  }, [mapData]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Update Debug, Stable Mode, & Night Mode Toggle States
+  // Update Debug, Stable Mode, Night Mode & Label visibility
   useEffect(() => {
     if (rendererRef.current) {
       rendererRef.current.setNightMode(nightMode);
@@ -144,21 +130,18 @@ export const CityViewport: React.FC<CityViewportProps> = ({ mapData, cameraSigna
       streamerRef.current.setStableMode(stableMode);
       streamerRef.current.setNightMode(nightMode);
     }
-  }, [debugTiles, stableMode, nightMode]);
+    if (labelManagerRef.current) {
+      labelManagerRef.current.setNightMode(nightMode);
+      labelManagerRef.current.enabled = showLabels;
+    }
+  }, [debugTiles, stableMode, nightMode, showLabels]);
 
   // Handle Camera Presets
   useEffect(() => {
-    if (!cameraSignal || !rendererRef.current || !controlsRef.current) return;
+    if (!cameraSignal || !controlsRef.current || !streamerRef.current) return;
 
-    const camera = rendererRef.current.camera;
     const controls = controlsRef.current;
     const streamer = streamerRef.current;
-
-    const startPos = camera.position.clone();
-    const startTarget = controls.target.clone();
-
-    let endPos = new THREE.Vector3(0, 12000, 10000);
-    let endTarget = new THREE.Vector3(0, 0, 0);
 
     const manifest = streamer?.getManifest();
     const extent = manifest?.spatialExtent || { minX: -15000, maxX: 15000, minZ: -15000, maxZ: 15000 };
@@ -168,37 +151,41 @@ export const CityViewport: React.FC<CityViewportProps> = ({ mapData, cameraSigna
     const depth = Math.abs(extent.maxZ - extent.minZ);
     const maxDim = Math.max(width, depth, 15000);
 
+    let pTarget = new THREE.Vector3(centerX, 0, centerZ);
+    let pAzimuth = 0;
+    let pPitch = Math.PI / 4;
+    let pDistance = 5000;
+
     if (cameraSignal === 'fullcity' || cameraSignal === 'frame' || cameraSignal === 'reset') {
-      // Dynamic framing calculation based on dataset spatial bounding box
-      const targetAltitude = maxDim * 0.75;
-      endPos = new THREE.Vector3(centerX + maxDim * 0.25, targetAltitude, centerZ + maxDim * 0.45);
-      endTarget = new THREE.Vector3(centerX, 0, centerZ);
+      pTarget.set(centerX, 0, centerZ);
+      pAzimuth = Math.PI / 4;
+      pPitch = Math.PI / 3;
+      pDistance = maxDim * 0.9;
     } else if (cameraSignal === 'overview') {
-      endPos = new THREE.Vector3(centerX + maxDim * 0.15, maxDim * 0.35, centerZ + maxDim * 0.25);
-      endTarget = new THREE.Vector3(centerX, 0, centerZ);
+      pTarget.set(centerX, 0, centerZ);
+      pAzimuth = Math.PI / 8;
+      pPitch = Math.PI / 3.5;
+      pDistance = maxDim * 0.45;
     } else if (cameraSignal === 'neighborhood') {
-      endPos = new THREE.Vector3(centerX + 800, 1800, centerZ + 1200);
-      endTarget = new THREE.Vector3(centerX, 10, centerZ);
+      pTarget.set(centerX, 0, centerZ);
+      pAzimuth = 0;
+      pPitch = Math.PI / 4;
+      pDistance = 1800;
     } else if (cameraSignal === 'street') {
       const firstLm = mapData.landmarks[0]?.position || { x: centerX, z: centerZ };
-      endPos = new THREE.Vector3(firstLm.x + 80, 22, firstLm.z + 80);
-      endTarget = new THREE.Vector3(firstLm.x, 12, firstLm.z);
+      pTarget.set(firstLm.x, 0, firstLm.z);
+      pAzimuth = 0;
+      pPitch = 0.15; // very low horizon look
+      pDistance = 200;
     } else if (cameraSignal === 'top') {
-      endPos = new THREE.Vector3(centerX, maxDim * 1.1, centerZ + 10);
-      endTarget = new THREE.Vector3(centerX, 0, centerZ);
+      pTarget.set(centerX, 0, centerZ);
+      pAzimuth = 0;
+      pPitch = Math.PI / 2 - 0.05; // straight down
+      pDistance = maxDim;
     }
 
-    cameraAnim.current = {
-      active: true,
-      startTime: performance.now(),
-      duration: 1400,
-      startPos,
-      endPos,
-      startTarget,
-      endTarget,
-    };
+    controls.transitionTo(pTarget, pAzimuth, pPitch, pDistance, 1400);
   }, [cameraSignal, mapData]);
 
   return <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing select-none" />;
 };
-

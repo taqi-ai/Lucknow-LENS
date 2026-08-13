@@ -1,32 +1,40 @@
 import React, { useState } from 'react';
 import { CameraPreset, OSMMapData, RenderStats, CityStreamingStats } from '../../types';
 import { ReportModal } from './ReportModal';
-import { Compass, Building2, FileText, Activity, Map, Navigation, Maximize2, MapPin, Grid, Globe, ShieldCheck, Sun, Moon } from 'lucide-react';
+import { CameraWidget } from './CameraWidget';
+import { Compass, Building2, FileText, Activity, Map, Navigation, Maximize2, MapPin, Grid, Globe, ShieldCheck, Sun, Moon, Tag } from 'lucide-react';
+import { CameraController } from '../../city/cameraController';
 
 interface CityUIProps {
   mapData: OSMMapData;
+  cameraController: CameraController | null;
   renderStats: RenderStats;
   streamingStats?: CityStreamingStats;
   debugTiles: boolean;
   stableMode: boolean;
   nightMode: boolean;
+  showLabels: boolean;
   onToggleDebugTiles: () => void;
   onToggleStableMode: () => void;
   onToggleNightMode: () => void;
+  onToggleLabels: () => void;
   onCameraSignal: (signal: CameraPreset) => void;
   onReloadOSM: () => void;
 }
 
 export const CityUI: React.FC<CityUIProps> = ({
   mapData,
+  cameraController,
   renderStats,
   streamingStats,
   debugTiles,
   stableMode,
   nightMode,
+  showLabels,
   onToggleDebugTiles,
   onToggleStableMode,
   onToggleNightMode,
+  onToggleLabels,
   onCameraSignal,
   onReloadOSM,
 }) => {
@@ -92,6 +100,20 @@ export const CityUI: React.FC<CityUIProps> = ({
           >
             <Globe className="w-3.5 h-3.5" />
             <span>[ FULL CITY ]</span>
+          </button>
+
+          <button
+            id="btn-toggle-labels"
+            onClick={onToggleLabels}
+            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 border ${
+              showLabels
+                ? 'bg-violet-500 text-white border-violet-400 shadow-lg shadow-violet-500/20'
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border-slate-700'
+            }`}
+            title="Toggle Geographic Labels (POIs & Road Names)"
+          >
+            <Tag className="w-3.5 h-3.5" />
+            <span>LABELS</span>
           </button>
 
           <button
@@ -210,23 +232,10 @@ export const CityUI: React.FC<CityUIProps> = ({
         </div>
       </div>
 
-      {/* Bottom Right Key Features Finder */}
-      {mapData.landmarks.length > 0 && (
-        <div className="absolute bottom-4 right-4 z-20 pointer-events-none hidden md:block">
-          <div className="pointer-events-auto bg-slate-900/90 border border-slate-700/80 backdrop-blur-xl rounded-2xl p-3 shadow-2xl text-xs text-slate-300 max-w-[220px]">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
-              <MapPin className="w-3 h-3 text-amber-400" /> Lucknow Landmarks
-            </div>
-            <div className="space-y-1 max-h-[110px] overflow-y-auto text-[11px] pr-1">
-              {mapData.landmarks.slice(0, 6).map((lm) => (
-                <div key={lm.id} className="truncate text-slate-200 hover:text-amber-300 transition-colors">
-                  • {lm.name}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+
+
+      {/* Camera Controls Widget */}
+      <CameraWidget controller={cameraController} />
 
       {/* Report Modal */}
       <ReportModal

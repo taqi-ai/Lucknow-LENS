@@ -4,16 +4,20 @@ import { CityViewport } from './components/3d/CityViewport';
 import { CityUI } from './components/ui/CityUI';
 import { MapPin, RefreshCw, AlertCircle } from 'lucide-react';
 import { parseOvertureGeoJSON } from './osm/overtureParser';
+import { CameraController } from './city/cameraController';
 
 export default function App() {
   const [mapData, setMapData] = useState<OSMMapData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [cameraController, setCameraController] = useState<CameraController | null>(null);
+
   const [cameraSignal, setCameraSignal] = useState<CameraPreset | 'reset' | null>(null);
   const [debugTiles, setDebugTiles] = useState<boolean>(false);
   const [stableMode, setStableMode] = useState<boolean>(true);
   const [nightMode, setNightMode] = useState<boolean>(true); // Default to Night Mode
+  const [showLabels, setShowLabels] = useState<boolean>(true); // Default: labels ON
 
   const [renderStats, setRenderStats] = useState<RenderStats>({
     fps: 60,
@@ -99,24 +103,28 @@ export default function App() {
         debugTiles={debugTiles}
         stableMode={stableMode}
         nightMode={nightMode}
+        showLabels={showLabels}
         onUpdateStats={handleUpdateStats}
+        onCameraControllerReady={setCameraController}
       />
 
       {/* UI Overlay */}
       <CityUI
         mapData={mapData}
+        cameraController={cameraController}
         renderStats={renderStats}
         streamingStats={streamingStats}
         debugTiles={debugTiles}
         stableMode={stableMode}
         nightMode={nightMode}
+        showLabels={showLabels}
         onToggleDebugTiles={() => setDebugTiles(prev => !prev)}
         onToggleStableMode={() => setStableMode(prev => !prev)}
         onToggleNightMode={() => setNightMode(prev => !prev)}
+        onToggleLabels={() => setShowLabels(prev => !prev)}
         onCameraSignal={handleCameraSignal}
         onReloadOSM={loadCityData}
       />
     </div>
   );
 }
-

@@ -71,6 +71,7 @@ export class TileStreamer {
   // Frustum culling
   private frustum = new THREE.Frustum();
   private frustumMatrix = new THREE.Matrix4();
+  private tileBoxes = new Map<string, THREE.Box3>();
 
   // Tile cache — keep dormant tiles to avoid refetch on pan-back
   private tileCache = new Map<string, LoadedTileContainer>();
@@ -152,6 +153,14 @@ export class TileStreamer {
       if (!respManifest.ok) throw new Error(`Manifest fetch failed: ${respManifest.statusText}`);
       this.manifest = await respManifest.json();
 
+      // Precompute tile bounding boxes
+      this.manifest!.tiles.forEach(t => {
+        this.tileBoxes.set(t.id, new THREE.Box3(
+          new THREE.Vector3(t.bounds.minX, -20, t.bounds.minZ),
+          new THREE.Vector3(t.bounds.maxX, 200, t.bounds.maxZ)
+        ));
+      });
+
       const respOverview = await fetch('/overture_tiles_full/overview.json');
       if (respOverview.ok) {
         this.overviewData = await respOverview.json();
@@ -206,21 +215,25 @@ export class TileStreamer {
     }
   }
 
-  public update(cameraPosition: THREE.Vector3): void {
+  public update(camera: THREE.PerspectiveCamera): void {
     if (!this.manifest) return;
 
     // Throttle tile logic to max 5Hz — camera/render loop runs at 60fps independently
     const now = performance.now();
     if (now - this.lastUpdateTime < this.UPDATE_INTERVAL) {
       // Still do frustum culling every frame (cheap)
-      this.updateFrustumCulling();
+      this.updateFrustumCulling(camera);
       return;
     }
     this.lastUpdateTime = now;
 
-    const altitude = cameraPosition.y;
-    const camX = cameraPosition.x;
-    const camZ = cameraPosition.z;
+    // Build Frustum
+    this.frustumMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    this.frustum.setFromProjectionMatrix(this.frustumMatrix);
+
+    const altitude = camera.position.y;
+    const camX = camera.position.x;
+    const camZ = camera.position.z;
 
     // Hysteresis LOD State Machine
     let targetLOD: LODLevel = this.currentLOD;
@@ -258,26 +271,38 @@ export class TileStreamer {
 
     // 1. Calculate desired tiles for loading
     const newQueue: Array<{ tile: TileManifestItem; lod: LODLevel; dist: number }> = [];
+    const visibleTilesThisFrame = new Set<string>();
 
     for (const tile of this.manifest.tiles) {
+      const tileBox = this.tileBoxes.get(tile.id);
+      if (!tileBox) continue;
+
       const dist = Math.hypot(tile.center.x - camX, tile.center.z - camZ);
 
-      if (dist <= loadRadius) {
-        const loaded = this.loadedTiles.get(tile.id);
-        const fetchKey = `${tile.id}_${targetLOD}`;
+      // Fast distance reject
+      if (dist > unloadRadius) continue;
 
-        if ((!loaded || loaded.lod !== targetLOD) && !this.activeFetches.has(fetchKey)) {
-          // Check tile cache first before queuing fetch
-          const cached = this.tileCache.get(fetchKey);
-          if (cached) {
-            // Restore from cache instead of refetching
-            this.tileGroupParent.add(cached.group);
-            if (cached.debugHelper) this.debugGroup.add(cached.debugHelper);
-            cached.state = TileState.VISIBLE;
-            this.loadedTiles.set(tile.id, cached);
-            this.tileCache.delete(fetchKey);
-          } else {
-            newQueue.push({ tile, lod: targetLOD, dist });
+      // Frustum check
+      if (this.frustum.intersectsBox(tileBox)) {
+        visibleTilesThisFrame.add(tile.id);
+
+        if (dist <= loadRadius) {
+          const loaded = this.loadedTiles.get(tile.id);
+          const fetchKey = `${tile.id}_${targetLOD}`;
+
+          if ((!loaded || loaded.lod !== targetLOD) && !this.activeFetches.has(fetchKey)) {
+            // Check tile cache first before queuing fetch
+            const cached = this.tileCache.get(fetchKey);
+            if (cached) {
+              // Restore from cache instead of refetching
+              this.tileGroupParent.add(cached.group);
+              if (cached.debugHelper) this.debugGroup.add(cached.debugHelper);
+              cached.state = TileState.VISIBLE;
+              this.loadedTiles.set(tile.id, cached);
+              this.tileCache.delete(fetchKey);
+            } else {
+              newQueue.push({ tile, lod: targetLOD, dist });
+            }
           }
         }
       }
@@ -305,8 +330,9 @@ export class TileStreamer {
       if (!tileMeta) continue;
 
       const dist = Math.hypot(tileMeta.center.x - camX, tileMeta.center.z - camZ);
+      const isVisible = visibleTilesThisFrame.has(tileId);
 
-      if (dist > unloadRadius) {
+      if (dist > unloadRadius || (!isVisible && dist > loadRadius * 0.5)) {
         // Move to cache instead of destroying
         this.tileGroupParent.remove(container.group);
         if (container.debugHelper) this.debugGroup.remove(container.debugHelper);
@@ -336,7 +362,7 @@ export class TileStreamer {
     this.debugGroup.visible = this.debugMode;
 
     // Frustum cull after tile updates
-    this.updateFrustumCulling();
+    this.updateFrustumCulling(camera);
 
     this.stats = {
       loadedTiles: this.loadedTiles.size,
@@ -352,11 +378,12 @@ export class TileStreamer {
   }
 
   /** Frustum culling — hide tiles behind the camera to save 40-60% draw calls */
-  private updateFrustumCulling(): void {
+  private updateFrustumCulling(camera: THREE.PerspectiveCamera): void {
+    if (!camera.matrixWorldInverse) {
+      console.error("Camera missing matrixWorldInverse:", camera);
+      return;
+    }
     // Build frustum from current camera
-    const camera = this.scene.getObjectByProperty('type', 'PerspectiveCamera') as THREE.PerspectiveCamera | undefined;
-    if (!camera) return;
-
     this.frustumMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     this.frustum.setFromProjectionMatrix(this.frustumMatrix);
 
@@ -389,7 +416,6 @@ export class TileStreamer {
       let roadCount = 0;
       let treeCount = 0;
 
-      // Extract complete features (Buildings, Roads, Water, Green Areas, Instanced Trees)
       const bldgList = lod === 1 ? (data.lod1?.buildings || []) : (lod >= 2 ? data.lod2.buildings : []);
       const roadList = lod === 1 ? (data.lod1?.roads || []) : (lod >= 2 ? data.lod2.roads : []);
       const waterList = data.lod2.waterways || data.lod1?.waterways || [];
@@ -401,6 +427,7 @@ export class TileStreamer {
       this.buildWaterwaysMesh(tileGroup, waterList);
       this.buildParksMesh(tileGroup, parkList);
       treeCount = this.buildInstancedTrees(tileGroup, treeList);
+
 
       const debugHelper = this.createTileDebugOutline(tileMeta);
       this.debugGroup.add(debugHelper);
@@ -423,6 +450,7 @@ export class TileStreamer {
         state: TileState.VISIBLE,
         stats: { buildings: bldgCount, roads: roadCount, trees: treeCount },
       });
+
 
       this.tileStateMap.set(tileMeta.id, TileState.VISIBLE);
 

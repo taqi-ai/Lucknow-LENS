@@ -32,6 +32,8 @@ export class TileStreamer {
 
   private loadedTiles = new Map<string, LoadedTileContainer>();
   private tileStateMap = new Map<string, TileState>();
+  public loadedBuildings = new Map<string, BuildingFootprint>();
+  private tileBuildingsMap = new Map<string, string[]>();
   private loadQueue: Array<{ tile: TileManifestItem; lod: LODLevel; dist: number }> = [];
   private activeFetches = new Set<string>();
 
@@ -357,6 +359,12 @@ export class TileStreamer {
         this.loadedTiles.delete(tileId);
         this.tileStateMap.set(tileId, TileState.UNLOADED);
 
+        const bldgIds = this.tileBuildingsMap.get(tileId);
+        if (bldgIds) {
+          bldgIds.forEach(id => this.loadedBuildings.delete(id));
+          this.tileBuildingsMap.delete(tileId);
+        }
+
         // Evict oldest cache entries if over limit
         if (this.tileCache.size > this.MAX_CACHE_SIZE) {
           const firstKey = this.tileCache.keys().next().value;
@@ -442,6 +450,13 @@ export class TileStreamer {
       this.buildParksMesh(tileGroup, parkList);
       treeCount = this.buildInstancedTrees(tileGroup, treeList);
 
+      const bldgIds: string[] = [];
+      bldgList.forEach(b => {
+        this.loadedBuildings.set(b.id, b);
+        bldgIds.push(b.id);
+      });
+      this.tileBuildingsMap.set(tileMeta.id, bldgIds);
+
 
       const debugHelper = this.createTileDebugOutline(tileMeta);
       this.debugGroup.add(debugHelper);
@@ -522,6 +537,7 @@ export class TileStreamer {
         const mergedWall = this.mergeGeometries(wallGeos[i]);
         if (mergedWall) {
           const mesh = new THREE.Mesh(mergedWall, this.buildingVisuals.wallMaterials[i]);
+          mesh.name = 'buildings';
           mesh.castShadow = true;
           mesh.receiveShadow = true;
           parent.add(mesh);
@@ -532,6 +548,7 @@ export class TileStreamer {
         const mergedRoof = this.mergeGeometries(roofGeos[i]);
         if (mergedRoof) {
           const mesh = new THREE.Mesh(mergedRoof, this.buildingVisuals.roofMaterials[i]);
+          mesh.name = 'buildings';
           mesh.castShadow = true;
           mesh.receiveShadow = true;
           parent.add(mesh);
@@ -587,6 +604,7 @@ export class TileStreamer {
         const mergedGeo = this.mergeGeometries(geos[cat]);
         if (mergedGeo) {
           const mesh = new THREE.Mesh(mergedGeo, this.roadMaterials[cat]);
+          mesh.name = 'roads';
           mesh.receiveShadow = true;
           parent.add(mesh);
         }
@@ -613,6 +631,7 @@ export class TileStreamer {
         const geo = new THREE.ShapeGeometry(shape);
         geo.rotateX(-Math.PI / 2);
         const mesh = new THREE.Mesh(geo, this.waterMaterial);
+        mesh.name = 'water';
         mesh.position.y = -0.2;
         parent.add(mesh);
       } else {
@@ -633,6 +652,7 @@ export class TileStreamer {
           geo.translate((p1.x + p2.x) / 2, -0.1, (p1.z + p2.z) / 2);
 
           const mesh = new THREE.Mesh(geo, this.waterMaterial);
+          mesh.name = 'water';
           parent.add(mesh);
         }
       }
@@ -668,6 +688,7 @@ export class TileStreamer {
         const merged = this.mergeGeometries(geos[i]);
         if (merged) {
           const mesh = new THREE.Mesh(merged, this.parkMaterials[i]);
+          mesh.name = 'parks';
           parent.add(mesh);
         }
       }
@@ -695,6 +716,7 @@ export class TileStreamer {
 
       const template = this.treeMeshTemplates[b];
       const instancedMesh = new THREE.InstancedMesh(template.geometry, template.material, indices.length);
+      instancedMesh.name = 'trees';
 
       for (let j = 0; j < indices.length; j++) {
         const t = trees[indices[j]];

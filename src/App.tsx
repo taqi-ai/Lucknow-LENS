@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { CameraPreset, OSMMapData, RenderStats, CityStreamingStats } from './types';
+import { CameraPreset, OSMMapData, RenderStats, CityStreamingStats, SelectedEntity, SimulatedFlight, AIAction } from './types';
 import { CityViewport } from './components/3d/CityViewport';
 import { CityUI } from './components/ui/CityUI';
 import { MapPin, RefreshCw, AlertCircle } from 'lucide-react';
 import { parseOvertureGeoJSON } from './osm/overtureParser';
 import { CameraController } from './city/cameraController';
+import { LayerState } from './components/features/LayerControl';
+import { INITIAL_FLIGHTS, updateSimulatedFlights } from './interactions/flights';
 
 export default function App() {
   const [mapData, setMapData] = useState<OSMMapData | null>(null);
@@ -19,6 +21,33 @@ export default function App() {
   const [nightMode, setNightMode] = useState<boolean>(true); // Default to Night Mode
   const [showLabels, setShowLabels] = useState<boolean>(true); // Default: labels ON
 
+  // Layer toggler state
+  const [layers, setLayers] = useState<LayerState>({
+    base: {
+      buildings: true,
+      roads: true,
+      parks: true,
+      gomti: true,
+      places: true,
+      labels: true,
+    },
+    live: {
+      traffic: false,
+      aqi: false,
+      weather: false,
+      flights: false,
+      railways: false,
+      cameras: false,
+      news: false,
+    }
+  });
+
+  // Selection states
+  const [selectedEntity, setSelectedEntity] = useState<SelectedEntity | null>(null);
+
+  // Simulated flights feed
+  const [flights, setFlights] = useState<SimulatedFlight[]>(INITIAL_FLIGHTS);
+
   const [renderStats, setRenderStats] = useState<RenderStats>({
     fps: 60,
     drawCalls: 0,
@@ -28,6 +57,19 @@ export default function App() {
   });
 
   const [streamingStats, setStreamingStats] = useState<CityStreamingStats | undefined>(undefined);
+
+  // Flights updater loop
+  useEffect(() => {
+    let lastTime = performance.now();
+    const interval = setInterval(() => {
+      const now = performance.now();
+      const dt = (now - lastTime) / 1000;
+      lastTime = now;
+      
+      setFlights(prev => updateSimulatedFlights(prev, dt));
+    }, 150);
+    return () => clearInterval(interval);
+  }, []);
 
   const loadCityData = useCallback(async () => {
     setLoading(true);
@@ -57,6 +99,93 @@ export default function App() {
     setRenderStats(stats);
     if (sStats) setStreamingStats(sStats);
   }, []);
+
+  // Layer toggling handles labels sync
+  const handleToggleLayer = (category: 'base' | 'live', layer: string) => {
+    setLayers(prev => {
+      const nextCategory = { ...prev[category] };
+      const key = layer as keyof typeof nextCategory;
+      nextCategory[key] = !nextCategory[key] as any;
+      
+      if (layer === 'labels' && category === 'base') {
+        setShowLabels(nextCategory[key] as any);
+      }
+      
+      return {
+        ...prev,
+        [category]: nextCategory
+      };
+    });
+  };
+
+  const handleToggleLabels = () => {
+    setShowLabels(prev => {
+      const newVal = !prev;
+      setLayers(l => ({ ...l, base: { ...l.base, labels: newVal } }));
+      return newVal;
+    });
+  };
+
+  // View on Map actions execution (camera glide + layer enable + marker select)
+  const handleExecuteAIAction = (action: AIAction) => {
+    if (!cameraController) return;
+
+    if (action.type === 'FLY_TO' && action.latitude && action.longitude) {
+      cameraController.flyTo(action.latitude, action.longitude, 350);
+      
+      if (action.layer) {
+        setLayers(prev => ({
+          ...prev,
+          live: {
+            ...prev.live,
+            [action.layer!]: true
+          }
+        }));
+      }
+
+      // Generate context highlighted area to show in inspector
+      const nameMap: Record<string, string> = {
+        'traffic': 'Hazratganj Traffic Area',
+        'aqi': 'Gomti Nagar AQI Zone',
+        'flights': 'Amausi Flight Tracking Hub',
+        'railways': 'Charbagh Railways Area',
+        'news': 'Gomti News Zone'
+      };
+
+      const customRegistry = {
+        'traffic': { id: 'ai-traffic', name: 'Hazratganj Traffic Area', x: -382, z: 372, lat: 26.8467, lon: 80.9461 },
+        'aqi': { id: 'ai-aqi', name: 'Gomti Nagar AQI Zone', x: 3837, z: 1677, lat: 26.8315, lon: 80.9812 },
+        'flights': { id: 'ai-flights', name: 'Amausi Flight Area', x: -9987, z: 9769, lat: 26.7606, lon: 80.8893 },
+        'railways': { id: 'ai-railways', name: 'Charbagh Railways Area', x: -1499, z: 1573, lat: 26.8322, lon: 80.9221 },
+        'news': { id: 'ai-news', name: 'Gomti News Zone', x: 0, z: 0, lat: 26.8525, lon: 80.9545 }
+      };
+
+      const selectedLayer = action.layer || 'news';
+      const highlightPOI = customRegistry[selectedLayer as keyof typeof customRegistry];
+      
+      setSelectedEntity({
+        type: 'poi',
+        id: highlightPOI.id,
+        name: nameMap[selectedLayer] || 'AI Analyzed Zone',
+        details: {
+          category: 'AI Highlighted Area',
+          description: `This zone is currently highlighted on the map as part of your query analysis.`
+        },
+        latitude: highlightPOI.lat,
+        longitude: highlightPOI.lon,
+        x: highlightPOI.x,
+        z: highlightPOI.z
+      });
+    } else if (action.type === 'ENABLE_LAYER' && action.layer) {
+      setLayers(prev => ({
+        ...prev,
+        live: {
+          ...prev.live,
+          [action.layer!]: true
+        }
+      }));
+    }
+  };
 
   if (loading) {
     return (
@@ -120,8 +249,12 @@ export default function App() {
         stableMode={stableMode}
         nightMode={nightMode}
         showLabels={showLabels}
+        layers={layers}
+        flights={flights}
+        selectedEntity={selectedEntity}
         onUpdateStats={handleUpdateStats}
         onCameraControllerReady={setCameraController}
+        onSelectEntity={setSelectedEntity}
       />
 
       {/* UI Overlay */}
@@ -134,12 +267,18 @@ export default function App() {
         stableMode={stableMode}
         nightMode={nightMode}
         showLabels={showLabels}
+        layers={layers}
+        selectedEntity={selectedEntity}
+        flights={flights}
         onToggleDebugTiles={() => setDebugTiles(prev => !prev)}
         onToggleStableMode={() => setStableMode(prev => !prev)}
         onToggleNightMode={() => setNightMode(prev => !prev)}
-        onToggleLabels={() => setShowLabels(prev => !prev)}
+        onToggleLabels={handleToggleLabels}
         onCameraSignal={handleCameraSignal}
         onReloadOSM={loadCityData}
+        onToggleLayer={handleToggleLayer}
+        onSelectEntity={setSelectedEntity}
+        onExecuteAction={handleExecuteAIAction}
       />
     </div>
   );

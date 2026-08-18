@@ -43,15 +43,19 @@ export class BuildingVisuals {
   private initMaterials() {
     for (let i = 0; i < DAY_PALETTE.length; i++) {
       // MeshStandardMaterial gives much better depth shading than Lambert
+      // Variations in roughness/metalness create more realistic neighborhoods
+      const roughnessVar = 0.75 + (i * 0.05); // e.g. 0.75 to 0.95
+      const metalnessVar = 0.02 + (i * 0.02); // e.g. 0.02 to 0.10
+
       this.wallMaterials.push(new THREE.MeshStandardMaterial({
         color: NIGHT_PALETTE[i].wall,
-        roughness: 0.85,
-        metalness: 0.05, // Slight architectural reflection
+        roughness: roughnessVar,
+        metalness: metalnessVar,
       }));
 
       this.roofMaterials.push(new THREE.MeshStandardMaterial({
         color: NIGHT_PALETTE[i].roof,
-        roughness: 0.9,
+        roughness: 0.95,
         metalness: 0.0,
       }));
     }

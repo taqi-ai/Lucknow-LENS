@@ -196,16 +196,20 @@ export class CityRenderer {
   // GOMTI RIVER & WATERWAYS
   // -------------------------------------------------------------
   private createWaterways() {
-    const waterMat = new THREE.MeshStandardMaterial({
-      color: 0x0284c7, // Muted river blue
-      roughness: 0.18,
-      metalness: 0.75,
+    const waterMat = new THREE.MeshPhysicalMaterial({
+      color: 0x0284c7, // Deep river blue
+      roughness: 0.12,
+      metalness: 0.85,
+      transmission: 0.6, // Glass-like transparency
+      opacity: 0.9,
+      transparent: true,
+      ior: 1.33, // Index of refraction for water
       side: THREE.DoubleSide,
     });
 
     const riverBankMat = new THREE.MeshStandardMaterial({
-      color: 0x86efac, // Soft riverbank green verge
-      roughness: 0.9,
+      color: 0x4ade80, // Richer riverbank green
+      roughness: 0.95,
     });
 
     const waterGeos: THREE.BufferGeometry[] = [];
@@ -267,8 +271,8 @@ export class CityRenderer {
   // -------------------------------------------------------------
   private createGreenAreas() {
     const greenMat = new THREE.MeshStandardMaterial({
-      color: 0x86efac, // Soft natural park green
-      roughness: 0.9,
+      color: 0x22c55e, // Richer natural park green
+      roughness: 0.85,
       metalness: 0.0,
       side: THREE.DoubleSide,
     });
@@ -308,10 +312,10 @@ export class CityRenderer {
   // ROADS (REAL OSM Highways + Sidewalks & Markings)
   // -------------------------------------------------------------
   private createRoads() {
-    const majorRoadMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.8 }); // Dark asphalt
-    const minorRoadMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.85 }); // Slate grey
-    const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.9 }); // Concrete sidewalk
-    const markingMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.6 }); // White lane marking
+    const majorRoadMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.7, metalness: 0.1 }); // Darker, smoother asphalt for highways
+    const minorRoadMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.85 }); // Slate grey for local roads
+    const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.95 }); // Concrete sidewalk
+    const markingMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5, emissive: 0x333333 }); // Brighter white lane marking with slight glow
 
     const majorRoadGeos: THREE.BufferGeometry[] = [];
     const minorRoadGeos: THREE.BufferGeometry[] = [];

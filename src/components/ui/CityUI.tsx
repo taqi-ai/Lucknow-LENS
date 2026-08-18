@@ -44,21 +44,21 @@ export const CityUI: React.FC<CityUIProps> = ({
     <>
       {/* Top Left Branding Header Badge */}
       <div className="absolute top-4 left-4 z-20 pointer-events-none">
-        <div className="pointer-events-auto bg-slate-900/90 border border-slate-700/80 backdrop-blur-xl rounded-2xl p-3.5 shadow-2xl flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 via-orange-500 to-amber-300 flex items-center justify-center text-slate-950 shadow-md">
+        <div className="pointer-events-auto glass-panel rounded-2xl p-3.5 flex items-center gap-4 transition-all hover:bg-slate-900/80">
+          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 via-orange-500 to-amber-300 flex items-center justify-center text-slate-950 shadow-[0_0_15px_rgba(245,158,11,0.3)]">
             <Building2 className="w-5 h-5 font-bold" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xs sm:text-sm font-extrabold text-white tracking-tight">
-                LUCKNOW CITY DIGITAL TWIN
+            <div className="flex items-center gap-2 mb-0.5">
+              <h1 className="text-sm font-display font-extrabold text-white tracking-wide">
+                LUCKNOW LENS
               </h1>
-              <span className="bg-emerald-500/20 text-emerald-300 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-emerald-500/30">
-                {stableMode ? 'STABLE CITY MODE' : 'DYNAMIC LOD'}
+              <span className="bg-emerald-500/10 text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-500/20 uppercase tracking-wider">
+                {stableMode ? 'STABLE MODE' : 'DYNAMIC LOD'}
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 font-medium">
-              Lucknow Bounds • Lat {mapData.bounds.centerLat.toFixed(4)}°, Lon {mapData.bounds.centerLon.toFixed(4)}°
+            <p className="text-[11px] text-slate-400 font-medium tracking-wide">
+              Lat {mapData.bounds.centerLat.toFixed(4)}° • Lon {mapData.bounds.centerLon.toFixed(4)}°
             </p>
           </div>
         </div>
@@ -169,7 +169,7 @@ export const CityUI: React.FC<CityUIProps> = ({
 
       {/* Bottom Left STREAMING ENGINE STATS PANEL */}
       <div className="absolute bottom-4 left-4 z-20 pointer-events-none">
-        <div className="pointer-events-auto bg-slate-900/95 border border-slate-700/80 backdrop-blur-xl rounded-2xl p-4 shadow-2xl text-xs text-slate-200 min-w-[320px]">
+        <div className="pointer-events-auto glass-panel rounded-2xl p-5 text-xs text-slate-200 min-w-[320px] transition-all hover:bg-slate-900/80">
           <div className="text-[10px] font-extrabold uppercase tracking-wider text-amber-400 mb-2.5 flex items-center justify-between border-b border-slate-800 pb-2">
             <div className="flex items-center gap-1.5">
               <Activity className="w-3.5 h-3.5 text-amber-400" />

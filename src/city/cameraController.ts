@@ -21,7 +21,7 @@ export class CameraController {
   public distance = 5000;
 
   // Desired State for Damping
-  private destTarget = new THREE.Vector3(0, 0, 0);
+  public destTarget = new THREE.Vector3(0, 0, 0);
   public destAzimuth = 0;
   private destPitch = Math.PI / 4;
   private destDistance = 5000;
@@ -324,6 +324,19 @@ export class CameraController {
     this.destPitch = this.endState.pitch;
     this.destDistance = this.endState.distance;
   }
+
+  public flyTo(lat: number, lon: number, distance = 400, duration = 1400) {
+    const centerLat = 26.8475;
+    const centerLon = 80.945;
+    const mPerLat = 111320;
+    const mPerLon = 111320 * Math.cos((centerLat * Math.PI) / 180);
+    const x = (lon - centerLon) * mPerLon;
+    const z = -(lat - centerLat) * mPerLat;
+
+    const targetVector = new THREE.Vector3(x, 0, z);
+    this.transitionTo(targetVector, this.destAzimuth, Math.PI / 4, distance, duration);
+  }
+
 
   public update(time: number = performance.now()) {
     if (this.presetActive) {

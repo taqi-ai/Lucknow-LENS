@@ -1,8 +1,12 @@
 import React, { useState } from 'react';
-import { CameraPreset, OSMMapData, RenderStats, CityStreamingStats } from '../../types';
+import { CameraPreset, OSMMapData, RenderStats, CityStreamingStats, SelectedEntity, SimulatedFlight, AIAction, SearchResult } from '../../types';
 import { ReportModal } from './ReportModal';
 import { CameraWidget } from './CameraWidget';
-import { Compass, Building2, FileText, Activity, Map, Navigation, Maximize2, MapPin, Grid, Globe, ShieldCheck, Sun, Moon, Tag } from 'lucide-react';
+import { SearchUI } from '../features/SearchUI';
+import { LayerControl, LayerState } from '../features/LayerControl';
+import { InfoPanel } from '../features/InfoPanel';
+import { AnalystPanel } from '../features/AnalystPanel';
+import { Compass, Building2, FileText, Activity, Map, Navigation, MapPin, Grid, Globe, ShieldCheck, Sun, Moon, Tag } from 'lucide-react';
 import { CameraController } from '../../city/cameraController';
 
 interface CityUIProps {
@@ -14,12 +18,18 @@ interface CityUIProps {
   stableMode: boolean;
   nightMode: boolean;
   showLabels: boolean;
+  layers: LayerState;
+  selectedEntity: SelectedEntity | null;
+  flights: SimulatedFlight[];
   onToggleDebugTiles: () => void;
   onToggleStableMode: () => void;
   onToggleNightMode: () => void;
   onToggleLabels: () => void;
   onCameraSignal: (signal: CameraPreset) => void;
   onReloadOSM: () => void;
+  onToggleLayer: (category: 'base' | 'live', layer: string) => void;
+  onSelectEntity: (entity: SelectedEntity | null) => void;
+  onExecuteAction: (action: AIAction) => void;
 }
 
 export const CityUI: React.FC<CityUIProps> = ({
@@ -31,19 +41,42 @@ export const CityUI: React.FC<CityUIProps> = ({
   stableMode,
   nightMode,
   showLabels,
+  layers,
+  selectedEntity,
+  flights,
   onToggleDebugTiles,
   onToggleStableMode,
   onToggleNightMode,
   onToggleLabels,
   onCameraSignal,
   onReloadOSM,
+  onToggleLayer,
+  onSelectEntity,
+  onExecuteAction,
 }) => {
   const [isReportOpen, setIsReportOpen] = useState(false);
 
+  const handleSearchResultClick = (result: SearchResult) => {
+    if (cameraController) {
+      cameraController.flyTo(result.latitude, result.longitude, 350);
+      onSelectEntity({
+        type: result.category === 'Road' ? 'poi' : (result.category === 'Building' ? 'building' : 'poi'),
+        id: result.id,
+        name: result.name,
+        details: result,
+        latitude: result.latitude,
+        longitude: result.longitude,
+        x: result.x,
+        z: result.z
+      });
+    }
+  };
+
   return (
     <>
-      {/* Top Left Branding Header Badge */}
-      <div className="absolute top-4 left-4 z-20 pointer-events-none">
+      {/* Left Column Dashboard Stack (Branding + Search + AI Analyst) */}
+      <div className="absolute top-4 left-4 z-20 w-[330px] pointer-events-none flex flex-col gap-3">
+        {/* Branding header badge */}
         <div className="pointer-events-auto glass-panel rounded-2xl p-3.5 flex items-center gap-4 transition-all hover:bg-slate-900/80">
           <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 via-orange-500 to-amber-300 flex items-center justify-center text-slate-950 shadow-[0_0_15px_rgba(245,158,11,0.3)]">
             <Building2 className="w-5 h-5 font-bold" />
@@ -62,11 +95,22 @@ export const CityUI: React.FC<CityUIProps> = ({
             </p>
           </div>
         </div>
+
+        {/* Search bar autocomplete input widget */}
+        <div className="pointer-events-auto">
+          <SearchUI mapData={mapData} onSelectResult={handleSearchResultClick} />
+        </div>
+
+        {/* Ask Lucknow Lens AI Panel */}
+        <div className="pointer-events-auto">
+          <AnalystPanel onExecuteAction={onExecuteAction} />
+        </div>
       </div>
 
-      {/* Top Right Controls & Camera View Presets */}
-      <div className="absolute top-4 right-4 z-20 pointer-events-none flex flex-wrap items-center gap-2 justify-end">
-        <div className="pointer-events-auto flex items-center gap-1.5 bg-slate-900/90 border border-slate-700/80 backdrop-blur-xl rounded-2xl p-1.5 shadow-2xl">
+      {/* Right Column Dashboard Stack (Toggles + Layers + Inspector Card) */}
+      <div className="absolute top-4 right-4 z-20 w-[350px] pointer-events-none flex flex-col gap-3 items-end">
+        {/* Preset Modes / Preset Camera Signals */}
+        <div className="pointer-events-auto flex flex-wrap items-center gap-1.5 bg-slate-900/90 border border-slate-700/80 backdrop-blur-xl rounded-2xl p-1.5 shadow-2xl justify-end">
           <button
             onClick={onToggleNightMode}
             className={`px-3 py-1.5 text-xs font-extrabold rounded-xl transition-all flex items-center gap-1.5 border ${
@@ -90,7 +134,7 @@ export const CityUI: React.FC<CityUIProps> = ({
             title="Toggle Stable Mode (Zero-Flicker Consistent Representation)"
           >
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>[STABLE CITY MODE]</span>
+            <span>[STABLE]</span>
           </button>
 
           <button
@@ -99,7 +143,7 @@ export const CityUI: React.FC<CityUIProps> = ({
             title="Frame Complete Lucknow Dataset Bounding Box"
           >
             <Globe className="w-3.5 h-3.5" />
-            <span>[ FULL CITY ]</span>
+            <span>[ FULL ]</span>
           </button>
 
           <button
@@ -110,7 +154,7 @@ export const CityUI: React.FC<CityUIProps> = ({
                 ? 'bg-violet-500 text-white border-violet-400 shadow-lg shadow-violet-500/20'
                 : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border-slate-700'
             }`}
-            title="Toggle Geographic Labels (POIs & Road Names)"
+            title="Toggle Geographic Labels"
           >
             <Tag className="w-3.5 h-3.5" />
             <span>LABELS</span>
@@ -123,10 +167,10 @@ export const CityUI: React.FC<CityUIProps> = ({
                 ? 'bg-sky-500 text-slate-950 border-sky-400 shadow-lg shadow-sky-500/20'
                 : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border-slate-700'
             }`}
-            title="Toggle Spatial 500m Grid Tile Boundaries & IDs"
+            title="Toggle Spatial Grid Tiles"
           >
             <Grid className="w-3.5 h-3.5" />
-            <span>DEBUG TILES</span>
+            <span>GRID</span>
           </button>
 
           <button
@@ -135,7 +179,7 @@ export const CityUI: React.FC<CityUIProps> = ({
             title="District Overview Perspective"
           >
             <Compass className="w-3.5 h-3.5 text-amber-400" />
-            <span className="hidden sm:inline">DISTRICT</span>
+            <span>DISTRICT</span>
           </button>
 
           <button
@@ -162,9 +206,31 @@ export const CityUI: React.FC<CityUIProps> = ({
             title="Orthographic Top-Down Map View"
           >
             <Map className="w-3.5 h-3.5 text-indigo-400" />
-            <span className="hidden sm:inline">TOP MAP</span>
+            <span>TOP MAP</span>
+          </button>
+
+          {/* New Report Modal trigger button */}
+          <button
+            onClick={() => setIsReportOpen(true)}
+            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition-all border border-slate-700/60 flex items-center gap-1.5"
+            title="Open City Analytics Report"
+          >
+            <FileText className="w-3.5 h-3.5 text-amber-400" />
+            <span>REPORT</span>
           </button>
         </div>
+
+        {/* Layers control manager widget */}
+        <div className="pointer-events-auto w-full">
+          <LayerControl layers={layers} onToggleLayer={onToggleLayer} />
+        </div>
+
+        {/* Selected entity inspector info panel card */}
+        {selectedEntity && (
+          <div className="pointer-events-auto w-full">
+            <InfoPanel entity={selectedEntity} onClose={() => onSelectEntity(null)} />
+          </div>
+        )}
       </div>
 
       {/* Bottom Left STREAMING ENGINE STATS PANEL */}
@@ -268,8 +334,6 @@ export const CityUI: React.FC<CityUIProps> = ({
         </div>
       </div>
 
-
-
       {/* Camera Controls Widget */}
       <CameraWidget controller={cameraController} />
 
@@ -283,4 +347,3 @@ export const CityUI: React.FC<CityUIProps> = ({
     </>
   );
 };
-

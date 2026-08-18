@@ -171,6 +171,52 @@ export interface CityStreamingStats {
   pendingLoads: number;
   boundaryDebug?: BoundaryDebugInfo;
 }
+export interface SearchResult {
+  id: string;
+  name: string;
+  category: string;
+  latitude: number;
+  longitude: number;
+  x: number;
+  z: number;
+  importance: number;
+}
 
+export type SelectedEntityType = 'building' | 'poi' | 'aircraft';
 
+export interface SelectedEntity {
+  type: SelectedEntityType;
+  id: string;
+  name: string;
+  details: Record<string, any>;
+  latitude: number;
+  longitude: number;
+  x: number;
+  z: number;
+}
 
+export interface SimulatedFlight {
+  id: string;
+  airline: string;
+  altitude: number;
+  speed: number;
+  heading: number;
+  origin: string;
+  destination: string;
+  x: number;
+  z: number;
+  progress: number;
+}
+
+export interface AIAction {
+  type: 'FLY_TO' | 'ENABLE_LAYER' | 'DISABLE_LAYER' | 'NONE';
+  latitude?: number;
+  longitude?: number;
+  layer?: string;
+}
+
+export interface AIResponse {
+  answer: string;
+  sources: string[];
+  action?: AIAction;
+}

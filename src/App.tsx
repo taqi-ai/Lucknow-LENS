@@ -60,17 +60,30 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="w-screen h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-100 font-sans p-6">
-        <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mb-4 animate-pulse">
-          <MapPin className="w-8 h-8 text-amber-400" />
-        </div>
-        <h2 className="text-xl font-bold mb-2">Initializing Lucknow City Engine</h2>
-        <p className="text-sm text-slate-400 mb-6 text-center max-w-md">
-          Preparing spatial tile streamer and loading Overture Maps data...
-        </p>
-        <div className="flex items-center gap-2 text-amber-400 text-xs font-semibold">
-          <RefreshCw className="w-4 h-4 animate-spin" />
-          <span>Loading Overture GIS Data...</span>
+      <div className="w-screen h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-100 font-sans p-6 relative overflow-hidden">
+        {/* Subtle background glow */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-amber-600/5 rounded-full blur-[100px] pointer-events-none" />
+        
+        <div className="glass-panel rounded-3xl p-10 flex flex-col items-center max-w-lg w-full relative z-10 border-white/5">
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-amber-500/20 to-orange-600/20 border border-amber-500/30 flex items-center justify-center mb-6 animate-pulse shadow-lg shadow-amber-500/10">
+            <MapPin className="w-10 h-10 text-amber-400" />
+          </div>
+          <h2 className="text-2xl font-display font-bold mb-2 tracking-tight text-white">LUCKNOW LENS</h2>
+          <h3 className="text-sm font-semibold tracking-widest text-amber-500/80 mb-6 uppercase">3D Digital Twin</h3>
+          
+          <p className="text-sm text-slate-400 mb-8 text-center leading-relaxed">
+            Initializing spatial engine and streaming Overture Maps data. Preparing city geometry...
+          </p>
+          
+          <div className="flex flex-col items-center gap-3 w-full">
+            <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-amber-500 to-orange-500 w-1/2 animate-[pulse_2s_ease-in-out_infinite] rounded-full" />
+            </div>
+            <div className="flex items-center gap-2 text-slate-300 text-xs font-medium">
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400" />
+              <span>Loading Geographic Data...</span>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -78,18 +91,21 @@ export default function App() {
 
   if (error || !mapData) {
     return (
-      <div className="w-screen h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-100 font-sans p-6">
-        <div className="w-16 h-16 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center mb-4 text-rose-400">
-          <AlertCircle className="w-8 h-8" />
+      <div className="w-screen h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-100 font-sans p-6 relative">
+        <div className="glass-panel rounded-3xl p-10 flex flex-col items-center max-w-lg w-full border-rose-500/20">
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-rose-500/20 to-red-600/20 border border-rose-500/30 flex items-center justify-center mb-6 text-rose-400 shadow-lg shadow-rose-500/10">
+            <AlertCircle className="w-10 h-10" />
+          </div>
+          <h2 className="text-2xl font-display font-bold mb-2 text-rose-100 tracking-tight">System Initialization Failed</h2>
+          <p className="text-sm text-slate-400 mb-8 text-center leading-relaxed">{error}</p>
+          
+          <button
+            onClick={loadCityData}
+            className="px-6 py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-bold text-sm rounded-xl shadow-xl shadow-amber-500/20 flex items-center gap-2 transition-all hover:scale-105 active:scale-95"
+          >
+            <RefreshCw className="w-4 h-4" /> Reboot Engine
+          </button>
         </div>
-        <h2 className="text-xl font-bold mb-2 text-rose-300">Overture Data Import Error</h2>
-        <p className="text-sm text-slate-400 mb-6 text-center max-w-md">{error}</p>
-        <button
-          onClick={loadCityData}
-          className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 flex items-center gap-2"
-        >
-          <RefreshCw className="w-4 h-4" /> Retry Loading Map
-        </button>
       </div>
     );
   }

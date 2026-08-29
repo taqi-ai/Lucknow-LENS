@@ -152,9 +152,47 @@ function widthFor(cls: RoadClass, subtype: string): number {
 const BRIDGE_TAG_MAX_LEN = 1500;
 const LEVEL_RANGE_MAX_LEN = 400;
 
+/**
+ * The name is better evidence than the attribute.
+ *
+ * A feature called "Polytechnic Flyover" or "Pucca Bridge" is a grade-separated
+ * structure — that is what the word means, and someone typed it deliberately.
+ * The `level` attribute, by contrast, is the linear-referenced field whose ranges
+ * the extractor dropped. So 30-odd of Lucknow's named flyovers and bridges were
+ * being drawn flat on the ground: Lohia Path, Gol Market, Polytechnic, Butler,
+ * Chandganj, Faizabad Road, Matiyari and the rest all carried level 0.
+ *
+ * Caps still apply, because a name can belong to the road that leads to the
+ * structure rather than the structure itself — "Packka pul bandha road" is the
+ * approach, not the bridge. Roads whose name ends in road/marg/path only qualify
+ * on the explicit flyover words, never on the weaker bridge words.
+ */
+const FLYOVER_NAME = /\b(flyover|over\s?bridge|overbridge)\b/i;
+const BRIDGE_NAME = /\b(bridge|setu|pul)\b/i;
+const APPROACH_NAME = /\b(road|marg|path|bandha)\b/i;
+/** A named flyover span; longer than this and the name is describing a corridor. */
+const NAMED_FLYOVER_MAX_LEN = 1200;
+/** A named river/rail bridge span. */
+const NAMED_BRIDGE_MAX_LEN = 600;
+
+function elevationFromName(name: string | undefined, lengthM: number): boolean {
+  if (!name) return false;
+  if (FLYOVER_NAME.test(name)) return lengthM <= NAMED_FLYOVER_MAX_LEN;
+  if (BRIDGE_NAME.test(name) && !APPROACH_NAME.test(name)) {
+    return lengthM <= NAMED_BRIDGE_MAX_LEN;
+  }
+  return false;
+}
+
 function resolveElevation(f: RawFeature, lengthM: number): { elevated: boolean; level: number } {
   const rawLevel = f.level ?? 0;
   const rawElevated = Boolean(f.isElevated) || rawLevel > 0;
+
+  // The name overrides a missing attribute, but never overrides the tunnel
+  // corridor below, which is checked first for metro.
+  if (!rawElevated && f.class !== 'subway' && elevationFromName(f.name, lengthM)) {
+    return { elevated: true, level: 1 };
+  }
   if (!rawElevated) return { elevated: false, level: 0 };
 
   // Metro viaducts are genuinely continuous; no length cap applies. The bored
@@ -176,8 +214,9 @@ function resolveElevation(f: RawFeature, lengthM: number): { elevated: boolean; 
       : { elevated: false, level: 0 };
   }
 
-  // Group B — linear reference lost; only trust short features.
-  return lengthM <= LEVEL_RANGE_MAX_LEN
+  // Group B — linear reference lost; only trust short features, or a name that
+  // says outright what the structure is.
+  return lengthM <= LEVEL_RANGE_MAX_LEN || elevationFromName(f.name, lengthM)
     ? { elevated: true, level: rawLevel }
     : { elevated: false, level: 0 };
 }

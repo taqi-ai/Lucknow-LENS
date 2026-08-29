@@ -230,9 +230,30 @@ const FRAG_OUTPUT = /* glsl */ `
     // Haze still dims lights, just far less aggressively than it dims surfaces.
     float lightHaze = 1.0 - haze * 0.45;
 
-    // Near field: a real per-pane window grid. Faded out past ~900 m, where a
-    // 3.6 m grid is sub-pixel and turns the skyline into moire.
-    float winFade = 1.0 - smoothstep(400.0, 900.0, dist);
+    // The near (window grid) and far (per-building glow) models are two halves of
+    // ONE crossfade, and must stay complementary.
+    //
+    // They used to fade independently: windows died at 900 m and the glow did not
+    // begin until 1500 m, so between those two distances buildings received no
+    // night lighting whatsoever. That 600 m dead band is the dark ring you fly
+    // through on every zoom, and at neighbourhood range it split the frame — near
+    // buildings black, far buildings lit — because the split is camera distance,
+    // not geometry. Complementary weights make the total coverage constant, so
+    // there is no distance at which the city is unlit.
+    float nearFar  = smoothstep(500.0, 1600.0, dist);
+    float winFade  = 1.0 - nearFar;
+    float farGlow  = nearFar;
+
+    // Coverage and intensity are separate concerns. The glow's original strength
+    // was tuned for buildings a few pixels across at >1.5 km; letting the
+    // crossfade hand it that same strength at 600 m turned every block into a
+    // white blob. Strength therefore ramps over its own, much longer distance,
+    // so the glow enters gently and only reaches full value out where it was
+    // actually tuned — leaving District and Full City looking as they did.
+    float glowStrength = mix(0.45, 2.8, smoothstep(900.0, 4200.0, dist));
+
+    // Near field: a real per-pane window grid. Sub-pixel past ~1 km, which is why
+    // it hands over to the glow rather than being drawn at range.
     if (nIsRoof < 0.5 && winFade > 0.01) {
       float ang = nOrient * 6.2831853;
       vec2 dir = vec2(cos(ang), sin(ang));
@@ -256,15 +277,18 @@ const FRAG_OUTPUT = /* glsl */ `
       gl_FragColor.rgb += warm * on * pane * uNight * winFade * lightHaze * 2.2;
     }
 
+    // Street-level bounce. At close range the window grid is the only thing
+    // emitting, which left facades reading as black cutouts with floating panes.
+    // Real streets are lit from below by sodium spill off the carriageway, so
+    // lower storeys pick up a warm wash that decays with height. This is what
+    // gives near buildings their massing back without touching the palette.
+    float bounce = (1.0 - nIsRoof) * winFade * exp(-max(vWorldPos.y, 0.0) / 16.0);
+    gl_FragColor.rgb += vec3(0.13, 0.10, 0.068) * bounce * uNight;
+
     // Far field: one soft glow per building, so the city still lights up when
     // viewed from altitude instead of going dark the moment you climb. Uses the
     // same hash as the window grid, so the buildings that glow from the air are
     // the ones that are lit close up.
-    //
-    // Ramped in only past ~1.5 km. Previously it started as soon as the window
-    // grid began fading, so at neighbourhood range both fired at once and the
-    // whole view went gold. The two are now genuinely exclusive.
-    float farGlow = smoothstep(1500.0, 4000.0, dist);
     if (farGlow > 0.01) {
       float litBldg = step(0.55, lensHash(nHash * 17.3 + 4.1));
       float commercial = nCls > 0.5 ? 1.7 : 1.0;
@@ -273,7 +297,7 @@ const FRAG_OUTPUT = /* glsl */ `
       vec3 neon = mix(vec3(0.20, 0.95, 1.0), vec3(1.0, 0.25, 0.85), step(0.5, lensHash(nHash * 5.7)));
       vec3 cityWarm = mix(sodium, neon, uCyber);
       gl_FragColor.rgb += cityWarm * litBldg * commercial
-                        * farGlow * uNight * lightHaze * 2.8;
+                        * farGlow * uNight * lightHaze * glowStrength;
     }
   }
 `;

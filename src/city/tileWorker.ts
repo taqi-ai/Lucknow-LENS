@@ -12,7 +12,7 @@
  * work, not a data migration.
  */
 
-import { buildBuildings, type BuildingInput } from './buildingGeometry';
+import { buildBuildings, triangulate, type BuildingInput } from './buildingGeometry';
 import { appendRibbon, buildElevationProfiles, classifyRoad, ROAD_HALF_WIDTH, type Pt } from './ribbon';
 import { isInsideLandmark } from './landmarkRegistry';
 
@@ -165,18 +165,31 @@ function buildStreetlights(roads: RoadIn[], originX: number, originZ: number): F
   return new Float32Array(out);
 }
 
-/** Ear-clip areas into a flat mesh at a given height. */
+/**
+ * Ear-clip areas into a flat mesh at a given height.
+ *
+ * This genuinely ear-clips now. It used to fan from vertex 0 on the claim that
+ * "park/water polygons in this dataset are near-convex", which is false: river
+ * channels, lakes and park boundaries are strongly concave, and a fan over a
+ * concave ring emits triangles spanning the ring's *convex hull*. That is what
+ * flooded whole neighbourhoods — Ambedkar Memorial Park among them — with water
+ * that the source polygon never covered.
+ *
+ * It only showed when zoomed in because the city-wide overlay always ear-clipped
+ * (overlayGeometry.triangulateArea); only the streamed tiles fanned, so the
+ * spill appeared exactly when tile geometry took over from the overlay.
+ */
 function buildAreas(areas: AreaIn[], originX: number, originZ: number, y: number): Float32Array {
   const verts: number[] = [];
   for (const a of areas) {
     if (!a?.points || a.points.length < 3) continue;
     const ring = a.points;
-    // Simple fan — park/water polygons in this dataset are near-convex and this
-    // avoids a second triangulator pass for surfaces that are never seen edge-on.
-    for (let i = 1; i < ring.length - 1; i++) {
-      const p0 = ring[0], p1 = ring[i], p2 = ring[i + 1];
-      const cross = (p1.x - p0.x) * (p2.z - p0.z) - (p1.z - p0.z) * (p2.x - p0.x);
-      const tri = cross > 0 ? [p0, p2, p1] : [p0, p1, p2];
+    const tris = triangulate(ring);
+    for (let t = 0; t < tris.length; t += 3) {
+      const pa = ring[tris[t]], pb = ring[tris[t + 1]], pc = ring[tris[t + 2]];
+      if (!pa || !pb || !pc) continue;
+      const cross = (pb.x - pa.x) * (pc.z - pa.z) - (pb.z - pa.z) * (pc.x - pa.x);
+      const tri = cross > 0 ? [pa, pc, pb] : [pa, pb, pc];
       for (const p of tri) {
         verts.push(p.x - originX, y, p.z - originZ);
       }

@@ -1,0 +1,7 @@
+[
+ {"n":"district_night","t":[-400,400],"az":0.6,"pi":0.55,"d":3000,"night":true},
+ {"n":"neigh_night","t":[-382,372],"az":0.6,"pi":0.5,"d":1100,"night":true},
+ {"n":"gomti_day","t":[600,-1400],"az":1.9,"pi":0.24,"d":900,"night":false},
+ {"n":"gomti_night","t":[600,-1400],"az":1.9,"pi":0.24,"d":900,"night":true},
+ {"n":"street_day","t":[-382,372],"az":0.6,"pi":0.25,"d":320,"night":false}
+]

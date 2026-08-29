@@ -1,7 +1,12 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
+import compression from "compression";
+import { CachedFeed } from "./server/providers/cache";
+import { OpenSkyProvider } from "./server/providers/opensky";
+import { RailRadarProvider } from "./server/providers/railradar";
 
 dotenv.config();
 
@@ -10,9 +15,85 @@ const PORT = 3000;
 
 app.use(express.json());
 
+// ---------------------------------------------------------------------------
+// STATIC ASSET DELIVERY
+//
+// Startup pulls ~22 MB of JSON (overview 7.3, places_labels 6.9, the Overture
+// geojson 7.1, manifest 1.3). Uncompressed that dominates time-to-first-city.
+// These are highly repetitive coordinate arrays and gzip roughly 8-10x.
+//
+// The .bin HLOD streams are already quantised so they compress far less; level 1
+// keeps CPU cost negligible while still trimming them.
+// ---------------------------------------------------------------------------
+app.use(compression({
+  level: 6,
+  threshold: 1024,
+  filter: (req, res) => {
+    if (req.path.endsWith(".bin")) return true;
+    return compression.filter(req, res);
+  },
+}));
+
+// City geometry is content-addressed by the bake and never mutates in place, so
+// reloads should hit cache instead of re-downloading hundreds of megabytes.
+app.use((req, res, next) => {
+  if (req.path.startsWith("/overture_tiles_full/") ||
+      req.path.startsWith("/overture/") ||
+      req.path.startsWith("/hlod/s_")) {
+    // Source tiles never change; HLOD super-tiles are cache-busted by the bake
+    // timestamp the client reads out of the manifest.
+    res.set("Cache-Control", "public, max-age=604800, immutable");
+  } else if (req.path.startsWith("/hlod/")) {
+    // The manifest itself must stay revalidated, or a re-bake is never noticed.
+    res.set("Cache-Control", "no-cache");
+  }
+  next();
+});
+
+// ---------------------------------------------------------------------------
+// LIVE DATA LAYER
+//
+// One cached feed per provider, shared by every connected client. The browser
+// never talks to an upstream API and never sees a credential — it polls these
+// endpoints, which serve from cache and carry explicit freshness metadata.
+//
+// Poll cadences are deliberately conservative: OpenSky's anonymous tier has a low
+// daily quota, and aircraft positions are interpolated client-side between polls.
+// ---------------------------------------------------------------------------
+const flightFeed = new CachedFeed(new OpenSkyProvider(), {
+  ttlMs: 12_000,
+  timeoutMs: 9_000,
+  maxStaleMs: 120_000,
+  attribution: "Data from the OpenSky Network (opensky-network.org)",
+});
+
+const trainFeed = new CachedFeed(new RailRadarProvider(), {
+  ttlMs: 20_000,
+  timeoutMs: 9_000,
+  maxStaleMs: 180_000,
+  attribution: "Live train data via RailRadar",
+});
+
+app.get("/api/live/flights", async (_req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.json(await flightFeed.get());
+});
+
+app.get("/api/live/trains", async (_req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.json(await trainFeed.get());
+});
+
 // API Health Check
-app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", mode: "3d-mini-city-procedural" });
+app.get("/api/health", async (_req, res) => {
+  const [flights, trains] = await Promise.all([flightFeed.get(), trainFeed.get()]);
+  res.json({
+    status: "ok",
+    live: {
+      flights: { status: flights.status, provider: flights.provider, count: flights.items.length },
+      trains: { status: trains.status, provider: trains.provider, count: trains.items.length },
+    },
+  });
 });
 
 // Deterministic response generator fallback
@@ -192,18 +273,34 @@ app.post("/api/analyst", async (req, res) => {
 
 // --- VITE MIDDLEWARE SETUP ---
 async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
+  // Prefer the prebuilt bundle whenever it exists. Vite's dev middleware compiles
+  // the app (three.js included) on first request, which cold-starts at ~90s and is
+  // what made localhost look unresponsive. `npm run serve` builds then serves this
+  // path; `npm run dev` still gets HMR when dist/ is absent.
+  const distPath = path.join(process.cwd(), "dist");
+  const hasBuild = fs.existsSync(path.join(distPath, "index.html"));
+  const useVite = process.env.NODE_ENV !== "production" && !hasBuild;
+
+  if (useVite) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
+    // Hashed asset filenames, so the bundle can be cached hard.
+    app.use(express.static(distPath, {
+      setHeaders: (res, filePath) => {
+        if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+          res.set("Cache-Control", "public, max-age=31536000, immutable");
+        }
+      },
+    }));
+    app.get("*", (_req, res) => {
+      res.set("Cache-Control", "no-cache");
       res.sendFile(path.join(distPath, "index.html"));
     });
+    console.log("Serving prebuilt bundle from dist/");
   }
 
   app.listen(PORT, "0.0.0.0", () => {

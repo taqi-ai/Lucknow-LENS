@@ -6,7 +6,7 @@ import { SearchUI } from '../features/SearchUI';
 import { LayerControl, LayerState } from '../features/LayerControl';
 import { InfoPanel } from '../features/InfoPanel';
 import { AnalystPanel } from '../features/AnalystPanel';
-import { Compass, Building2, FileText, Activity, Map, Navigation, MapPin, Grid, Globe, ShieldCheck, Sun, Moon, Tag } from 'lucide-react';
+import { Compass, Building2, FileText, Activity, Map, Navigation, MapPin, Grid, Globe, ShieldCheck, Sun, Moon, Tag, Palette } from 'lucide-react';
 import { CameraController } from '../../city/cameraController';
 
 interface CityUIProps {
@@ -18,6 +18,7 @@ interface CityUIProps {
   stableMode: boolean;
   nightMode: boolean;
   showLabels: boolean;
+  presentationMode: boolean;
   layers: LayerState;
   selectedEntity: SelectedEntity | null;
   flights: SimulatedFlight[];
@@ -25,6 +26,11 @@ interface CityUIProps {
   onToggleStableMode: () => void;
   onToggleNightMode: () => void;
   onToggleLabels: () => void;
+  onTogglePresentationMode: () => void;
+  skylineStyle?: 'warm' | 'clear' | 'cyberpunk';
+  onCycleSkyline?: () => void;
+  /** Freshness of the live aircraft feed. Never rendered as "live" unless status is ok. */
+  flightFeed?: { status: 'ok' | 'stale' | 'unavailable'; provider: string; ageSeconds: number | null; reason?: string };
   onCameraSignal: (signal: CameraPreset) => void;
   onReloadOSM: () => void;
   onToggleLayer: (category: 'base' | 'live', layer: string) => void;
@@ -41,6 +47,7 @@ export const CityUI: React.FC<CityUIProps> = ({
   stableMode,
   nightMode,
   showLabels,
+  presentationMode,
   layers,
   selectedEntity,
   flights,
@@ -48,6 +55,10 @@ export const CityUI: React.FC<CityUIProps> = ({
   onToggleStableMode,
   onToggleNightMode,
   onToggleLabels,
+  onTogglePresentationMode,
+  skylineStyle,
+  onCycleSkyline,
+  flightFeed,
   onCameraSignal,
   onReloadOSM,
   onToggleLayer,
@@ -74,10 +85,14 @@ export const CityUI: React.FC<CityUIProps> = ({
 
   return (
     <>
-      {/* Left Column Dashboard Stack (Branding + Search + AI Analyst) */}
-      <div className="absolute top-4 left-4 z-20 w-[330px] pointer-events-none flex flex-col gap-3">
-        {/* Branding header badge */}
-        <div className="pointer-events-auto glass-panel rounded-2xl p-3.5 flex items-center gap-4 transition-all hover:bg-slate-900/80">
+      {/* Presentation Mode keeps branding, search, scale controls and layers.
+          Only developer surfaces (AI analyst, diagnostics, debug toggles) are hidden. */}
+      <>
+
+          {/* Left Column Dashboard Stack (Branding + Search + AI Analyst) */}
+          <div className="absolute top-3 left-3 z-20 w-[290px] max-h-[calc(100vh-1.5rem)] overflow-y-auto no-scrollbar pointer-events-none flex flex-col gap-2.5">
+            {/* Branding header badge */}
+            <div className="pointer-events-auto glass-panel rounded-2xl p-3.5 flex items-center gap-4 transition-all hover:bg-slate-900/80">
           <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 via-orange-500 to-amber-300 flex items-center justify-center text-slate-950 shadow-[0_0_15px_rgba(245,158,11,0.3)]">
             <Building2 className="w-5 h-5 font-bold" />
           </div>
@@ -101,14 +116,16 @@ export const CityUI: React.FC<CityUIProps> = ({
           <SearchUI mapData={mapData} onSelectResult={handleSearchResultClick} />
         </div>
 
-        {/* Ask Lucknow Lens AI Panel */}
-        <div className="pointer-events-auto">
-          <AnalystPanel onExecuteAction={onExecuteAction} />
-        </div>
+        {/* Ask Lucknow Lens AI Panel — hidden while presenting */}
+        {!presentationMode && (
+          <div className="pointer-events-auto">
+            <AnalystPanel onExecuteAction={onExecuteAction} />
+          </div>
+        )}
       </div>
 
       {/* Right Column Dashboard Stack (Toggles + Layers + Inspector Card) */}
-      <div className="absolute top-4 right-4 z-20 w-[350px] pointer-events-none flex flex-col gap-3 items-end">
+      <div className="absolute top-3 right-3 z-20 w-[310px] max-h-[calc(100vh-1.5rem)] overflow-y-auto no-scrollbar pointer-events-none flex flex-col gap-2.5 items-end">
         {/* Preset Modes / Preset Camera Signals */}
         <div className="pointer-events-auto flex flex-wrap items-center gap-1.5 bg-slate-900/90 border border-slate-700/80 backdrop-blur-xl rounded-2xl p-1.5 shadow-2xl justify-end">
           <button
@@ -124,6 +141,7 @@ export const CityUI: React.FC<CityUIProps> = ({
             <span>{nightMode ? 'NIGHT' : 'DAY'}</span>
           </button>
 
+          {!presentationMode && (
           <button
             onClick={onToggleStableMode}
             className={`px-3 py-1.5 text-xs font-extrabold rounded-xl transition-all flex items-center gap-1.5 border ${
@@ -136,6 +154,7 @@ export const CityUI: React.FC<CityUIProps> = ({
             <ShieldCheck className="w-3.5 h-3.5" />
             <span>[STABLE]</span>
           </button>
+          )}
 
           <button
             onClick={() => onCameraSignal('fullcity')}
@@ -160,6 +179,7 @@ export const CityUI: React.FC<CityUIProps> = ({
             <span>LABELS</span>
           </button>
 
+          {!presentationMode && (
           <button
             onClick={onToggleDebugTiles}
             className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 border ${
@@ -172,6 +192,7 @@ export const CityUI: React.FC<CityUIProps> = ({
             <Grid className="w-3.5 h-3.5" />
             <span>GRID</span>
           </button>
+          )}
 
           <button
             onClick={() => onCameraSignal('overview')}
@@ -210,6 +231,7 @@ export const CityUI: React.FC<CityUIProps> = ({
           </button>
 
           {/* New Report Modal trigger button */}
+          {!presentationMode && (
           <button
             onClick={() => setIsReportOpen(true)}
             className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition-all border border-slate-700/60 flex items-center gap-1.5"
@@ -218,7 +240,59 @@ export const CityUI: React.FC<CityUIProps> = ({
             <FileText className="w-3.5 h-3.5 text-amber-400" />
             <span>REPORT</span>
           </button>
+          )}
+
+          {/* Skyline look: warm white / clear white / cyberpunk */}
+          <button
+            onClick={onCycleSkyline}
+            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 border ${
+              skylineStyle === 'cyberpunk'
+                ? 'bg-fuchsia-600 text-white border-fuchsia-400 shadow-lg shadow-fuchsia-600/30'
+                : skylineStyle === 'clear'
+                  ? 'bg-sky-100 text-slate-900 border-sky-200'
+                  : 'bg-amber-500 text-slate-950 border-amber-400'
+            }`}
+            title="Cycle skyline look"
+          >
+            <Palette className="w-3.5 h-3.5" />
+            <span>{skylineStyle === 'cyberpunk' ? 'CYBER' : skylineStyle === 'clear' ? 'CLEAR' : 'WARM'}</span>
+          </button>
+
+          {/* Presentation Mode Toggle Button */}
+          {!presentationMode && (
+          <button
+            onClick={onTogglePresentationMode}
+            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-xl transition-all shadow-lg shadow-rose-600/30 flex items-center gap-1.5"
+            title="Enter Cinematic Presentation Mode"
+          >
+            <Globe className="w-3.5 h-3.5" />
+            <span>PRESENT</span>
+          </button>
+          )}
         </div>
+
+        {/* Live feed status. Rule: stale data is never presented as real-time. */}
+        {flightFeed && layers.live.flights && (
+          <div className="pointer-events-auto flex items-center gap-2 bg-slate-900/90 border border-slate-700/80 backdrop-blur-xl rounded-xl px-3 py-1.5 text-[11px] shadow-2xl">
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                flightFeed.status === 'ok'
+                  ? 'bg-emerald-400'
+                  : flightFeed.status === 'stale'
+                    ? 'bg-amber-400'
+                    : 'bg-rose-500'
+              }`}
+            />
+            <span className="font-bold uppercase tracking-wide text-slate-300">
+              {flightFeed.status === 'ok' ? 'Live' : flightFeed.status === 'stale' ? 'Stale' : 'Unavailable'}
+            </span>
+            <span className="text-slate-500">
+              {flightFeed.status === 'unavailable'
+                ? (flightFeed.reason ?? 'No provider')
+                : `${flights.length} aircraft · ${flightFeed.ageSeconds ?? '?'}s ago · ${flightFeed.provider}`}
+            </span>
+          </div>
+        )}
 
         {/* Layers control manager widget */}
         <div className="pointer-events-auto w-full">
@@ -233,9 +307,10 @@ export const CityUI: React.FC<CityUIProps> = ({
         )}
       </div>
 
-      {/* Bottom Left STREAMING ENGINE STATS PANEL */}
-      <div className="absolute bottom-4 left-4 z-20 pointer-events-none">
-        <div className="pointer-events-auto glass-panel rounded-2xl p-5 text-xs text-slate-200 min-w-[320px] transition-all hover:bg-slate-900/80">
+      {/* Bottom Left STREAMING ENGINE STATS PANEL — diagnostics, hidden while presenting */}
+      {!presentationMode && (
+      <div className="absolute bottom-3 left-3 z-10 pointer-events-none">
+        <div className="pointer-events-auto glass-panel rounded-2xl p-3.5 text-[11px] text-slate-200 w-[260px] transition-all hover:bg-slate-900/80">
           <div className="text-[10px] font-extrabold uppercase tracking-wider text-amber-400 mb-2.5 flex items-center justify-between border-b border-slate-800 pb-2">
             <div className="flex items-center gap-1.5">
               <Activity className="w-3.5 h-3.5 text-amber-400" />
@@ -333,6 +408,21 @@ export const CityUI: React.FC<CityUIProps> = ({
           )}
         </div>
       </div>
+      )}
+      </>
+
+      {/* Floating Presentation Mode Exit Button */}
+      {presentationMode && (
+        <div className="absolute bottom-6 right-6 z-30">
+          <button
+            onClick={onTogglePresentationMode}
+            className="px-4 py-2.5 bg-slate-900/80 hover:bg-slate-800 backdrop-blur-xl border border-white/10 text-white text-xs font-bold rounded-xl transition-all shadow-2xl flex items-center gap-2 group"
+          >
+            <span>Exit Presentation</span>
+            <kbd className="font-mono text-[10px] bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded group-hover:bg-slate-700">ESC</kbd>
+          </button>
+        </div>
+      )}
 
       {/* Camera Controls Widget */}
       <CameraWidget controller={cameraController} />

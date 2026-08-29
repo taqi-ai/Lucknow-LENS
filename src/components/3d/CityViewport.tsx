@@ -5,11 +5,47 @@ import { CityRenderer } from '../../city/renderer';
 import { TileStreamer } from '../../city/tileStreamer';
 import { LabelManager } from '../../city/labelManager';
 import { CameraController } from '../../city/cameraController';
-import { HorizonCity } from '../../city/horizonCity';
 import { AtmosphericSky } from '../../city/atmosphericSky';
+import { BuildingMaterialSystem, type SkylineStyle } from '../../city/buildingMaterial';
+import { LandmarkSystem } from '../../city/landmarks';
+import { LANDMARKS } from '../../city/landmarkRegistry';
+import { CINEMATIC_PRESETS } from '../../city/cameraPresets';
 import { LayerState } from '../features/LayerControl';
 import { findClickedPOI, findClickedBuilding } from '../../interactions/picking';
 import { unproject } from '../../search/SearchIndex';
+
+/**
+ * Aircraft geometry and materials are created once at module scope and shared by
+ * every pooled aircraft node, so adding or removing flights never allocates GPU
+ * resources.
+ */
+const AIRCRAFT_PARTS = (() => {
+  const body = new THREE.CylinderGeometry(1.2, 0.7, 11, 8);
+  body.rotateX(Math.PI / 2);
+  const wings = new THREE.BoxGeometry(13, 0.35, 2.4);
+  const tailPlane = new THREE.BoxGeometry(4.4, 0.25, 1.3);
+  tailPlane.translate(0, 0.4, -4.4);
+  const fin = new THREE.BoxGeometry(0.3, 2.4, 1.8);
+  fin.translate(0, 1.4, -4.4);
+  return {
+    body,
+    wings,
+    tailPlane,
+    fin,
+    bodyMat: new THREE.MeshStandardMaterial({ color: 0xe8eef5, roughness: 0.45, metalness: 0.35 }),
+    trimMat: new THREE.MeshStandardMaterial({ color: 0x9fb4c9, roughness: 0.5, metalness: 0.3 }),
+  };
+})();
+
+function buildAircraftModel(): THREE.Group {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(AIRCRAFT_PARTS.body, AIRCRAFT_PARTS.bodyMat));
+  g.add(new THREE.Mesh(AIRCRAFT_PARTS.wings, AIRCRAFT_PARTS.trimMat));
+  g.add(new THREE.Mesh(AIRCRAFT_PARTS.tailPlane, AIRCRAFT_PARTS.trimMat));
+  g.add(new THREE.Mesh(AIRCRAFT_PARTS.fin, AIRCRAFT_PARTS.trimMat));
+  g.userData.type = 'aircraft';
+  return g;
+}
 
 interface CityViewportProps {
   mapData: OSMMapData;
@@ -17,6 +53,7 @@ interface CityViewportProps {
   debugTiles: boolean;
   stableMode: boolean;
   nightMode: boolean;
+  skylineStyle: SkylineStyle;
   showLabels: boolean;
   layers: LayerState;
   flights: SimulatedFlight[];
@@ -32,6 +69,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
   debugTiles,
   stableMode,
   nightMode,
+  skylineStyle,
   showLabels,
   layers,
   flights,
@@ -45,22 +83,49 @@ export const CityViewport: React.FC<CityViewportProps> = ({
   const streamerRef = useRef<TileStreamer | null>(null);
   const controlsRef = useRef<CameraController | null>(null);
   const labelManagerRef = useRef<LabelManager | null>(null);
-  const horizonRef = useRef<HorizonCity | null>(null);
   const skyRef = useRef<AtmosphericSky | null>(null);
+  const materialsRef = useRef<BuildingMaterialSystem | null>(null);
+  const landmarksRef = useRef<LandmarkSystem | null>(null);
   
   const flightsGroupRef = useRef<THREE.Group | null>(null);
   const highlightRingRef = useRef<THREE.Mesh | null>(null);
+
+  // Keep latest references for RAF loop and event listeners without tearing down WebGL
+  const layersRef = useRef(layers);
+  layersRef.current = layers;
+  const flightsRef = useRef(flights);
+  flightsRef.current = flights;
+  const mapDataRef = useRef(mapData);
+  mapDataRef.current = mapData;
+  const selectedEntityRef = useRef(selectedEntity);
+  selectedEntityRef.current = selectedEntity;
+  const onUpdateStatsRef = useRef(onUpdateStats);
+  onUpdateStatsRef.current = onUpdateStats;
+  const onSelectEntityRef = useRef(onSelectEntity);
+  onSelectEntityRef.current = onSelectEntity;
+  const onCameraControllerReadyRef = useRef(onCameraControllerReady);
+  onCameraControllerReadyRef.current = onCameraControllerReady;
 
   // Initialize Three.js Renderer, TileStreamer, LabelManager, HorizonCity & AtmosphericSky
   useEffect(() => {
     if (!mountRef.current) return;
 
     const container = mountRef.current;
-    const cityRenderer = new CityRenderer(container, mapData);
+    const cityRenderer = new CityRenderer(container, mapDataRef.current);
     rendererRef.current = cityRenderer;
 
-    const streamer = new TileStreamer(cityRenderer.scene);
+    // One shared material system drives every building — bulk streamed tiles and
+    // baked HLOD alike — so variation is a shader concern, not a material count.
+    const materials = new BuildingMaterialSystem();
+    materialsRef.current = materials;
+
+    const streamer = new TileStreamer(cityRenderer.scene, materials);
     streamerRef.current = streamer;
+
+    // Dedicated geometry for ~14 recognisable Lucknow landmarks. Bulk Overture
+    // extrusions inside their footprints are suppressed in the worker and baker.
+    const landmarks = new LandmarkSystem(cityRenderer.scene);
+    landmarksRef.current = landmarks;
 
     // Initialize label manager and load label data
     const labelManager = new LabelManager(cityRenderer.scene);
@@ -69,18 +134,14 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     labelManager.setViewport(container.clientWidth, container.clientHeight);
     labelManager.loadData(); // async, non-blocking
 
-    // Create horizon city and atmospheric sky instances
-    const horizon = new HorizonCity();
-    horizonRef.current = horizon;
-
     const sky = new AtmosphericSky();
     skyRef.current = sky;
 
     // Custom Target-Orbit Navigation
     const controls = new CameraController(cityRenderer.camera, cityRenderer.renderer.domElement);
     controlsRef.current = controls;
-    if (onCameraControllerReady) {
-      onCameraControllerReady(controls);
+    if (onCameraControllerReadyRef.current) {
+      onCameraControllerReadyRef.current(controls);
     }
 
     // Build atmospheric sky dome IMMEDIATELY — before async init so there's
@@ -106,12 +167,11 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     highlightRingRef.current = highlightRing;
     cityRenderer.scene.add(highlightRing);
 
-    // TileStreamer init — then build horizon and set camera bounds
+    // TileStreamer init — then set camera bounds from the true data extent.
+    // The old procedural HorizonCity is gone; the baked HLOD carries real
+    // building geometry all the way out to the data boundary.
     streamer.init().then(() => {
       const extent = streamer.getSpatialExtent();
-
-      // Build outer-city horizon ring (purely visual perimeter)
-      horizon.build(cityRenderer.scene, extent);
 
       // Set camera boundary — inset by 1500m from the data extent edges
       const boundaryBuffer = 1500;
@@ -127,6 +187,8 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     let animId: number;
     let lastStatsTime = 0;
     let lastShadowUpdateTime = 0;
+    let lastLayerKey = '';
+    const aircraftPool: THREE.Group[] = [];
 
     const animate = (time: number) => {
       animId = requestAnimationFrame(animate);
@@ -136,24 +198,26 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       // Keep sky dome centered on camera every frame and animate shaders
       sky.update(cityRenderer.camera, time);
 
-      // Lock camera clipping planes.
-      cityRenderer.camera.near = 2.0;
-      cityRenderer.camera.far = 150000;
-      cityRenderer.camera.updateProjectionMatrix();
-
       const altitude = cityRenderer.camera.position.y;
+
+      // Aerial perspective needs the camera position every frame; it is a uniform
+      // write, not a matrix rebuild.
+      materials.updateCamera(cityRenderer.camera.position);
 
       // Adaptive shadows — disable at high altitude for massive iGPU perf gain
       cityRenderer.setAdaptiveShadows(altitude);
 
       // Throttled shadow target update — only every 500ms, not every frame
       if (time - lastShadowUpdateTime > 500) {
-        cityRenderer.updateSunShadowTarget(controls.target);
+        cityRenderer.updateSunShadowTarget(controls.target, altitude);
+        const atmos = cityRenderer.getAtmosphere();
+        materials.setHorizon(atmos.horizon, atmos.strength);
         lastShadowUpdateTime = time;
       }
 
       // Update TileStreamer with current camera position
       streamer.update(cityRenderer.camera);
+      landmarks.update(cityRenderer.camera);
 
       // Update label manager — pass current LOD from streamer stats
       const streamingStats = streamer.getStats();
@@ -164,51 +228,51 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       if (boundaryInfo && streamerRef.current) {
         streamingStats.boundaryDebug = {
           ...boundaryInfo,
-          horizonActive: horizon.isActive(),
+          horizonActive: streamer.getHLODStats().fabricMeshes > 0,
         };
       }
 
       // -------------------------------------------------------------
       // FLIGHTS RENDERING / MOVEMENT UPDATE
       // -------------------------------------------------------------
-      flightsGroup.clear();
-      if (layers.live.flights) {
-        flights.forEach(flight => {
-          const planeGroup = new THREE.Group();
-          planeGroup.name = flight.id;
-          planeGroup.position.set(flight.x, flight.altitude, flight.z);
-          planeGroup.rotation.y = -(flight.heading * Math.PI / 180);
+      // Aircraft are pooled. The previous implementation called flightsGroup.clear()
+      // and rebuilt six geometries plus three materials per aircraft on every frame,
+      // orphaning all of them for the GC 60 times a second.
+      const currentLayers = layersRef.current;
+      const currentFlights = flightsRef.current;
+      const showFlights = currentLayers.live.flights;
 
-          // Proc plane body
-          const bodyGeo = new THREE.CylinderGeometry(1.2, 1.2, 9, 8);
-          bodyGeo.rotateX(Math.PI / 2);
-          const bodyMat = new THREE.MeshBasicMaterial({ color: 0x0ea5e9 }); // Sky blue body
-          const body = new THREE.Mesh(bodyGeo, bodyMat);
-          planeGroup.add(body);
-
-          // Wings
-          const wingsGeo = new THREE.BoxGeometry(10, 0.3, 2.2);
-          const wingsMat = new THREE.MeshBasicMaterial({ color: 0xffffff }); // White wings
-          const wings = new THREE.Mesh(wingsGeo, wingsMat);
-          planeGroup.add(wings);
-
-          // Tail wing
-          const tailGeo = new THREE.BoxGeometry(3.5, 0.2, 1.2);
-          const tailMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-          const tail = new THREE.Mesh(tailGeo, tailMat);
-          tail.position.set(0, 0.3, -3.8);
-          planeGroup.add(tail);
-
-          planeGroup.userData = { type: 'aircraft', id: flight.id, data: flight };
-          flightsGroup.add(planeGroup);
-        });
+      if (showFlights) {
+        for (let i = 0; i < currentFlights.length; i++) {
+          const flight = currentFlights[i];
+          let node = aircraftPool[i];
+          if (!node) {
+            node = buildAircraftModel();
+            aircraftPool[i] = node;
+            flightsGroup.add(node);
+          }
+          node.visible = true;
+          node.position.set(flight.x, flight.altitude, flight.z);
+          node.rotation.y = -(flight.heading * Math.PI / 180);
+          // Keep aircraft legible from altitude without turning them into UI pins.
+          const s = THREE.MathUtils.clamp(altitude / 900, 1, 14);
+          node.scale.setScalar(s);
+          node.userData.data = flight;
+          node.userData.id = flight.id;
+        }
+        for (let i = currentFlights.length; i < aircraftPool.length; i++) {
+          if (aircraftPool[i]) aircraftPool[i].visible = false;
+        }
+      } else {
+        for (const node of aircraftPool) if (node) node.visible = false;
       }
 
       // -------------------------------------------------------------
       // SELECTION HIGHLIGHT ANIMATION
       // -------------------------------------------------------------
-      if (selectedEntity) {
-        highlightRing.position.set(selectedEntity.x, 0.35, selectedEntity.z);
+      const curSelected = selectedEntityRef.current;
+      if (curSelected) {
+        highlightRing.position.set(curSelected.x, 0.35, curSelected.z);
         highlightRing.visible = true;
         highlightRing.rotation.z = time * 0.0015;
         highlightRing.scale.setScalar(1.0 + Math.sin(time * 0.005) * 0.08);
@@ -217,33 +281,96 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       }
 
       // -------------------------------------------------------------
-      // LAYER VISIBILITY SETTINGS (TRAVERSING MESHS IN STREAMER SCENE)
+      // LAYER VISIBILITY
+      // Only walk the scene when a toggle actually changed. This used to be a full
+      // scene.traverse() every frame across every streamed tile mesh.
       // -------------------------------------------------------------
-      cityRenderer.scene.traverse((child) => {
-        if ((child as THREE.Mesh).isMesh || (child as THREE.InstancedMesh).isInstancedMesh) {
-          if (child.name === 'buildings') {
-            child.visible = layers.base.buildings;
-          } else if (child.name === 'roads') {
-            child.visible = layers.base.roads;
-          } else if (child.name === 'parks') {
-            child.visible = layers.base.parks;
-          } else if (child.name === 'water') {
-            child.visible = layers.base.gomti;
-          } else if (child.name === 'trees') {
-            child.visible = layers.base.parks; // trees grouped with parks
-          }
-        }
-      });
+      const layerKey = `${currentLayers.base.buildings}|${currentLayers.base.roads}|${currentLayers.base.parks}|${currentLayers.base.gomti}`;
+      if (layerKey !== lastLayerKey) {
+        lastLayerKey = layerKey;
+        streamer.setLayerVisibility({
+          buildings: currentLayers.base.buildings,
+          roads: currentLayers.base.roads,
+          parks: currentLayers.base.parks,
+          water: currentLayers.base.gomti,
+        });
+      }
 
       cityRenderer.update();
 
       if (time - lastStatsTime > 400) {
-        onUpdateStats(cityRenderer.getRenderStats(), streamingStats);
+        onUpdateStatsRef.current(cityRenderer.getRenderStats(), streamingStats);
         lastStatsTime = time;
       }
     };
 
     animId = requestAnimationFrame(animate);
+
+    // -------------------------------------------------------------
+    // DEV INSTRUMENTATION HOOK (window.__LENS)
+    // Lets an automated harness drive the camera, wait for tile streaming
+    // to settle, and sample real render statistics. Dev builds only.
+    // -------------------------------------------------------------
+    if (import.meta.env.DEV) {
+      (window as any).__LENS = {
+        setShot(s: { t: [number, number]; az: number; pi: number; d: number; night: boolean }) {
+          cityRenderer.setNightMode(s.night);
+          streamer.setNightMode(s.night);
+          landmarks.setNightMode(s.night);
+          sky.setNightMode(s.night);
+          labelManager.setNightMode(s.night);
+          controls.transitionTo(new THREE.Vector3(s.t[0], 0, s.t[1]), s.az, s.pi, s.d, 10);
+        },
+        /** Resolve once the streamer has no pending loads for 4 consecutive checks. */
+        waitSettled(timeoutMs = 20000) {
+          return new Promise<void>((resolve) => {
+            const start = performance.now();
+            let quiet = 0;
+            const poll = () => {
+              const st = streamer.getStats();
+              quiet = st.pendingLoads === 0 ? quiet + 1 : 0;
+              if (quiet >= 4 || performance.now() - start > timeoutMs) resolve();
+              else setTimeout(poll, 250);
+            };
+            setTimeout(poll, 500);
+          });
+        },
+        /** Sample frame timings over a window and return render + streaming stats. */
+        measure(durationMs = 2000) {
+          return new Promise<any>((resolve) => {
+            const frames: number[] = [];
+            let last = performance.now();
+            const start = last;
+            const tick = () => {
+              const now = performance.now();
+              frames.push(now - last);
+              last = now;
+              if (now - start < durationMs) requestAnimationFrame(tick);
+              else {
+                frames.sort((a, b) => a - b);
+                const r = cityRenderer.getRenderStats();
+                const st = streamer.getStats();
+                resolve({
+                  fps: Math.round(1000 / (frames.reduce((a, b) => a + b, 0) / frames.length)),
+                  frameMsP50: +frames[Math.floor(frames.length * 0.5)].toFixed(2),
+                  frameMsP95: +frames[Math.floor(frames.length * 0.95)].toFixed(2),
+                  drawCalls: r.drawCalls,
+                  triangles: r.triangles,
+                  geometries: r.geometries,
+                  textures: r.textures,
+                  programs: cityRenderer.renderer.info.programs?.length ?? 0,
+                  tiles: st.loadedTiles,
+                  buildings: st.totalBuildings,
+                  lod: st.currentLOD,
+                  scale: st.zoomScaleName,
+                });
+              }
+            };
+            requestAnimationFrame(tick);
+          });
+        },
+      };
+    }
 
     // -------------------------------------------------------------
     // RAYCAST INTERACTION & INSPECTION
@@ -264,7 +391,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       raycaster.setFromCamera(mouse, rendererRef.current.camera);
 
       // A. Intersect with Aircrafts first
-      if (layers.live.flights && flightsGroupRef.current) {
+      if (layersRef.current.live.flights && flightsGroupRef.current) {
         const intersects = raycaster.intersectObjects(flightsGroupRef.current.children, true);
         if (intersects.length > 0) {
           let rootPlane = intersects[0].object;
@@ -274,7 +401,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
           const flightData = rootPlane.userData.data as SimulatedFlight;
           if (flightData) {
             const coords = unproject(flightData.x, flightData.z);
-            onSelectEntity({
+            onSelectEntityRef.current({
               type: 'aircraft',
               id: flightData.id,
               name: `${flightData.airline} Flight ${flightData.id}`,
@@ -308,13 +435,13 @@ export const CityViewport: React.FC<CityViewportProps> = ({
         ];
 
         // 1. Proximity POI Click Check
-        const clickedPOI = findClickedPOI(x, z, mapData, customRegistry);
+        const clickedPOI = findClickedPOI(x, z, mapDataRef.current, customRegistry);
         if (clickedPOI) {
           const lm = clickedPOI.landmark;
           const lmX = ('x' in lm) ? lm.x : lm.position.x;
           const lmZ = ('z' in lm) ? lm.z : lm.position.z;
           const latLon = unproject(lmX, lmZ);
-          onSelectEntity({
+          onSelectEntityRef.current({
             type: 'poi',
             id: lm.id,
             name: lm.name,
@@ -329,7 +456,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
         }
 
         // 2. Point-in-polygon building check
-        const clickedBldg = findClickedBuilding(x, z, mapData, streamer);
+        const clickedBldg = findClickedBuilding(x, z, mapDataRef.current, streamer);
         if (clickedBldg) {
           let sumX = 0, sumZ = 0;
           clickedBldg.points.forEach(p => { sumX += p.x; sumZ += p.z; });
@@ -337,7 +464,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
           const cz = sumZ / clickedBldg.points.length;
           const latLon = unproject(cx, cz);
           
-          onSelectEntity({
+          onSelectEntityRef.current({
             type: 'building',
             id: clickedBldg.id,
             name: clickedBldg.name || 'Extruded Building',
@@ -358,32 +485,37 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       }
 
       // C. Clicked empty space -> Clear selection
-      onSelectEntity(null);
+      onSelectEntityRef.current(null);
     };
 
     container.addEventListener('click', handleViewportClick);
-    const handleResize = () => {
-      if (!mountRef.current || !rendererRef.current) return;
-      rendererRef.current.handleResize(mountRef.current.clientWidth, mountRef.current.clientHeight);
-      labelManager.setViewport(mountRef.current.clientWidth, mountRef.current.clientHeight);
-    };
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (!rendererRef.current) continue;
+        const { width, height } = entry.contentRect;
+        rendererRef.current.handleResize(width, height);
+        labelManager.setViewport(width, height);
+      }
+    });
 
-    window.addEventListener('resize', handleResize);
+    resizeObserver.observe(container);
 
     return () => {
-      window.removeEventListener('resize', handleResize);
+      resizeObserver.disconnect();
       container.removeEventListener('click', handleViewportClick);
       cancelAnimationFrame(animId);
       controls.dispose();
       labelManager.dispose();
-      horizon.dispose();
       sky.dispose();
+      streamer.dispose();
+      landmarks.dispose();
+      materials.dispose();
       cityRenderer.dispose();
       if (container.contains(cityRenderer.renderer.domElement)) {
         container.removeChild(cityRenderer.renderer.domElement);
       }
     };
-  }, [mapData, layers.live.flights, flights]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // Remove mapData dependency to prevent WebGL teardown
 
   // Update Debug, Stable Mode, Night Mode & Label visibility
   useEffect(() => {
@@ -395,18 +527,23 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       streamerRef.current.setStableMode(stableMode);
       streamerRef.current.setNightMode(nightMode);
     }
+    if (landmarksRef.current) {
+      landmarksRef.current.setNightMode(nightMode);
+    }
     if (labelManagerRef.current) {
       labelManagerRef.current.setNightMode(nightMode);
       labelManagerRef.current.enabled = showLabels;
-    }
-    // Forward night mode to horizon and sky systems
-    if (horizonRef.current) {
-      horizonRef.current.setNightMode(nightMode);
     }
     if (skyRef.current) {
       skyRef.current.setNightMode(nightMode);
     }
   }, [debugTiles, stableMode, nightMode, showLabels]);
+
+  // Skyline look — warm white / clear white / cyberpunk. Palette & lighting swap.
+  useEffect(() => {
+    materialsRef.current?.setSkylineStyle(skylineStyle);
+    rendererRef.current?.setSkylineStyle(skylineStyle);
+  }, [skylineStyle]);
 
   // Handle Camera Presets
   useEffect(() => {
@@ -431,24 +568,39 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     if (cameraSignal === 'fullcity' || cameraSignal === 'frame' || cameraSignal === 'reset') {
       pTarget.set(centerX, 0, centerZ);
       pAzimuth = Math.PI / 4;
-      pPitch = Math.PI / 3;
+      pPitch = Math.PI / 3.2; // Slightly lower for better sky/ground ratio
       pDistance = maxDim * 0.9;
     } else if (cameraSignal === 'overview') {
       pTarget.set(centerX, 0, centerZ);
       pAzimuth = Math.PI / 8;
-      pPitch = Math.PI / 3.5;
-      pDistance = maxDim * 0.45;
+      pPitch = Math.PI / 3.8;
+      pDistance = maxDim * 0.35; // Closer
     } else if (cameraSignal === 'neighborhood') {
       pTarget.set(centerX, 0, centerZ);
       pAzimuth = 0;
-      pPitch = Math.PI / 4;
-      pDistance = 1800;
+      pPitch = Math.PI / 3.5; // Lower angle to show building depth
+      pDistance = 1400;
     } else if (cameraSignal === 'street') {
       const firstLm = mapData.landmarks[0]?.position || { x: centerX, z: centerZ };
       pTarget.set(firstLm.x, 0, firstLm.z);
       pAzimuth = 0;
-      pPitch = 0.15; // very low horizon look
+      pPitch = 0.2; // very low horizon look
       pDistance = 200;
+    } else if (CINEMATIC_PRESETS[cameraSignal as keyof typeof CINEMATIC_PRESETS]) {
+      // Cinematic framings. These are camera setups over the same real city, not
+      // separate scenes — each one is anchored to a real landmark position.
+      const preset = CINEMATIC_PRESETS[cameraSignal as keyof typeof CINEMATIC_PRESETS];
+      const anchor = preset.landmarkId
+        ? LANDMARKS.find((l) => l.id === preset.landmarkId)
+        : undefined;
+      const tx = anchor ? anchor.x : (preset.x ?? centerX);
+      const tz = anchor ? anchor.z : (preset.z ?? centerZ);
+      pTarget.set(tx, 0, tz);
+      pAzimuth = preset.azimuth;
+      pPitch = preset.pitch;
+      // Frame landmarks against their own footprint so big and small subjects
+      // both fill a comparable share of the viewport.
+      pDistance = anchor ? Math.max(preset.distance, anchor.radius * 5.2) : preset.distance;
     } else if (cameraSignal === 'top') {
       pTarget.set(centerX, 0, centerZ);
       pAzimuth = 0;
@@ -456,7 +608,10 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       pDistance = maxDim;
     }
 
-    controls.transitionTo(pTarget, pAzimuth, pPitch, pDistance, 1400);
+    // Longer, eased transitions for the cinematic presets so arrivals feel flown
+    // rather than cut.
+    const isCinematic = Boolean(CINEMATIC_PRESETS[cameraSignal as keyof typeof CINEMATIC_PRESETS]);
+    controls.transitionTo(pTarget, pAzimuth, pPitch, pDistance, isCinematic ? 2600 : 1400);
   }, [cameraSignal, mapData]);
 
   return <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing select-none" />;

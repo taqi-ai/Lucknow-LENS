@@ -14,3 +14,7 @@
     @apply bg-white/70 backdrop-blur-md border border-slate-200/50 shadow-xl;
   }
 }
+
+/* Panel columns scroll instead of overlapping on short viewports. */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }

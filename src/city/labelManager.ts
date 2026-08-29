@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { LODLevel } from '../types';
+import { LANDMARKS } from './landmarkRegistry';
 
 // ─── Data shapes ──────────────────────────────────────────────────────────────
 
@@ -43,16 +44,25 @@ interface LODConfig {
   labelHeight: number;  // y offset above ground
 }
 
+/**
+ * Label budgets are deliberately tight. The previous values (25/40/50 places plus
+ * 15/30/40 roads) filled the viewport with competing pills and buried the city
+ * underneath its own annotation. A readable map shows a handful of anchors at each
+ * scale and lets the geometry carry the rest.
+ */
 const LOD_CONFIG: Record<LODLevel, LODConfig> = {
-  // FULL CITY — only the very biggest Lucknow landmarks, airports, train stations
-  0: { placeMinImp: 9, placeMax: 12, roadMinImp: 10, roadMax: 8,  visRadius: 50000, baseScale: 1.0, labelHeight: 500 },
-  // DISTRICT — landmark + government + hospital + transport
-  1: { placeMinImp: 7, placeMax: 25, roadMinImp: 8,  roadMax: 15, visRadius: 15000, baseScale: 1.0, labelHeight: 200 },
-  // NEIGHBORHOOD — local POIs
-  2: { placeMinImp: 5, placeMax: 40, roadMinImp: 6,  roadMax: 30, visRadius: 6000,  baseScale: 1.0, labelHeight: 80  },
-  // STREET — nearby POIs only
-  3: { placeMinImp: 4, placeMax: 50, roadMinImp: 5,  roadMax: 40, visRadius: 1200,  baseScale: 1.0, labelHeight: 30  },
+  // FULL CITY — only city-defining anchors: airport, Charbagh, major monuments
+  0: { placeMinImp: 9, placeMax: 7,  roadMinImp: 10, roadMax: 3,  visRadius: 50000, baseScale: 1.0, labelHeight: 500 },
+  // DISTRICT — landmarks, government, transport
+  1: { placeMinImp: 8, placeMax: 11, roadMinImp: 9,  roadMax: 5,  visRadius: 15000, baseScale: 1.0, labelHeight: 200 },
+  // NEIGHBORHOOD — notable local POIs
+  2: { placeMinImp: 6, placeMax: 16, roadMinImp: 7,  roadMax: 9,  visRadius: 4000,  baseScale: 1.0, labelHeight: 80  },
+  // STREET — what is actually within walking distance
+  3: { placeMinImp: 5, placeMax: 20, roadMinImp: 6,  roadMax: 12, visRadius: 900,   baseScale: 1.0, labelHeight: 30  },
 };
+
+/** Curated landmarks always outrank generic place records of the same importance. */
+const LANDMARK_NAMES = new Set(LANDMARKS.map((l) => l.name.toLowerCase()));
 
 // ─── Canvas sprite factory ────────────────────────────────────────────────────
 
@@ -91,9 +101,16 @@ function createTextSprite(style: SpriteStyle): THREE.Sprite {
   ctx.roundRect(0, 0, canvas.width, canvas.height, r);
   ctx.fill();
 
-  // Text
+  // Text with drop shadow
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+  ctx.shadowBlur = 6;
+  ctx.shadowOffsetY = 1;
   ctx.fillStyle = textColor;
   ctx.fillText(text, paddingH, canvas.height / 2 + 1);
+  
+  // Reset shadow for next draw
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.needsUpdate = true;
@@ -212,7 +229,7 @@ export class LabelManager {
 
     // ── Screen-space occupancy grid (pixel rects) ──────────────────────────────
     const occupied: { cx: number; cy: number; hw: number; hh: number }[] = [];
-    const PADDING = 8; // Screen pixels padding between labels
+    const PADDING = 14; // Screen pixels padding between labels
 
     const ndcOf = (wx: number, wz: number, wy: number): THREE.Vector3 | null => {
       if (!this.camera) return null;
@@ -256,8 +273,15 @@ export class LabelManager {
       candidates.push({ ...r, kind: 'road' });
     }
 
-    // Sort all candidates by importance (highest first) to guarantee priority
-    candidates.sort((a, b) => b.importance - a.importance);
+    // Rank: curated landmarks first, then importance, then proximity. Without the
+    // proximity tiebreak the same distant label wins every frame and nearby context
+    // never gets a slot.
+    const rank = (c: Candidate): number => {
+      const isLandmark = LANDMARK_NAMES.has(c.name.toLowerCase()) ? 40 : 0;
+      const dist = Math.hypot(c.x - camX, c.z - camZ);
+      return isLandmark + c.importance * 3 - (dist / cfg.visRadius) * 4;
+    };
+    candidates.sort((a, b) => rank(b) - rank(a));
 
     let placesAdded = 0;
     let roadsAdded = 0;
@@ -296,6 +320,10 @@ export class LabelManager {
       sprite.scale.set(scaleX, scaleY, 1);
 
       sprite.position.set(c.x, wy, c.z);
+      // Fade with distance so the far field recedes instead of competing.
+      const dist = Math.hypot(c.x - camX, c.z - camZ);
+      const fade = 1 - Math.min(1, Math.max(0, (dist / cfg.visRadius - 0.45) / 0.55)) * 0.65;
+      (sprite.material as THREE.SpriteMaterial).opacity = fade;
       sprite.visible = true;
       this.activeSprites.add(sprite);
 
@@ -329,19 +357,20 @@ export class LabelManager {
     const highImp = p.importance >= 8;
     const midImp  = p.importance >= 6;
 
-    // Reduced opacity for less visual clutter
+    // Only top-tier landmarks get a filled pill. Everything else is quiet text on a
+    // near-transparent scrim, so the hierarchy is obvious at a glance.
     const bgColor = this.isNight
-      ? (highImp ? 'rgba(251,191,36,0.65)' : midImp ? 'rgba(15,23,42,0.60)' : 'rgba(15,23,42,0.50)')
-      : (highImp ? 'rgba(180,83,9,0.70)'   : midImp ? 'rgba(255,255,255,0.75)' : 'rgba(241,245,249,0.65)');
+      ? (highImp ? 'rgba(255,210,140,0.92)' : midImp ? 'rgba(20,25,35,0.65)' : 'rgba(15,20,30,0.4)')
+      : (highImp ? 'rgba(186,104,36,0.95)'  : midImp ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.45)');
 
     const textColor = this.isNight
-      ? (highImp ? '#0f172a' : '#e2e8f0')
-      : (highImp ? '#ffffff' : '#1e293b');
+      ? (highImp ? '#0a0d14' : midImp ? '#f0f5fa' : '#c0ccd9')
+      : (highImp ? '#ffffff' : midImp ? '#1e293b' : '#334155');
 
     const fontSize = highImp ? 16 : midImp ? 13 : 11;
-    const bold     = highImp || midImp;
+    const bold     = highImp;
 
-    const sprite = createTextSprite({ text: p.name, textColor, bgColor, fontSize, bold, paddingH: 8, paddingV: 3 });
+    const sprite = createTextSprite({ text: p.name, textColor, bgColor, fontSize, bold, paddingH: 10, paddingV: 5 });
     sprite.renderOrder = 999;
     return sprite;
   }
@@ -349,14 +378,17 @@ export class LabelManager {
   private makeRoadSprite(r: Candidate, cfg: LODConfig): THREE.Sprite {
     const highImp = r.importance >= 8;
 
+    // Roads read as unobtrusive route markers, never as chips competing with places.
     const bgColor = this.isNight
-      ? (highImp ? 'rgba(14,165,233,0.65)' : 'rgba(30,41,59,0.55)')
-      : (highImp ? 'rgba(2,132,199,0.70)'  : 'rgba(226,232,240,0.60)');
+      ? 'rgba(15,20,30,0.55)'
+      : 'rgba(255,255,255,0.6)';
 
-    const textColor = this.isNight ? '#ffffff' : (highImp ? '#ffffff' : '#334155');
+    const textColor = this.isNight
+      ? (highImp ? '#b3d9ff' : '#90a4ba')
+      : (highImp ? '#1c425c' : '#3d5263');
     const fontSize = highImp ? 13 : 11;
 
-    const sprite = createTextSprite({ text: r.name, textColor, bgColor, fontSize, bold: highImp, paddingH: 6, paddingV: 2 });
+    const sprite = createTextSprite({ text: r.name, textColor, bgColor, fontSize, bold: highImp, paddingH: 8, paddingV: 3 });
     sprite.renderOrder = 998;
     return sprite;
   }

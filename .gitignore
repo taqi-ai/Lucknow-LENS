@@ -10,3 +10,6 @@ coverage/
 # Large OSM & preprocessed tile artifacts
 public/lucknow_tiles/
 
+# Baked HLOD artifacts — regenerate with `npm run bake`
+public/hlod/
+

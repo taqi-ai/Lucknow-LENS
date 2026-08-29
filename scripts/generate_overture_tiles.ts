@@ -186,19 +186,29 @@ async function processStream(filePath: string, type: string) {
         
         const hType = props.class || 'residential';
         const subtype = props.subtype || 'road';
+        const level = props.level || 0;
+        const isElevated = props.isElevated || level > 0;
         let width = 6;
         let isMajor = false;
 
-        if (['motorway', 'primary', 'trunk'].includes(hType)) { width = 15; isMajor = true; }
+        if (subtype === 'rail') {
+          width = 5.5;
+          isMajor = true;
+        } else if (['motorway', 'primary', 'trunk'].includes(hType)) { width = 15; isMajor = true; }
         else if (['secondary'].includes(hType)) { width = 10; isMajor = true; }
         else if (['tertiary'].includes(hType)) { width = 8; isMajor = true; }
+        else if (isElevated) { width = 12; isMajor = true; }
         else if (['path', 'footway', 'pedestrian'].includes(hType) || subtype === 'footpath') width = 2.5;
 
         const roadObj = {
           id: props.id || `road-${Math.random()}`,
+          name: props.name || props.names?.primary || undefined,
           points,
           width,
           type: hType,
+          subtype,
+          level,
+          isElevated,
           isMajor
         };
 

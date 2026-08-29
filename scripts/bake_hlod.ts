@@ -527,6 +527,9 @@ function bakeOverlay(): void {
   if (built.flyoverBarriers.length) sections.push({ name: 'flyoverBarriers', data: built.flyoverBarriers });
   if (built.railBed.length) sections.push({ name: 'railBed', data: built.railBed });
   if (built.railRails.length) sections.push({ name: 'railRails', data: built.railRails });
+  if (built.metroDeck.length) sections.push({ name: 'metroDeck', data: built.metroDeck });
+  if (built.metroCanopy.length) sections.push({ name: 'metroCanopy', data: built.metroCanopy });
+  if (built.metroColumn.length) sections.push({ name: 'metroColumn', data: built.metroColumn });
 
   // Sleepers are 531 km of ballasted track at 2.6 m spacing — 14 MB, and never
   // shown above 900 m altitude. Keeping them out of the always-fetched buffer is
@@ -548,6 +551,7 @@ function bakeOverlay(): void {
   console.log(`  detail  ${(detailBytes / 1048576).toFixed(1)} MB (lazy, street altitude only)`);
   console.log(`  rail: bed ${built.railBed.length / 3} verts, ` +
               `sleepers ${built.railSleepers.length / 3}, rails ${built.railRails.length / 3}`);
+  console.log(`  metro: ${built.stations} elevated stations placed on the alignment`);
 
   console.log(`\nDone.`);
 }

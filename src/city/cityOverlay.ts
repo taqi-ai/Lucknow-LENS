@@ -73,6 +73,11 @@ export class CityOverlay {
   private railBedMat: THREE.MeshStandardMaterial;
   private railSleeperMat: THREE.MeshStandardMaterial;
   private railRailsMat: THREE.MeshStandardMaterial;
+  private metroDeckMesh: THREE.Mesh | null = null;
+  private metroCanopyMesh: THREE.Mesh | null = null;
+  private metroColumnMesh: THREE.Mesh | null = null;
+  private metroDeckMat: THREE.MeshStandardMaterial;
+  private metroCanopyMat: THREE.MeshStandardMaterial;
   private waterMaterial: THREE.MeshStandardMaterial;
   private parkMaterial: THREE.MeshStandardMaterial;
   private waterMesh: THREE.Mesh | null = null;
@@ -120,6 +125,19 @@ export class CityOverlay {
       color: 0x8a8b8f,
       roughness: 0.28,
       metalness: 0.55,
+    });
+
+    // Metro stations. Pale concrete box with a light metal canopy — the two
+    // materials that make an elevated station read as a station and not as
+    // another stretch of viaduct.
+    this.metroDeckMat = new THREE.MeshStandardMaterial({
+      color: 0xb9b3a8,
+      roughness: 0.82,
+    });
+    this.metroCanopyMat = new THREE.MeshStandardMaterial({
+      color: 0xd2d6da,
+      roughness: 0.42,
+      metalness: 0.30,
     });
 
     for (const cls of Object.keys(ROAD_COLORS_DAY) as RoadClass[]) {
@@ -300,6 +318,14 @@ export class CityOverlay {
         } else if (sec.name === 'railRails') {
           this.railRailsMesh = this.makeMesh(pos, this.railRailsMat, 'railRails');
           this.stats.railVerts += sec.floats / 3;
+        } else if (sec.name === 'metroDeck') {
+          this.metroDeckMesh = this.makeMesh(pos, this.metroDeckMat, 'metroDeck');
+          this.metroDeckMesh.castShadow = true;
+        } else if (sec.name === 'metroCanopy') {
+          this.metroCanopyMesh = this.makeMesh(pos, this.metroCanopyMat, 'metroCanopy');
+          this.metroCanopyMesh.castShadow = true;
+        } else if (sec.name === 'metroColumn') {
+          this.metroColumnMesh = this.makeMesh(pos, this.metroDeckMat, 'metroColumn');
         }
       }
     }
@@ -345,9 +371,17 @@ export class CityOverlay {
     // The bed carries the line at every altitude; rails and sleepers are detail
     // that stops resolving well before it stops costing anything.
     if (this.railBedMesh) this.railBedMesh.visible = this.roadsEnabled;
-    if (this.railRailsMesh) this.railRailsMesh.visible = this.roadsEnabled && altitude <= 4000;
-    if (altitude <= 900) this.loadDetail();
-    if (this.railSleeperMesh) this.railSleeperMesh.visible = this.roadsEnabled && altitude <= 900;
+    // The rails are what identify a line as a railway rather than a service
+    // road, so they stay on as long as the bed does rather than dropping out at
+    // district height and leaving a bare ballast strip.
+    if (this.railRailsMesh) this.railRailsMesh.visible = this.roadsEnabled && altitude <= 12000;
+    if (altitude <= 1800) this.loadDetail();
+    if (this.railSleeperMesh) this.railSleeperMesh.visible = this.roadsEnabled && altitude <= 1800;
+
+    const metroOn = this.roadsEnabled && altitude <= 6000;
+    if (this.metroDeckMesh) this.metroDeckMesh.visible = metroOn;
+    if (this.metroCanopyMesh) this.metroCanopyMesh.visible = metroOn;
+    if (this.metroColumnMesh) this.metroColumnMesh.visible = metroOn;
 
     const n = this.isNight ? 3.2 : 1.0;
     show('secondary', 9000 * n);
@@ -367,6 +401,9 @@ export class CityOverlay {
       if (this.railBedMesh) this.railBedMesh.visible = false;
       if (this.railSleeperMesh) this.railSleeperMesh.visible = false;
       if (this.railRailsMesh) this.railRailsMesh.visible = false;
+      if (this.metroDeckMesh) this.metroDeckMesh.visible = false;
+      if (this.metroCanopyMesh) this.metroCanopyMesh.visible = false;
+      if (this.metroColumnMesh) this.metroColumnMesh.visible = false;
     }
     if (this.waterMesh) this.waterMesh.visible = v.water;
     if (this.parkMesh) this.parkMesh.visible = v.parks;
@@ -395,6 +432,9 @@ export class CityOverlay {
       this.railSleeperMat.color.setHex(0x2b2824);
       // Yard lighting is what makes Charbagh legible at night.
       this.railRailsMat.color.setHex(0x5c5f66);
+      this.metroDeckMat.color.setHex(0x33353c);
+      this.metroCanopyMat.color.setHex(0x3d4149);
+      this.metroCanopyMat.emissive.setHex(0x2a2213);
     } else {
       this.waterMaterial.color.setHex(0x4e7a80);
       this.waterMaterial.roughness = 0.34;
@@ -406,6 +446,9 @@ export class CityOverlay {
       this.railBedMat.color.setHex(0x6b645a);
       this.railSleeperMat.color.setHex(0x8a8478);
       this.railRailsMat.color.setHex(0x9a9ba0);
+      this.metroDeckMat.color.setHex(0xb9b3a8);
+      this.metroCanopyMat.color.setHex(0xd2d6da);
+      this.metroCanopyMat.emissive.setHex(0x000000);
     }
   }
 
@@ -420,6 +463,8 @@ export class CityOverlay {
     this.railBedMat.dispose();
     this.railSleeperMat.dispose();
     this.railRailsMat.dispose();
+    this.metroDeckMat.dispose();
+    this.metroCanopyMat.dispose();
     for (const mat of this.roadMaterials.values()) mat.dispose();
     this.waterMaterial.dispose();
     this.parkMaterial.dispose();

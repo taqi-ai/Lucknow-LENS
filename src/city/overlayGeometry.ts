@@ -17,6 +17,7 @@ import {
   ROAD_HALF_WIDTH, ROAD_LAYER_Y, type Pt, type RailSinks, type RoadClass,
 } from './ribbon';
 import { triangulate } from './buildingGeometry';
+import { METRO_STATIONS } from './metroStations';
 
 export interface OverlayRoad {
   id?: string;
@@ -55,6 +56,14 @@ export interface OverlayBuild {
   crossings: number;
   /** Features that received a real elevation profile. */
   elevated: number;
+  /** Metro station platform decks. */
+  metroDeck: Float32Array;
+  /** Station canopy roofs. */
+  metroCanopy: Float32Array;
+  /** Station support columns. */
+  metroColumn: Float32Array;
+  /** Stations actually placed on the alignment. */
+  stations: number;
 }
 
 export const ROAD_CLASS_ORDER: RoadClass[] = [
@@ -365,6 +374,115 @@ function buildElevatedSupports(
   }
 }
 
+/**
+ * Elevated metro stations, snapped onto the real viaduct.
+ *
+ * Each station is a 130 m island platform deck sitting on the viaduct, a canopy
+ * roof 5.6 m above it carried on paired columns, and end walls — the profile a
+ * Lucknow Metro elevated station actually has. The deck height is sampled from
+ * the viaduct's own elevation profile, so a station is never left floating above
+ * or buried inside the structure it serves.
+ *
+ * An anchor further than ANCHOR_MAX_DIST from the alignment is dropped. Those
+ * anchors come from place records that merely mention a station (a shop "near
+ * Munshi Pulia Metro Station"), and dragging one several hundred metres onto the
+ * line would put a station where there is none.
+ */
+const STATION_HALF_LEN = 65;
+const STATION_HALF_WID = 6.5;
+const CANOPY_HALF_WID = 8.5;
+const CANOPY_RISE = 5.6;
+const ANCHOR_MAX_DIST = 600;
+
+function buildMetroStationsGeom(
+  roads: OverlayRoad[],
+  profiles: Map<OverlayRoad, Pt[]>,
+  deckOut: number[],
+  canopyOut: number[],
+  columnOut: number[],
+): number {
+  // Every profiled metro centreline vertex, so a station can find its viaduct.
+  const line: Array<{ x: number; z: number; y: number; dx: number; dz: number }> = [];
+  for (const road of roads) {
+    if (road.type !== 'subway') continue;
+    const prof = profiles.get(road);
+    if (!prof || prof.length < 2) continue;
+    for (let i = 0; i < prof.length - 1; i++) {
+      const a = prof[i];
+      const b = prof[i + 1];
+      const len = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+      line.push({ x: a.x, z: a.z, y: a.y ?? 0, dx: (b.x - a.x) / len, dz: (b.z - a.z) / len });
+    }
+  }
+  if (line.length === 0) return 0;
+
+  let placed = 0;
+  for (const st of METRO_STATIONS) {
+    if (st.underground) continue;
+
+    let best = line[0];
+    let bestD = Infinity;
+    for (const seg of line) {
+      const d = Math.hypot(seg.x - st.x, seg.z - st.z);
+      if (d < bestD) { bestD = d; best = seg; }
+    }
+    if (bestD > ANCHOR_MAX_DIST) continue;
+    // A station on a ramp would be built level in reality; use the deck height
+    // at the snap point and keep the platform flat.
+    const y = best.y;
+    if (y < 3.0) continue;
+    placed++;
+
+    const ca = best.dx;
+    const sa = best.dz;
+    const W = (out: number[], u: number, yy: number, v: number) => {
+      out.push(best.x + u * ca - v * sa, yy, best.z + u * sa + v * ca);
+    };
+    const slab = (out: number[], hl: number, hw: number, y0: number, y1: number) => {
+      const q = (au: number, av: number, bu: number, bv: number,
+                 cu: number, cv: number, du: number, dv: number, yy: number) => {
+        W(out, au, yy, av); W(out, bu, yy, bv); W(out, cu, yy, cv);
+        W(out, au, yy, av); W(out, cu, yy, cv); W(out, du, yy, dv);
+      };
+      q(-hl, -hw, hl, -hw, hl, hw, -hl, hw, y1);          // top
+      q(-hl, hw, hl, hw, hl, -hw, -hl, -hw, y0);          // underside
+      for (const s of [-1, 1]) {                           // long sides
+        const v = s * hw;
+        W(out, -hl, y0, v); W(out, hl, y0, v); W(out, hl, y1, v);
+        W(out, -hl, y0, v); W(out, hl, y1, v); W(out, -hl, y1, v);
+      }
+      for (const s of [-1, 1]) {                           // ends
+        const u = s * hl;
+        W(out, u, y0, -hw); W(out, u, y0, hw); W(out, u, y1, hw);
+        W(out, u, y0, -hw); W(out, u, y1, hw); W(out, u, y1, -hw);
+      }
+    };
+
+    slab(deckOut, STATION_HALF_LEN, STATION_HALF_WID, y - 0.4, y + 1.1);
+    slab(canopyOut, STATION_HALF_LEN + 4, CANOPY_HALF_WID, y + CANOPY_RISE, y + CANOPY_RISE + 0.7);
+
+    // Paired columns down the platform carrying the canopy.
+    const bays = 6;
+    for (let i = 0; i <= bays; i++) {
+      const u = -STATION_HALF_LEN + (i / bays) * STATION_HALF_LEN * 2;
+      for (const s of [-1, 1]) {
+        const v = s * (STATION_HALF_WID - 1.0);
+        const r = 0.32;
+        for (const [du, dv] of [[-r, -r], [r, -r], [r, r], [-r, r]] as Array<[number, number]>) {
+          const [nu, nv] = [du, dv];
+          W(columnOut, u + nu, y + 1.1, v + nv);
+          W(columnOut, u - nv, y + 1.1, v + nu);
+          W(columnOut, u - nv, y + CANOPY_RISE, v + nu);
+          W(columnOut, u + nu, y + 1.1, v + nv);
+          W(columnOut, u - nv, y + CANOPY_RISE, v + nu);
+          W(columnOut, u + nu, y + CANOPY_RISE, v + nv);
+        }
+      }
+    }
+  }
+  return placed;
+}
+
 export function buildOverlay(src: OverlaySource): OverlayBuild {
   const roads = src.majorRoads ?? [];
   const waterways = src.waterways ?? [];
@@ -436,6 +554,12 @@ export function buildOverlay(src: OverlaySource): OverlayBuild {
   const flyoverBarriers: number[] = [];
   buildElevatedSupports(roads, profiles, flyoverPiers, flyoverBarriers);
 
+  // ── Metro stations ────────────────────────────────────────────────────────
+  const metroDeck: number[] = [];
+  const metroCanopy: number[] = [];
+  const metroColumn: number[] = [];
+  const stations = buildMetroStationsGeom(roads, profiles, metroDeck, metroCanopy, metroColumn);
+
   return {
     roads: roadsOut,
     water: new Float32Array(water),
@@ -450,6 +574,10 @@ export function buildOverlay(src: OverlaySource): OverlayBuild {
     railRails: new Float32Array(railSinks.rails),
     crossings: crossings.length,
     elevated: profiles.size,
+    metroDeck: new Float32Array(metroDeck),
+    metroCanopy: new Float32Array(metroCanopy),
+    metroColumn: new Float32Array(metroColumn),
+    stations,
   };
 }
 

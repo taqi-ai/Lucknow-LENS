@@ -340,8 +340,14 @@ export interface RailSinks {
   rails: number[];
 }
 
-const BALLAST_BASE_HALF = 3.6;
-const BALLAST_TOP_HALF = 2.5;
+/**
+ * Ballast section for a single track, to prototype dimensions: a 2.75 m sleeper
+ * plus a ~0.4 m shoulder each side gives a 3.8 m crown, battered out to 5.4 m at
+ * the toe. The previous 7.2 m base was nearly twice the real width, which is why
+ * track read as a wide cement road rather than as a railway.
+ */
+const BALLAST_BASE_HALF = 2.7;
+const BALLAST_TOP_HALF = 1.9;
 const BALLAST_HEIGHT = 0.55;
 const SLEEPER_SPACING = 2.6;
 const SLEEPER_HALF = 1.35;

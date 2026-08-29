@@ -133,6 +133,14 @@ uniform float uDetail;      // 0 at city scale -> 1 at street scale
 uniform vec3 uCameraPos;
 uniform float uCyber;   // 0 = normal, 1 = cyberpunk
 
+/**
+ * Mean coverage of the window pane function over one cell, integrated
+ * analytically: the x factor is on for 0.28 of the cell plus half of its two
+ * 0.10 smoothstep ramps (0.38), the y factor for 0.20 plus the same (0.30).
+ * This is the value the grid converges to once a cell falls below one pixel.
+ */
+#define PANE_MEAN 0.114
+
 float lensHash(float n) {
   return fract(sin(n * 127.1) * 43758.5453);
 }
@@ -230,75 +238,83 @@ const FRAG_OUTPUT = /* glsl */ `
     // Haze still dims lights, just far less aggressively than it dims surfaces.
     float lightHaze = 1.0 - haze * 0.45;
 
-    // The near (window grid) and far (per-building glow) models are two halves of
-    // ONE crossfade, and must stay complementary.
+    // Per-building state. Constant over the whole building, so nothing derived
+    // from it can shimmer when the camera moves.
+    float litBldg    = step(0.42, lensHash(nHash * 17.3 + 4.1));
+    float commercial = nCls > 0.5 ? 1.45 : 1.0;
+
+    // ONE light colour for the whole night model, and a desaturated one.
     //
-    // They used to fade independently: windows died at 900 m and the glow did not
-    // begin until 1500 m, so between those two distances buildings received no
-    // night lighting whatsoever. That 600 m dead band is the dark ring you fly
-    // through on every zoom, and at neighbourhood range it split the frame — near
-    // buildings black, far buildings lit — because the split is camera distance,
-    // not geometry. Complementary weights make the total coverage constant, so
-    // there is no distance at which the city is unlit.
-    float nearFar  = smoothstep(500.0, 1600.0, dist);
-    float winFade  = 1.0 - nearFar;
-    float farGlow  = nearFar;
+    // The old far term used saturated sodium (1.0, 0.74, 0.44). At range it was
+    // driven so hard that it clipped to white, which is the only reason the city
+    // ever looked white from altitude. As soon as the exposure came down through
+    // the mid distances that same value stopped clipping and showed its real hue,
+    // so the city passed through a gold band on every zoom. A single desaturated
+    // lamp colour holds one hue at every distance, and never needs to clip to
+    // look right.
+    vec3 lampWarm = mix(vec3(1.0, 0.94, 0.84), vec3(1.0, 0.88, 0.72), lensHash(nHash * 37.0));
+    lampWarm = mix(lampWarm, mix(vec3(0.30, 0.97, 1.0), vec3(1.0, 0.38, 0.92),
+                                 step(0.5, lensHash(nHash * 5.7))), uCyber);
 
-    // Coverage and intensity are separate concerns. The glow's original strength
-    // was tuned for buildings a few pixels across at >1.5 km; letting the
-    // crossfade hand it that same strength at 600 m turned every block into a
-    // white blob. Strength therefore ramps over its own, much longer distance,
-    // so the glow enters gently and only reaches full value out where it was
-    // actually tuned — leaving District and Full City looking as they did.
-    float glowStrength = mix(0.45, 2.8, smoothstep(900.0, 4200.0, dist));
-
-    // Near field: a real per-pane window grid. Sub-pixel past ~1 km, which is why
-    // it hands over to the glow rather than being drawn at range.
-    if (nIsRoof < 0.5 && winFade > 0.01) {
+    // --- Windows ---------------------------------------------------------------
+    // No distance fade. The grid is filtered analytically instead: once a window
+    // cell shrinks below a pixel the pattern collapses to its own average rather
+    // than being point-sampled. Point-sampling a sub-pixel grid is exactly what
+    // made the zoomed-out city crawl and flicker while the camera moved and sit
+    // still when it stopped, and fading it out was what forced a second lighting
+    // model to exist at all.
+    if (nIsRoof < 0.5) {
       float ang = nOrient * 6.2831853;
       vec2 dir = vec2(cos(ang), sin(ang));
       float u = dot(vWorldPos.xz, dir) / 3.6;
       float v = vWorldPos.y / 3.2;
-      vec2 cell = vec2(floor(u), floor(v));
 
-      float lit = lensHash2(cell + nHash * 91.0);
+      // Screen-space footprint of one cell, in cells.
+      float foot = max(fwidth(u), fwidth(v));
+      float blur = smoothstep(0.30, 1.10, foot);
+
       // Most windows stay dark. Commercial stock keeps more lights on, which is
       // what builds the district-level brightness hierarchy.
-      float litChance = nCls > 0.5 ? 0.70 : 0.40;
+      float litChance  = nCls > 0.5 ? 0.70 : 0.40;
       float storeyMask = step(1.0, v) * (1.0 - step(vPack.y * 80.0 / 3.2 - 1.0, v));
-      float on = step(1.0 - litChance, lit) * storeyMask;
 
-      vec2 f = fract(vec2(u, v));
+      vec2  cell = vec2(floor(u), floor(v));
+      float lit  = lensHash2(cell + nHash * 91.0);
+      float on   = step(1.0 - litChance, lit) * storeyMask;
+
+      vec2  f = fract(vec2(u, v));
       float pane = smoothstep(0.26, 0.36, f.x) * (1.0 - smoothstep(0.64, 0.74, f.x))
                  * smoothstep(0.30, 0.40, f.y) * (1.0 - smoothstep(0.60, 0.70, f.y));
 
-      vec3 warm = mix(vec3(1.0, 0.74, 0.42), vec3(1.0, 0.87, 0.64), lensHash(nHash * 37.0));
-      warm = mix(warm, mix(vec3(0.25, 0.98, 1.0), vec3(1.0, 0.30, 0.90), step(0.5, lensHash(nHash * 5.7))), uCyber);
-      gl_FragColor.rgb += warm * on * pane * uNight * winFade * lightHaze * 2.2;
+      // Converge to the analytic means of each factor.
+      float onF   = mix(on,   litChance * storeyMask, blur);
+      float paneF = mix(pane, PANE_MEAN,              blur);
+
+      gl_FragColor.rgb += lampWarm * onF * paneF * uNight * lightHaze * 2.9;
     }
 
-    // Street-level bounce. At close range the window grid is the only thing
-    // emitting, which left facades reading as black cutouts with floating panes.
-    // Real streets are lit from below by sodium spill off the carriageway, so
-    // lower storeys pick up a warm wash that decays with height. This is what
-    // gives near buildings their massing back without touching the palette.
-    float bounce = (1.0 - nIsRoof) * winFade * exp(-max(vWorldPos.y, 0.0) / 16.0);
-    gl_FragColor.rgb += vec3(0.13, 0.10, 0.068) * bounce * uNight;
+    // Street-level bounce. Up close the window grid is the only thing emitting,
+    // which left facades reading as black cutouts with floating panes. Real
+    // streets are lit from below by spill off the carriageway, so lower storeys
+    // pick up a warm wash that decays with height.
+    float nearness = 1.0 - smoothstep(300.0, 1400.0, dist);
+    float bounce = (1.0 - nIsRoof) * nearness * exp(-max(vWorldPos.y, 0.0) / 16.0);
+    gl_FragColor.rgb += vec3(0.13, 0.11, 0.085) * bounce * uNight;
 
-    // Far field: one soft glow per building, so the city still lights up when
-    // viewed from altitude instead of going dark the moment you climb. Uses the
-    // same hash as the window grid, so the buildings that glow from the air are
-    // the ones that are lit close up.
-    if (farGlow > 0.01) {
-      float litBldg = step(0.55, lensHash(nHash * 17.3 + 4.1));
-      float commercial = nCls > 0.5 ? 1.7 : 1.0;
-      // Less saturated than the window warmth — sodium haze, not candlelight.
-      vec3 sodium = vec3(1.0, 0.74, 0.44);
-      vec3 neon = mix(vec3(0.20, 0.95, 1.0), vec3(1.0, 0.25, 0.85), step(0.5, lensHash(nHash * 5.7)));
-      vec3 cityWarm = mix(sodium, neon, uCyber);
-      gl_FragColor.rgb += cityWarm * litBldg * commercial
-                        * farGlow * uNight * lightHaze * glowStrength;
-    }
+    // --- Ambient block spill ---------------------------------------------------
+    // From the air you are looking at roofs and at the light standing over each
+    // block, not at facades. A per-building constant ramped purely by distance:
+    // it cannot alias, and weighting it toward roofs keeps it from washing walls
+    // warm at mid range, which is what produced the gold band.
+    // The ramp is deliberately long and starts late. smoothstep is very flat near
+    // its lower edge, so neighbourhood range stays as dark as street range — the
+    // two now differ in window density rather than in overall brightness, which is
+    // what removes the visible "stage" between them — and the city only lifts to
+    // its full lit-from-altitude value once buildings are genuinely small.
+    float spill     = smoothstep(800.0, 5000.0, dist);
+    float spillSurf = mix(0.35, 1.0, nIsRoof);
+    gl_FragColor.rgb += lampWarm * litBldg * commercial * spill * spillSurf
+                      * uNight * lightHaze * 1.3;
   }
 `;
 

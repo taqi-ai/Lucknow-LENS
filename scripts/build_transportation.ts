@@ -41,6 +41,7 @@
 import fs from 'fs';
 import path from 'path';
 import { classifyRoad, ROAD_HALF_WIDTH, type RoadClass } from '../src/city/ribbon';
+import { isInUndergroundCorridor } from '../src/city/metroStations';
 
 const DATA_FILE = path.join(process.cwd(), 'data/lucknow_transportation_extracted.json');
 const TILES_DIR = path.join(process.cwd(), 'public/overture_tiles_full');
@@ -156,8 +157,17 @@ function resolveElevation(f: RawFeature, lengthM: number): { elevated: boolean; 
   const rawElevated = Boolean(f.isElevated) || rawLevel > 0;
   if (!rawElevated) return { elevated: false, level: 0 };
 
-  // Metro viaducts are genuinely continuous; no length cap applies.
-  if (f.class === 'subway') return { elevated: true, level: Math.max(1, rawLevel) };
+  // Metro viaducts are genuinely continuous; no length cap applies. The bored
+  // section under the city centre is the exception — Charbagh, Hussainganj,
+  // Sachivalaya and Hazratganj are underground stations, and the extract flags
+  // part of that stretch elevated like the rest of the line, which would stand a
+  // viaduct up through the middle of Charbagh and Hazratganj.
+  if (f.class === 'subway') {
+    const mid = f.coords[Math.floor(f.coords.length / 2)];
+    const p = project(mid[0], mid[1]);
+    if (isInUndergroundCorridor(p.x, p.z)) return { elevated: false, level: 0 };
+    return { elevated: true, level: Math.max(1, rawLevel) };
+  }
 
   if (rawLevel === 0) {
     // Group A — a real per-structure bridge tag.

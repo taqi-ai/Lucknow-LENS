@@ -530,6 +530,11 @@ function bakeOverlay(): void {
   if (built.metroDeck.length) sections.push({ name: 'metroDeck', data: built.metroDeck });
   if (built.metroCanopy.length) sections.push({ name: 'metroCanopy', data: built.metroCanopy });
   if (built.metroColumn.length) sections.push({ name: 'metroColumn', data: built.metroColumn });
+  // Truss and mass are the silhouette — what makes a truss bridge read as one
+  // from a distance — so they stay in the blocking buffer. Rails and lamp masts
+  // are filigree only visible up close, so they ride with the sleepers.
+  if (built.structTruss.length) sections.push({ name: 'structTruss', data: built.structTruss });
+  if (built.structMass.length) sections.push({ name: 'structMass', data: built.structMass });
 
   // Sleepers are 531 km of ballasted track at 2.6 m spacing — 14 MB, and never
   // shown above 900 m altitude. Keeping them out of the always-fetched buffer is
@@ -537,6 +542,8 @@ function bakeOverlay(): void {
   // companion file the client pulls only once the camera is low enough.
   const detail: OverlaySection[] = [];
   if (built.railSleepers.length) detail.push({ name: 'railSleepers', data: built.railSleepers });
+  if (built.structRail.length) detail.push({ name: 'structRail', data: built.structRail });
+  if (built.structLamp.length) detail.push({ name: 'structLamp', data: built.structLamp });
 
   const meta = {
     crossings: built.crossings,
@@ -552,6 +559,9 @@ function bakeOverlay(): void {
   console.log(`  rail: bed ${built.railBed.length / 3} verts, ` +
               `sleepers ${built.railSleepers.length / 3}, rails ${built.railRails.length / 3}`);
   console.log(`  metro: ${built.stations} elevated stations placed on the alignment`);
+  console.log(`  named structures detailed: ${built.namedStructures} ` +
+              `(rail ${built.structRail.length / 3}, lamp ${built.structLamp.length / 3}, ` +
+              `steel ${built.structTruss.length / 3}, mass ${built.structMass.length / 3} verts)`);
 
   console.log(`\nDone.`);
 }

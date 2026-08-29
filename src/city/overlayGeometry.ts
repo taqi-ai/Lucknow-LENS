@@ -18,9 +18,15 @@ import {
 } from './ribbon';
 import { triangulate } from './buildingGeometry';
 import { METRO_STATIONS } from './metroStations';
+import { buildNamedStructure, matchStructure, type StructureSinks } from './namedStructures';
+
+/** Total length above which a named structure is a corridor, not a structure. */
+const FINE_DETAIL_MAX_TOTAL = 2500;
 
 export interface OverlayRoad {
   id?: string;
+  /** Real Overture name — drives named-structure detailing. */
+  name?: string;
   points: Pt[];
   width?: number;
   type?: string;
@@ -64,6 +70,16 @@ export interface OverlayBuild {
   metroColumn: Float32Array;
   /** Stations actually placed on the alignment. */
   stations: number;
+  /** Parapet rails and posts on named structures. */
+  structRail: Float32Array;
+  /** Lighting masts on named structures. */
+  structLamp: Float32Array;
+  /** Steel superstructure: trusses and plate girders. */
+  structTruss: Float32Array;
+  /** Heavy concrete: barrage piers and gate housings. */
+  structMass: Float32Array;
+  /** Named structures that matched a real feature and were detailed. */
+  namedStructures: number;
 }
 
 export const ROAD_CLASS_ORDER: RoadClass[] = [
@@ -560,6 +576,39 @@ export function buildOverlay(src: OverlaySource): OverlayBuild {
   const metroColumn: number[] = [];
   const stations = buildMetroStationsGeom(roads, profiles, metroDeck, metroCanopy, metroColumn);
 
+  // ── Named structures ──────────────────────────────────────────────────────
+  // Signature detail along the real centreline of each curated bridge/flyover.
+  const structSinks: StructureSinks = { rail: [], lamp: [], truss: [], mass: [] };
+  const detailed = new Set<string>();
+
+  // Pre-pass: total length per structure. Fine detail is only worth its vertices
+  // on discrete structures, and a corridor is only recognisable as one once its
+  // features are summed.
+  const structLength = new Map<string, number>();
+  for (const road of roads) {
+    const prof = profiles.get(road);
+    if (!prof || !road.name) continue;
+    const def = matchStructure(road.name);
+    if (!def) continue;
+    let len = 0;
+    for (let i = 0; i < prof.length - 1; i++) {
+      len += Math.hypot(prof[i + 1].x - prof[i].x, prof[i + 1].z - prof[i].z);
+    }
+    structLength.set(def.label, (structLength.get(def.label) ?? 0) + len);
+  }
+
+  for (const road of roads) {
+    const prof = profiles.get(road);
+    if (!prof) continue;
+    const def = matchStructure(road.name);
+    if (!def) continue;
+    const cls = classifyRoad(road.type, road.subtype, road.level, road.isElevated);
+    const half = cls === 'railway' ? 2.6 : Math.max(ROAD_HALF_WIDTH[cls], (road.width ?? 0) / 2);
+    const allowFine = (structLength.get(def.label) ?? 0) <= FINE_DETAIL_MAX_TOTAL;
+    const kind = buildNamedStructure(road.name, prof, half, structSinks, allowFine);
+    if (kind) detailed.add(def.label);
+  }
+
   return {
     roads: roadsOut,
     water: new Float32Array(water),
@@ -578,6 +627,11 @@ export function buildOverlay(src: OverlaySource): OverlayBuild {
     metroCanopy: new Float32Array(metroCanopy),
     metroColumn: new Float32Array(metroColumn),
     stations,
+    structRail: new Float32Array(structSinks.rail),
+    structLamp: new Float32Array(structSinks.lamp),
+    structTruss: new Float32Array(structSinks.truss),
+    structMass: new Float32Array(structSinks.mass),
+    namedStructures: detailed.size,
   };
 }
 

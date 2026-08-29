@@ -78,6 +78,11 @@ export class CityOverlay {
   private metroColumnMesh: THREE.Mesh | null = null;
   private metroDeckMat: THREE.MeshStandardMaterial;
   private metroCanopyMat: THREE.MeshStandardMaterial;
+  private structMeshes: THREE.Mesh[] = [];
+  private structRailMat: THREE.MeshStandardMaterial;
+  private structLampMat: THREE.MeshStandardMaterial;
+  private structTrussMat: THREE.MeshStandardMaterial;
+  private structMassMat: THREE.MeshStandardMaterial;
   private waterMaterial: THREE.MeshStandardMaterial;
   private parkMaterial: THREE.MeshStandardMaterial;
   private waterMesh: THREE.Mesh | null = null;
@@ -138,6 +143,21 @@ export class CityOverlay {
       color: 0xd2d6da,
       roughness: 0.42,
       metalness: 0.30,
+    });
+
+    // Named structures. Painted steel for parapets, galvanised grey for lighting,
+    // a deeper structural steel for trusses and girders, and concrete for mass.
+    this.structRailMat = new THREE.MeshStandardMaterial({
+      color: 0xb9bdc2, roughness: 0.5, metalness: 0.35, flatShading: true,
+    });
+    this.structLampMat = new THREE.MeshStandardMaterial({
+      color: 0x9aa0a6, roughness: 0.45, metalness: 0.5, flatShading: true,
+    });
+    this.structTrussMat = new THREE.MeshStandardMaterial({
+      color: 0x8d6a58, roughness: 0.62, metalness: 0.45, flatShading: true,
+    });
+    this.structMassMat = new THREE.MeshStandardMaterial({
+      color: 0xa9a396, roughness: 0.88, flatShading: true,
     });
 
     for (const cls of Object.keys(ROAD_COLORS_DAY) as RoadClass[]) {
@@ -326,6 +346,14 @@ export class CityOverlay {
           this.metroCanopyMesh.castShadow = true;
         } else if (sec.name === 'metroColumn') {
           this.metroColumnMesh = this.makeMesh(pos, this.metroDeckMat, 'metroColumn');
+        } else if (sec.name.startsWith('struct')) {
+          const mat = sec.name === 'structRail' ? this.structRailMat
+            : sec.name === 'structLamp' ? this.structLampMat
+            : sec.name === 'structTruss' ? this.structTrussMat
+            : this.structMassMat;
+          const mesh = this.makeMesh(pos, mat, sec.name);
+          mesh.castShadow = true;
+          this.structMeshes.push(mesh);
         }
       }
     }
@@ -375,8 +403,14 @@ export class CityOverlay {
     // road, so they stay on as long as the bed does rather than dropping out at
     // district height and leaving a bare ballast strip.
     if (this.railRailsMesh) this.railRailsMesh.visible = this.roadsEnabled && altitude <= 12000;
-    if (altitude <= 1800) this.loadDetail();
+    if (altitude <= 3000) this.loadDetail();
     if (this.railSleeperMesh) this.railSleeperMesh.visible = this.roadsEnabled && altitude <= 1800;
+
+    // Signature detail is fine filigree — rails, posts, lamp masts. It stops
+    // resolving well before it stops costing, so it is gated tighter than the
+    // decks it sits on.
+    const structOn = this.roadsEnabled && altitude <= 3000;
+    for (const m of this.structMeshes) m.visible = structOn;
 
     const metroOn = this.roadsEnabled && altitude <= 6000;
     if (this.metroDeckMesh) this.metroDeckMesh.visible = metroOn;
@@ -404,6 +438,7 @@ export class CityOverlay {
       if (this.metroDeckMesh) this.metroDeckMesh.visible = false;
       if (this.metroCanopyMesh) this.metroCanopyMesh.visible = false;
       if (this.metroColumnMesh) this.metroColumnMesh.visible = false;
+      for (const m of this.structMeshes) m.visible = false;
     }
     if (this.waterMesh) this.waterMesh.visible = v.water;
     if (this.parkMesh) this.parkMesh.visible = v.parks;
@@ -465,6 +500,10 @@ export class CityOverlay {
     this.railRailsMat.dispose();
     this.metroDeckMat.dispose();
     this.metroCanopyMat.dispose();
+    this.structRailMat.dispose();
+    this.structLampMat.dispose();
+    this.structTrussMat.dispose();
+    this.structMassMat.dispose();
     for (const mat of this.roadMaterials.values()) mat.dispose();
     this.waterMaterial.dispose();
     this.parkMaterial.dispose();

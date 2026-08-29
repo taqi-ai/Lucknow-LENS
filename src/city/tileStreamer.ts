@@ -4,7 +4,7 @@ import {
   TileManifest, TileManifestItem, BuildingFootprint,
   CityStreamingStats, LODLevel,
 } from '../types';
-import { BuildingMaterialSystem } from './buildingMaterial';
+import { BuildingMaterialSystem, type SkylineStyle } from './buildingMaterial';
 import { HLODLayer } from './hlodLayer';
 import { CityOverlay } from './cityOverlay';
 import { ROAD_LAYER_Y, type RoadClass } from './ribbon';
@@ -134,6 +134,7 @@ export class TileStreamer {
   public stableMode = true;
   public debugMode = false;
   private isNight = true;
+  private skylineStyle: SkylineStyle = 'warm';
 
   private roadMaterials: Record<string, THREE.MeshStandardMaterial> = {};
   private parkMaterial: THREE.MeshStandardMaterial;
@@ -712,10 +713,30 @@ export class TileStreamer {
   // ─────────────────────────────────────────────────────────────────────────
   // MODES & ACCESSORS
 
+  /**
+   * Ground, parks and water are style-aware, not just day/night aware.
+   *
+   * They were not, and it showed: under Cyberpunk's cyan key the warm grey-green
+   * daytime ground (0x8d9080) turned into a flat teal sheet covering the entire
+   * frame. The surface colour has to move with the light, or a stylised profile
+   * just tints one enormous polygon.
+   */
+  public setSkylineStyle(style: SkylineStyle): void {
+    if (this.skylineStyle === style) return;
+    this.skylineStyle = style;
+    this.applyPalette();
+  }
+
   public setNightMode(night: boolean): void {
     if (this.isNight === night) return;
     this.isNight = night;
     this.materials.setNightMode(night);
+    this.applyPalette();
+  }
+
+  private applyPalette(): void {
+    const night = this.isNight;
+    const cyber = this.skylineStyle === 'cyberpunk';
 
     const roadColors = night ? ROAD_COLORS_NIGHT : ROAD_COLORS_DAY;
     for (const cat of Object.keys(this.roadMaterials) as RoadClass[]) {
@@ -734,6 +755,16 @@ export class TileStreamer {
       this.treeMaterials[0].color.setHex(0x101d15);
       this.treeMaterials[1].color.setHex(0x142218);
       this.treeMaterials[2].color.setHex(0x0e1a13);
+    } else if (cyber) {
+      // Dark desaturated slate so the cyan key reads as light falling on a
+      // surface rather than as the surface's own colour.
+      this.groundMaterial.color.setHex(0x2b3247);
+      this.parkMaterial.color.setHex(0x1f3a3a);
+      this.waterMaterial.color.setHex(0x16304a);
+      this.lampHeadMat.emissiveIntensity = 0.0;
+      this.treeMaterials[0].color.setHex(0x1d3a34);
+      this.treeMaterials[1].color.setHex(0x244440);
+      this.treeMaterials[2].color.setHex(0x18322e);
     } else {
       // Warm neutral earth. The old pale mint-grey dominated every aerial frame and
       // pushed the whole image green.

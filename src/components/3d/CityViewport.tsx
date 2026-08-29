@@ -321,6 +321,12 @@ export const CityViewport: React.FC<CityViewportProps> = ({
           labelManager.setNightMode(s.night);
           controls.transitionTo(new THREE.Vector3(s.t[0], 0, s.t[1]), s.az, s.pi, s.d, 10);
         },
+        /** Switch visual profile without going through React state. */
+        setStyle(s: SkylineStyle) {
+          materials.setSkylineStyle(s);
+          cityRenderer.setSkylineStyle(s);
+          streamer.setSkylineStyle(s);
+        },
         /** Resolve once the streamer has no pending loads for 4 consecutive checks. */
         waitSettled(timeoutMs = 20000) {
           return new Promise<void>((resolve) => {
@@ -592,6 +598,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
   useEffect(() => {
     materialsRef.current?.setSkylineStyle(skylineStyle);
     rendererRef.current?.setSkylineStyle(skylineStyle);
+    streamerRef.current?.setSkylineStyle(skylineStyle);
   }, [skylineStyle]);
 
   // Handle Camera Presets

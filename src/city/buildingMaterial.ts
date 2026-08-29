@@ -96,9 +96,23 @@ const ROOF_PALETTE_CYBER = [
   0x101430, 0x0e1129, 0x131734, 0x0c0f24,
   0x11142e, 0x0f1228, 0x141838, 0x0a0d20,
 ];
+/**
+ * Cyberpunk DAY stock. Mid-tone cool steel, not the night indigo.
+ *
+ * These were the night values (0x2a3050 and darker), which under a low-key cyan
+ * environment left every building a black silhouette on a flooded cyan ground —
+ * no massing, no readable city. Cyberpunk is a lighting mood; the buildings
+ * still have to be legible surfaces.
+ */
 const WALL_PALETTE_CYBER_DAY = [
-  0x2a3050, 0x262b48, 0x2f3557, 0x222741,
-  0x2c3252, 0x282d4a, 0x31375a, 0x1f243c,
+  0x5a6490, 0x525c86, 0x616b99, 0x4b5480,
+  0x5c6693, 0x545e8a, 0x646e9d, 0x47507a,
+];
+
+/** Matching roof stock. Roofs are what you see from altitude in this mode. */
+const ROOF_PALETTE_CYBER_DAY = [
+  0x424b73, 0x3c446a, 0x49527d, 0x363e60,
+  0x444d75, 0x3e466c, 0x4b5480, 0x333b5c,
 ];
 
 function paletteToVec3Array(hexes: number[]): THREE.Vector3[] {
@@ -366,6 +380,7 @@ export class BuildingMaterialSystem {
   private cyberWall = paletteToVec3Array(WALL_PALETTE_CYBER);
   private cyberRoof = paletteToVec3Array(ROOF_PALETTE_CYBER);
   private cyberDayWall = paletteToVec3Array(WALL_PALETTE_CYBER_DAY);
+  private cyberDayRoof = paletteToVec3Array(ROOF_PALETTE_CYBER_DAY);
 
   private dayWall = paletteToVec3Array(WALL_PALETTE_DAY);
   private dayRoof = paletteToVec3Array(ROOF_PALETTE_DAY);
@@ -474,7 +489,7 @@ export class BuildingMaterialSystem {
     let roof: THREE.Vector3[];
     if (this.style === 'cyberpunk') {
       wall = night ? this.cyberWall : this.cyberDayWall;
-      roof = night ? this.cyberRoof : this.cyberRoof;
+      roof = night ? this.cyberRoof : this.cyberDayRoof;
     } else if (this.style === 'clear') {
       wall = night ? this.nightWall : this.clearWall;
       roof = night ? this.nightRoof : this.clearRoof;

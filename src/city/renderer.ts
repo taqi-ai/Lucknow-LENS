@@ -180,38 +180,52 @@ export class CityRenderer {
       }
     } else {
       if (this.skylineStyle === 'clear') {
-        // Natural White Look: Crisp, neutral daylight, pure white balance
-        this.scene.fog = new THREE.FogExp2(0xe2e8f0, 0.000000);
-        this.sunLight.color.setHex(0xffffff); // Pure white sun
-        this.sunLight.intensity = 3.9;
-        this.ambientLight.color.setHex(0xe2e8f0);
-        this.ambientLight.intensity = 0.28;
-        this.hemiLight.color.setHex(0xd0e2f5); // Soft neutral daylight sky
-        this.hemiLight.groundColor.setHex(0x8a929a);
-        this.hemiLight.intensity = 0.70;
+        // NATURAL WHITE — midday, neutral white balance. The reference the other
+        // two are read against, so it commits to nothing: white sun, faintly
+        // cool sky fill, neutral ground bounce.
+        this.scene.fog = new THREE.FogExp2(0xe6ebf0, 0.000000);
+        this.sunLight.color.setHex(0xffffff);
+        this.sunLight.intensity = 3.6;
+        this.ambientLight.color.setHex(0xdfe7f0);
+        this.ambientLight.intensity = 0.34;
+        this.hemiLight.color.setHex(0xd6e6f7);
+        this.hemiLight.groundColor.setHex(0x95999e);
+        this.hemiLight.intensity = 0.78;
         this.renderer.toneMappingExposure = 0.95;
       } else if (this.skylineStyle === 'cyberpunk') {
-        // Cyberpunk Day
-        this.scene.fog = new THREE.FogExp2(0x1a2035, 0.000000);
-        this.sunLight.color.setHex(0x00e5ff);
-        this.sunLight.intensity = 3.5;
-        this.ambientLight.color.setHex(0x2d1a45);
-        this.ambientLight.intensity = 0.45;
-        this.hemiLight.color.setHex(0x00f0ff);
-        this.hemiLight.groundColor.setHex(0x3a1040);
-        this.hemiLight.intensity = 0.85;
-        this.renderer.toneMappingExposure = 1.1;
+        // CYBERPUNK — a genuinely different profile, not a tinted day. The key
+        // is that almost no light comes from the sky: a deep indigo environment
+        // with a cold cyan key from one side and a magenta ground bounce from
+        // the other, so surfaces split into cyan-lit and magenta-shadowed. The
+        // building shader's uCyber term supplies the neon windows and accents.
+        this.scene.fog = new THREE.FogExp2(0x0e1430, 0.000000);
+        this.sunLight.color.setHex(0x7af0ff);
+        this.sunLight.intensity = 3.4;
+        this.ambientLight.color.setHex(0x2a1a55);
+        this.ambientLight.intensity = 0.42;
+        // A strong cyan hemisphere floods the ground plane, which is what turned
+        // the whole city into a flat cyan sheet. Kept low; the sun carries the key.
+        this.hemiLight.color.setHex(0x5fd0f5);
+        this.hemiLight.groundColor.setHex(0x4a1440);
+        this.hemiLight.intensity = 0.50;
+        this.renderer.toneMappingExposure = 1.02;
       } else {
-        // Warm White Look: Golden afternoon sunlight, warm stone, warm ambient
-        this.scene.fog = new THREE.FogExp2(0xcfdcea, 0.000000);
-        this.sunLight.color.setHex(0xffe6bd); // Golden warm sun
-        this.sunLight.intensity = 4.2;
-        this.ambientLight.color.setHex(0xc3d8ef);
-        this.ambientLight.intensity = 0.16;
-        this.hemiLight.color.setHex(0xaecbe8);
-        this.hemiLight.groundColor.setHex(0x7d6f5c);
-        this.hemiLight.intensity = 0.62;
-        this.renderer.toneMappingExposure = 0.92;
+        // WARM WHITE — late golden afternoon.
+        //
+        // The ambient used to be 0xc3d8ef, a cool blue, which is what made this
+        // mode nearly indistinguishable from Natural White: a golden key light
+        // cancelled by a cold fill reads as neutral. Every term is warm now —
+        // sun, ambient, sky and ground bounce — and the exposure is lifted, so
+        // the difference is obvious at a glance rather than on close inspection.
+        this.scene.fog = new THREE.FogExp2(0xe8d7bc, 0.000000);
+        this.sunLight.color.setHex(0xffcf8a);
+        this.sunLight.intensity = 4.4;
+        this.ambientLight.color.setHex(0xf2d3a6);
+        this.ambientLight.intensity = 0.32;
+        this.hemiLight.color.setHex(0xffd9a8);
+        this.hemiLight.groundColor.setHex(0x8a6a44);
+        this.hemiLight.intensity = 0.72;
+        this.renderer.toneMappingExposure = 1.04;
       }
     }
   }

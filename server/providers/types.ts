@@ -78,3 +78,36 @@ export interface LiveProvider<T> {
   unavailableReason(): string;
   fetch(): Promise<T[]>;
 }
+
+/** One city-wide weather observation, normalized. */
+export interface LiveWeather {
+  /** Epoch ms of the observation itself. */
+  observedAt: number | null;
+  temperatureC: number;
+  apparentTemperatureC: number | null;
+  humidityPct: number | null;
+  windSpeedKph: number | null;
+  windDirectionDeg: number | null;
+  precipitationMm: number | null;
+  pressureHpa: number | null;
+  isDay: boolean;
+  /** WMO weather interpretation code. */
+  code: number | null;
+  description: string;
+}
+
+/** One city-wide air-quality observation, normalized. */
+export interface LiveAirQuality {
+  observedAt: number | null;
+  /** US EPA AQI as reported upstream — never recomputed here. */
+  usAqi: number;
+  /** Band label derived from `usAqi`, so the two cannot disagree. */
+  category: string;
+  dominantPollutant: string;
+  pm25: number | null;
+  pm10: number | null;
+  carbonMonoxide: number | null;
+  nitrogenDioxide: number | null;
+  ozone: number | null;
+  sulphurDioxide: number | null;
+}

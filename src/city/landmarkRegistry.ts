@@ -27,7 +27,8 @@ export type LandmarkArchetype =
   | 'terminal'
   | 'tower'
   | 'mall'
-  | 'campus';
+  | 'campus'
+  | 'flagpole';
 
 export interface LandmarkDef {
   id: string;
@@ -95,8 +96,24 @@ export const LANDMARKS: LandmarkDef[] = [
   },
   {
     id: 'clock-tower', name: 'Hussainabad Clock Tower',
-    x: -3193, z: -889, archetype: 'tower',
-    radius: 14, height: 67, importance: 8, source: 'places',
+    // Moved from (-3193, -889), which was a generic "Clock Tower" place record
+    // 1.6 km away. The real Ghanta Ghar stands in the Hussainabad complex beside
+    // Chota Imambara — the "Ghanta Ghar" place record, with "Hussainabad &
+    // Allied Trust" 500 m south, both of which sit here.
+    // 221 ft (67.4 m): the tallest clock tower in India, 1881.
+    x: -4216, z: -2354, archetype: 'tower',
+    radius: 13, height: 67.4, importance: 9, source: 'places',
+  },
+
+  {
+    // The 207 ft (63.1 m) national flagpole in Janeshwar Mishra Park, Gomti
+    // Nagar — the tallest in Uttar Pradesh and a replica of the Connaught Place
+    // pole. Position from the park's own place record.
+    id: 'janeshwar-flag', name: 'National Flag, Janeshwar Mishra Park',
+    x: 3837, z: 1678, archetype: 'flagpole',
+    radius: 30, height: 63.1, rotation: 0.4, importance: 8, source: 'places',
+    // The park is 376 acres; only the flag plaza should clear bulk geometry.
+    suppressRadius: 60,
   },
 
   // ── Civic / transport ─────────────────────────────────────────────────────

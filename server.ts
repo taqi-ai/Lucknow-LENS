@@ -6,6 +6,7 @@ import dotenv from "dotenv";
 import compression from "compression";
 import { CachedFeed } from "./server/providers/cache";
 import { OpenSkyProvider } from "./server/providers/opensky";
+import { OpenMeteoWeatherProvider, OpenMeteoAirQualityProvider } from "./server/providers/openmeteo";
 import { RailRadarProvider } from "./server/providers/railradar";
 
 dotenv.config();
@@ -74,6 +75,30 @@ const trainFeed = new CachedFeed(new RailRadarProvider(), {
   attribution: "Live train data via RailRadar",
 });
 
+const weatherFeed = new CachedFeed(new OpenMeteoWeatherProvider(), {
+  ttlMs: 300_000,        // observations update every 15 min upstream
+  timeoutMs: 8_000,
+  maxStaleMs: 3_600_000,
+  attribution: "Weather by Open-Meteo.com (CC BY 4.0)",
+});
+
+const airFeed = new CachedFeed(new OpenMeteoAirQualityProvider(), {
+  ttlMs: 600_000,        // hourly upstream
+  timeoutMs: 8_000,
+  maxStaleMs: 7_200_000,
+  attribution: "Air quality by Open-Meteo.com (CC BY 4.0)",
+});
+
+app.get("/api/live/weather", async (_req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.json(await weatherFeed.get());
+});
+
+app.get("/api/live/air", async (_req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.json(await airFeed.get());
+});
+
 app.get("/api/live/flights", async (_req, res) => {
   res.set("Cache-Control", "no-store");
   res.json(await flightFeed.get());
@@ -86,12 +111,16 @@ app.get("/api/live/trains", async (_req, res) => {
 
 // API Health Check
 app.get("/api/health", async (_req, res) => {
-  const [flights, trains] = await Promise.all([flightFeed.get(), trainFeed.get()]);
+  const [flights, trains, weather, air] = await Promise.all([
+    flightFeed.get(), trainFeed.get(), weatherFeed.get(), airFeed.get(),
+  ]);
   res.json({
     status: "ok",
     live: {
       flights: { status: flights.status, provider: flights.provider, count: flights.items.length },
       trains: { status: trains.status, provider: trains.provider, count: trains.items.length },
+      weather: { status: weather.status, provider: weather.provider, count: weather.items.length },
+      air: { status: air.status, provider: air.provider, count: air.items.length },
     },
   });
 });

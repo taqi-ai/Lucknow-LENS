@@ -38,6 +38,12 @@ interface LandmarkMaterials {
   tarmac: THREE.MeshStandardMaterial;
   marking: THREE.MeshStandardMaterial;
   aircraft: THREE.MeshStandardMaterial;
+  /** Lakhauri red brick — the Hussainabad Clock Tower's actual fabric. */
+  brick: THREE.MeshStandardMaterial;
+  saffron: THREE.MeshStandardMaterial;
+  flagWhite: THREE.MeshStandardMaterial;
+  flagGreen: THREE.MeshStandardMaterial;
+  chakra: THREE.MeshStandardMaterial;
 }
 
 export class LandmarkSystem {
@@ -67,6 +73,11 @@ export class LandmarkSystem {
       marking: new THREE.MeshStandardMaterial({
         color: 0xdedad0, roughness: 0.7, emissive: 0x3a3020, emissiveIntensity: 1,
       }),
+      brick: new THREE.MeshStandardMaterial({ color: 0x8f4b39, roughness: 0.88, flatShading: true }),
+      saffron: new THREE.MeshStandardMaterial({ color: 0xff9933, roughness: 0.82, side: THREE.DoubleSide }),
+      flagWhite: new THREE.MeshStandardMaterial({ color: 0xf5f5f5, roughness: 0.82, side: THREE.DoubleSide }),
+      flagGreen: new THREE.MeshStandardMaterial({ color: 0x138808, roughness: 0.82, side: THREE.DoubleSide }),
+      chakra: new THREE.MeshStandardMaterial({ color: 0x000080, roughness: 0.7, side: THREE.DoubleSide }),
       aircraft: new THREE.MeshStandardMaterial({
         color: 0xdfe6ee, roughness: 0.42, metalness: 0.35, flatShading: true,
       }),
@@ -154,6 +165,7 @@ export class LandmarkSystem {
       case 'tower': return this.buildTower(def, detail);
       case 'mall': return this.buildMall(def, detail);
       case 'campus': return this.buildCampus(def, detail);
+      case 'flagpole': return this.buildFlagpole(def, detail);
     }
   }
 
@@ -701,37 +713,185 @@ export class LandmarkSystem {
   }
 
   /** Hussainabad Clock Tower: tapering Gothic-Revival shaft with a clock stage. */
+  /**
+   * Hussainabad Clock Tower (Ghanta Ghar), 1881 — 221 ft, the tallest clock
+   * tower in India.
+   *
+   * The generic cylinder-on-a-box this replaced described no particular tower.
+   * The real one has a specific and recognisable form: a SQUARE plinth and lower
+   * stage that becomes OCTAGONAL as it rises, built in Lakhauri red brick with
+   * pale stucco dressings, a colonnaded clock stage carrying a 12-petalled
+   * flower dial on each face, and a Gothic spire. Roskell Payne designed it;
+   * Khan Bahadur Mirza Jan built it.
+   */
   private buildTower(def: LandmarkDef, detail: number): THREE.Group {
     const g = new THREE.Group();
     const r = def.radius;
     const h = def.height;
-    const seg = detail === 2 ? 6 : 8;
+    const oct = detail === 2 ? 8 : 8; // octagon is the form; never fewer sides
 
-    const base = new THREE.BoxGeometry(r * 1.5, h * 0.12, r * 1.5);
-    base.translate(0, h * 0.06, 0);
-    g.add(new THREE.Mesh(base, this.mats.stoneDark));
+    const add = (geo: THREE.BufferGeometry, mat: THREE.Material) =>
+      g.add(new THREE.Mesh(geo, mat));
 
-    const shaft = new THREE.CylinderGeometry(r * 0.42, r * 0.6, h * 0.62, seg);
-    shaft.translate(0, h * 0.43, 0);
-    g.add(new THREE.Mesh(shaft, this.mats.stone));
+    // ── Square plinth and first stage ───────────────────────────────────────
+    const plinth = new THREE.BoxGeometry(r * 2.0, h * 0.045, r * 2.0);
+    plinth.translate(0, h * 0.0225, 0);
+    add(plinth, this.mats.stoneDark);
 
-    const stage = new THREE.CylinderGeometry(r * 0.55, r * 0.5, h * 0.13, seg);
-    stage.translate(0, h * 0.8, 0);
-    g.add(new THREE.Mesh(stage, this.mats.stoneDark));
+    const sq = new THREE.BoxGeometry(r * 1.55, h * 0.30, r * 1.55);
+    sq.translate(0, h * 0.195, 0);
+    add(sq, this.mats.brick);
 
-    const spire = new THREE.ConeGeometry(r * 0.5, h * 0.24, seg);
-    spire.translate(0, h * 0.98, 0);
-    g.add(new THREE.Mesh(spire, this.mats.dome));
+    // Stucco string course marking the square-to-octagon transition.
+    const band1 = new THREE.BoxGeometry(r * 1.72, h * 0.022, r * 1.72);
+    band1.translate(0, h * 0.352, 0);
+    add(band1, this.mats.stone);
 
-    if (detail === 0) {
-      // Clock faces on the four cardinal sides.
-      const face = new THREE.CircleGeometry(r * 0.3, 14);
-      for (let i = 0; i < 4; i++) {
-        const a = (i / 4) * Math.PI * 2;
-        const f = face.clone();
-        f.rotateY(a + Math.PI / 2);
-        f.translate(Math.cos(a) * r * 0.56, h * 0.8, Math.sin(a) * r * 0.56);
-        g.add(new THREE.Mesh(f, this.mats.dome));
+    // ── Octagonal shaft ────────────────────────────────────────────────────
+    const shaft = new THREE.CylinderGeometry(r * 0.72, r * 0.86, h * 0.30, oct);
+    shaft.translate(0, h * 0.513, 0);
+    add(shaft, this.mats.brick);
+
+    const band2 = new THREE.CylinderGeometry(r * 0.80, r * 0.80, h * 0.02, oct);
+    band2.translate(0, h * 0.672, 0);
+    add(band2, this.mats.stone);
+
+    // ── Clock stage ────────────────────────────────────────────────────────
+    const clockStage = new THREE.CylinderGeometry(r * 0.88, r * 0.84, h * 0.15, oct);
+    clockStage.translate(0, h * 0.757, 0);
+    add(clockStage, this.mats.brick);
+
+    // Corner colonnettes around the clock stage — the vertical rhythm that
+    // makes this stage read as Gothic rather than as a drum.
+    if (detail <= 1) {
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
+        const col = new THREE.CylinderGeometry(r * 0.055, r * 0.055, h * 0.155, 5);
+        col.translate(Math.cos(a) * r * 0.88, h * 0.757, Math.sin(a) * r * 0.88);
+        add(col, this.mats.stone);
+      }
+    }
+
+    // Dials on the four cardinal faces. The real dial is a 12-petalled flower,
+    // so it is drawn as twelve petals around a hub rather than a plain disc.
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2;
+      const nx = Math.cos(a);
+      const nz = Math.sin(a);
+      const dialR = r * 0.42;
+
+      const plate = new THREE.CircleGeometry(dialR, detail === 2 ? 12 : 20);
+      plate.rotateY(a + Math.PI / 2);
+      plate.translate(nx * r * 0.90, h * 0.762, nz * r * 0.90);
+      add(plate, this.mats.stone);
+
+      if (detail <= 1) {
+        for (let p = 0; p < 12; p++) {
+          const pa = (p / 12) * Math.PI * 2;
+          const petal = new THREE.CircleGeometry(dialR * 0.20, 6);
+          petal.rotateY(a + Math.PI / 2);
+          petal.translate(
+            nx * r * 0.91 - Math.sin(a) * Math.cos(pa) * dialR * 0.66,
+            h * 0.762 + Math.sin(pa) * dialR * 0.66,
+            nz * r * 0.91 + Math.cos(a) * Math.cos(pa) * dialR * 0.66,
+          );
+          add(petal, this.mats.stoneDark);
+        }
+        // Scimitar-shaped hands, simplified to two slim bars.
+        const hand = new THREE.BoxGeometry(dialR * 0.62, dialR * 0.075, 0.12);
+        hand.rotateY(a + Math.PI / 2);
+        hand.translate(nx * r * 0.92, h * 0.762, nz * r * 0.92);
+        add(hand, this.mats.stoneDark);
+      }
+    }
+
+    // ── Belfry and spire ───────────────────────────────────────────────────
+    const belfry = new THREE.CylinderGeometry(r * 0.62, r * 0.78, h * 0.10, oct);
+    belfry.translate(0, h * 0.882, 0);
+    add(belfry, this.mats.brick);
+
+    const cornice = new THREE.CylinderGeometry(r * 0.70, r * 0.70, h * 0.018, oct);
+    cornice.translate(0, h * 0.941, 0);
+    add(cornice, this.mats.stone);
+
+    const spire = new THREE.ConeGeometry(r * 0.58, h * 0.20, oct);
+    spire.translate(0, h * 1.05, 0);
+    add(spire, this.mats.dome);
+
+    const finial = new THREE.SphereGeometry(r * 0.09, 8, 6);
+    finial.translate(0, h * 1.16, 0);
+    add(finial, this.mats.metal);
+
+    return g;
+  }
+
+  /**
+   * Monumental national flagpole — the 207 ft (63.1 m) mast in Janeshwar Mishra
+   * Park, tallest in Uttar Pradesh and a replica of the Connaught Place pole.
+   *
+   * The flag is built as three horizontal bands with a navy Ashoka Chakra, on a
+   * gently curved surface so it reads as cloth rather than as a decal, and is
+   * double-sided because a flag is visible from both sides. It is deliberately
+   * NOT animated: a static correct flag is better than a wrong wave, and this is
+   * one object in a city of a million.
+   */
+  private buildFlagpole(def: LandmarkDef, detail: number): THREE.Group {
+    const g = new THREE.Group();
+    const h = def.height;
+
+    // Plaza and stepped pedestal.
+    const plaza = new THREE.CylinderGeometry(def.radius, def.radius, 0.5, detail === 2 ? 12 : 24);
+    plaza.translate(0, 0.25, 0);
+    g.add(new THREE.Mesh(plaza, this.mats.stone));
+
+    const pedestal = new THREE.CylinderGeometry(4.2, 5.4, 2.2, detail === 2 ? 8 : 16);
+    pedestal.translate(0, 1.5, 0);
+    g.add(new THREE.Mesh(pedestal, this.mats.stoneDark));
+
+    // Mast: tapered steel, stepped in three sections like the real pole.
+    const mast = new THREE.CylinderGeometry(0.30, 0.85, h, detail === 2 ? 6 : 12);
+    mast.translate(0, 2.2 + h / 2, 0);
+    g.add(new THREE.Mesh(mast, this.mats.metal));
+
+    const truck = new THREE.SphereGeometry(0.7, 8, 6);
+    truck.translate(0, 2.2 + h + 0.5, 0);
+    g.add(new THREE.Mesh(truck, this.mats.metal));
+
+    // Flag: 60 x 90 ft, the Connaught Place proportion (2:3).
+    const FLY = 27.4;
+    const HOIST = 18.3;
+    const top = 2.2 + h - 1.5;
+
+    // A shallow curve across the fly so the cloth catches light unevenly.
+    const band = (matName: 'saffron' | 'flagWhite' | 'flagGreen', yOff: number) => {
+      const geo = new THREE.PlaneGeometry(FLY, HOIST / 3, detail === 2 ? 4 : 14, 1);
+      const pos = geo.attributes.position as THREE.BufferAttribute;
+      for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i);
+        const t = (x + FLY / 2) / FLY;
+        pos.setZ(i, Math.sin(t * Math.PI * 1.6) * 1.5 * t);
+      }
+      geo.computeVertexNormals();
+      geo.translate(FLY / 2 + 0.9, top - HOIST / 2 + yOff, 0);
+      g.add(new THREE.Mesh(geo, this.mats[matName]));
+    };
+    band('saffron', HOIST / 3);
+    band('flagWhite', 0);
+    band('flagGreen', -HOIST / 3);
+
+    // Ashoka Chakra — a ring plus spokes, on the white band.
+    if (detail <= 1) {
+      const ring = new THREE.TorusGeometry(HOIST / 9, HOIST / 90, 6, detail === 0 ? 24 : 12);
+      ring.translate(FLY / 2 + 0.9, top - HOIST / 2, 0.35);
+      g.add(new THREE.Mesh(ring, this.mats.chakra));
+      if (detail === 0) {
+        for (let i = 0; i < 12; i++) {
+          const a = (i / 12) * Math.PI * 2;
+          const spoke = new THREE.BoxGeometry(HOIST / 9 * 1.9, HOIST / 150, HOIST / 150);
+          spoke.rotateZ(a);
+          spoke.translate(FLY / 2 + 0.9, top - HOIST / 2, 0.35);
+          g.add(new THREE.Mesh(spoke, this.mats.chakra));
+        }
       }
     }
 

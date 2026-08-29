@@ -7,6 +7,7 @@ import { parseOvertureGeoJSON } from './osm/overtureParser';
 import { CameraController } from './city/cameraController';
 import { LayerState } from './components/features/LayerControl';
 import { useLiveFlights } from './interactions/flights';
+import { useLiveFeed, type LiveWeatherDTO, type LiveAirQualityDTO } from './interactions/liveFeed';
 import type { SkylineStyle } from './city/buildingMaterial';
 
 const INITIAL_MAP_DATA: OSMMapData = {
@@ -88,6 +89,12 @@ export default function App() {
   // layer is switched on so we never spend API quota on a hidden layer.
   const flightFeed = useLiveFlights(layers.live.flights);
   const flights = flightFeed.flights;
+
+  // Weather and air quality: real observations from Open-Meteo via the server
+  // proxy. Polled only while their layer is on. Upstream updates every 15 min
+  // and hourly respectively, so there is nothing to gain from polling faster.
+  const weatherFeed = useLiveFeed<LiveWeatherDTO>('/api/live/weather', layers.live.weather, 300_000);
+  const airFeed = useLiveFeed<LiveAirQualityDTO>('/api/live/air', layers.live.aqi, 600_000);
 
   const [renderStats, setRenderStats] = useState<RenderStats>({
     fps: 60,
@@ -279,6 +286,8 @@ export default function App() {
         selectedEntity={selectedEntity}
         flights={flights}
         flightFeed={{ status: flightFeed.status, provider: flightFeed.provider, ageSeconds: flightFeed.ageSeconds, reason: flightFeed.reason }}
+        weatherFeed={weatherFeed}
+        airFeed={airFeed}
         onToggleDebugTiles={() => setDebugTiles(prev => !prev)}
         onToggleStableMode={() => setStableMode(prev => !prev)}
         onToggleNightMode={() => setNightMode(prev => !prev)}

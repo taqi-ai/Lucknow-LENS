@@ -1,3 +1,4 @@
+import type { LiveFeedState, LiveWeatherDTO, LiveAirQualityDTO } from '../../interactions/liveFeed';
 import React, { useState } from 'react';
 import { CameraPreset, OSMMapData, RenderStats, CityStreamingStats, SelectedEntity, SimulatedFlight, AIAction, SearchResult } from '../../types';
 import { ReportModal } from './ReportModal';
@@ -31,6 +32,8 @@ interface CityUIProps {
   onCycleSkyline?: () => void;
   /** Freshness of the live aircraft feed. Never rendered as "live" unless status is ok. */
   flightFeed?: { status: 'ok' | 'stale' | 'unavailable'; provider: string; ageSeconds: number | null; reason?: string };
+  weatherFeed?: LiveFeedState<LiveWeatherDTO>;
+  airFeed?: LiveFeedState<LiveAirQualityDTO>;
   onCameraSignal: (signal: CameraPreset) => void;
   onReloadOSM: () => void;
   onToggleLayer: (category: 'base' | 'live', layer: string) => void;
@@ -59,6 +62,8 @@ export const CityUI: React.FC<CityUIProps> = ({
   skylineStyle,
   onCycleSkyline,
   flightFeed,
+  weatherFeed,
+  airFeed,
   onCameraSignal,
   onReloadOSM,
   onToggleLayer,
@@ -291,6 +296,62 @@ export const CityUI: React.FC<CityUIProps> = ({
                 ? (flightFeed.reason ?? 'No provider')
                 : `${flights.length} aircraft · ${flightFeed.ageSeconds ?? '?'}s ago · ${flightFeed.provider}`}
             </span>
+          </div>
+        )}
+
+        {/* Live weather. Real observation from Open-Meteo, or an explicit
+            statement that it is not available — never a plausible stand-in. */}
+        {weatherFeed && layers.live.weather && (
+          <div className="pointer-events-auto flex items-center gap-2 bg-slate-900/90 border border-slate-700/80 backdrop-blur-xl rounded-xl px-3 py-1.5 text-[11px] shadow-2xl">
+            <span className={`w-1.5 h-1.5 rounded-full ${
+              weatherFeed.status === 'ok' ? 'bg-emerald-400'
+                : weatherFeed.status === 'stale' ? 'bg-amber-400' : 'bg-rose-500'}`} />
+            {weatherFeed.value ? (
+              <>
+                <span className="font-bold text-slate-100">
+                  {weatherFeed.value.temperatureC.toFixed(1)}&deg;C
+                </span>
+                <span className="text-slate-400">{weatherFeed.value.description}</span>
+                <span className="text-slate-500">
+                  feels {weatherFeed.value.apparentTemperatureC?.toFixed(1) ?? '?'}&deg; &middot;{' '}
+                  {weatherFeed.value.humidityPct ?? '?'}% RH &middot;{' '}
+                  {weatherFeed.value.windSpeedKph?.toFixed(0) ?? '?'} km/h
+                </span>
+              </>
+            ) : (
+              <span className="text-slate-500">
+                Weather unavailable{weatherFeed.reason ? ` · ${weatherFeed.reason}` : ''}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Live air quality. The category label is derived from the same index
+            that is displayed, so the number and the words cannot disagree. */}
+        {airFeed && layers.live.aqi && (
+          <div className="pointer-events-auto flex items-center gap-2 bg-slate-900/90 border border-slate-700/80 backdrop-blur-xl rounded-xl px-3 py-1.5 text-[11px] shadow-2xl">
+            <span className={`w-1.5 h-1.5 rounded-full ${
+              airFeed.status === 'ok' ? 'bg-emerald-400'
+                : airFeed.status === 'stale' ? 'bg-amber-400' : 'bg-rose-500'}`} />
+            {airFeed.value ? (
+              <>
+                <span className="font-bold text-slate-100">AQI {airFeed.value.usAqi}</span>
+                <span className={
+                  airFeed.value.usAqi <= 50 ? 'text-emerald-400'
+                    : airFeed.value.usAqi <= 100 ? 'text-yellow-400'
+                    : airFeed.value.usAqi <= 150 ? 'text-orange-400'
+                    : airFeed.value.usAqi <= 200 ? 'text-rose-400' : 'text-fuchsia-400'
+                }>{airFeed.value.category}</span>
+                <span className="text-slate-500">
+                  {airFeed.value.dominantPollutant} &middot; PM2.5 {airFeed.value.pm25?.toFixed(0) ?? '?'}
+                  &micro;g/m&sup3;
+                </span>
+              </>
+            ) : (
+              <span className="text-slate-500">
+                Air quality unavailable{airFeed.reason ? ` · ${airFeed.reason}` : ''}
+              </span>
+            )}
           </div>
         )}
 

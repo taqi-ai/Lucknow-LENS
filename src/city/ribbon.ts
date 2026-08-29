@@ -134,18 +134,30 @@ export type RoadClass =
 
 /**
  * Carriageway half-widths in metres.
+ *
+ * These are estimates by class, and they are estimates because there is no
+ * alternative: Overture's transportation schema carries road_surface,
+ * road_flags and subclass but no width or lane count, and neither does the
+ * Lucknow extract. Nothing in the pipeline is discarding a real width — one was
+ * never available.
+ *
+ * The previous values were too generous — a 28 m motorway corridor and a 17 m
+ * primary — which is what drove road ribbons through the footprints of
+ * buildings that legitimately front onto them. These are Indian urban
+ * carriageway widths: a 4-lane divided arterial is ~14 m of blacktop, not 17,
+ * and a residential street is one car wide each way.
  */
 export const ROAD_HALF_WIDTH: Record<RoadClass, number> = {
-  motorway: 14,
-  trunk: 11,
-  primary: 8.5,
-  secondary: 6,
-  tertiary: 4.5,
-  residential: 3,
-  service: 2.4,
-  footway: 1.2,
-  railway: 2.8,
-  flyover: 8.0,
+  motorway: 11,
+  trunk: 9,
+  primary: 7,
+  secondary: 5,
+  tertiary: 4,
+  residential: 2.8,
+  service: 2.2,
+  footway: 1.0,
+  railway: 2.6,
+  flyover: 7.5,
 };
 
 /** Draw order / elevation, so bigger roads sit visually on top at crossings. */

@@ -12,7 +12,9 @@
     "bake": "tsx --max-old-space-size=8192 scripts/bake_hlod.ts",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "serve": "npm run build && npm run start"
+    "serve": "npm run build && npm run start",
+    "suppress": "tsx --max-old-space-size=8192 scripts/suppress_conflicts.ts",
+    "vegetation": "tsx --max-old-space-size=8192 scripts/place_vegetation.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

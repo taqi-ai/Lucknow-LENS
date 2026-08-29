@@ -1,4 +1,5 @@
 import { SearchResult, OSMMapData } from '../types';
+import { loadJSON } from '../data/resourceCache';
 
 const centerLat = 26.8475;
 const centerLon = 80.945;
@@ -117,9 +118,11 @@ export class SearchIndex {
     if (this.initialized) return;
 
     try {
-      const [placesRes, roadsRes] = await Promise.all([
-        fetch('/overture_tiles_full/places_labels.json'),
-        fetch('/overture_tiles_full/road_labels.json')
+      // Same shared cache LabelManager uses — these two files are parsed once
+      // for the whole app.
+      const [placesData, roadsData] = await Promise.all([
+        loadJSON<any[]>('/overture_tiles_full/places_labels.json'),
+        loadJSON<any[]>('/overture_tiles_full/road_labels.json'),
       ]);
 
       // Name dedup runs through a Set. The previous version called
@@ -150,15 +153,8 @@ export class SearchIndex {
         });
       };
 
-      if (placesRes.ok) {
-        const places = await placesRes.json();
-        for (const p of places) merge(p, p.type || 'Landmark');
-      }
-
-      if (roadsRes.ok) {
-        const roads = await roadsRes.json();
-        for (const r of roads) merge(r, 'Road');
-      }
+      for (const p of placesData) merge(p, p.type || 'Landmark');
+      for (const r of roadsData) merge(r, 'Road');
 
       this.initialized = true;
     } catch (e) {

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { loadJSON } from '../data/resourceCache';
 import {
   TileManifest, TileManifestItem, BuildingFootprint,
   CityStreamingStats, LODLevel,
@@ -285,7 +286,7 @@ export class TileStreamer {
 
   public async init(): Promise<void> {
     const [manifestResult, hlodManifest] = await Promise.all([
-      fetch('/overture_tiles_full/manifest.json').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      loadJSON<TileManifest>('/overture_tiles_full/manifest.json').catch(() => null),
       this.hlod.init(),
       // The city-wide road network, Gomti and parks are built once and stay
       // resident — they are what makes Lucknow legible at every altitude.

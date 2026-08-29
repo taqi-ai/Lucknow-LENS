@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { loadJSON } from '../data/resourceCache';
 import { LODLevel } from '../types';
 import { LANDMARKS } from './landmarkRegistry';
 
@@ -168,12 +169,15 @@ export class LabelManager {
 
   public async loadData(): Promise<void> {
     try {
-      const [pr, rr] = await Promise.all([
-        fetch('/overture_tiles_full/places_labels.json'),
-        fetch('/overture_tiles_full/road_labels.json'),
+      // Shared cache: SearchIndex wants the same two files, and StrictMode
+      // mounts this twice. Four fetches and four parses of a 2 MB file is what
+      // stalled startup.
+      const [places, roads] = await Promise.all([
+        loadJSON<PlaceLabel[]>('/overture_tiles_full/places_labels.json'),
+        loadJSON<RoadLabel[]>('/overture_tiles_full/road_labels.json'),
       ]);
-      if (pr.ok) this.allPlaces = await pr.json() as PlaceLabel[];
-      if (rr.ok) this.allRoads  = await rr.json()  as RoadLabel[];
+      this.allPlaces = places;
+      this.allRoads = roads;
       this.loaded = true;
       console.log(`[LabelManager] ${this.allPlaces.length} places, ${this.allRoads.length} roads loaded.`);
     } catch (e) {

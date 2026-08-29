@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { loadBuffer } from '../data/resourceCache';
 import { type RoadClass } from './ribbon';
 import { BridgeSystem } from './bridges';
 
@@ -252,12 +253,9 @@ export class CityOverlay {
    */
   public async init(): Promise<void> {
     try {
-      const resp = await fetch('/hlod/overlay.bin');
-      if (!resp.ok) {
-        console.warn('[CityOverlay] overlay.bin missing — run `npm run bake`.');
-        return;
-      }
-      const buf = await resp.arrayBuffer();
+      // Shared cache: StrictMode mounts the viewport twice, which fetched this
+      // 12 MB buffer twice.
+      const buf = await loadBuffer('/hlod/overlay.bin');
       this.readSections(buf);
       this.bridges.crossingCount = this.lastCrossings;
     } catch (e) {
@@ -277,8 +275,7 @@ export class CityOverlay {
   private loadDetail(): void {
     if (this.detailState !== 'idle') return;
     this.detailState = 'loading';
-    fetch('/hlod/overlay_detail.bin')
-      .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
+    loadBuffer('/hlod/overlay_detail.bin')
       .then((buf) => {
         this.readSections(buf);
         this.detailState = 'done';

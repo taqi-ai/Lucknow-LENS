@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { loadJSON } from '../data/resourceCache';
 import { BuildingMaterialSystem } from './buildingMaterial';
 
 /**
@@ -106,12 +107,8 @@ export class HLODLayer {
 
   public async init(): Promise<HLODManifest | null> {
     try {
-      const resp = await fetch('/hlod/hlod_manifest.json');
-      if (!resp.ok) {
-        console.warn('[HLOD] manifest missing — run `npm run bake`. City-scale layer disabled.');
-        return null;
-      }
-      this.manifest = await resp.json();
+      // Shared cache — StrictMode constructs this layer twice.
+      this.manifest = await loadJSON<HLODManifest>('/hlod/hlod_manifest.json');
       this.cacheBust = this.manifest?.generatedAt
         ? `?v=${encodeURIComponent(this.manifest.generatedAt)}`
         : '';

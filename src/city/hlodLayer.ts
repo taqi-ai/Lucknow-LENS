@@ -288,7 +288,9 @@ export class HLODLayer {
       geo.computeBoundingBox();
       geo.computeBoundingSphere();
 
-      const material = kind === 'f' ? this.materials.fabric : this.materials.solid;
+      // hlodSolid, not solid: the streamed tiles own `solid`, and relief must be a
+      // distinct material so it can carry the streamed-coverage cull.
+      const material = kind === 'f' ? this.materials.fabric : this.materials.hlodSolid;
       const mesh = new THREE.Mesh(geo, material);
       mesh.name = 'buildings';
       mesh.position.set(originX, 0, originZ);

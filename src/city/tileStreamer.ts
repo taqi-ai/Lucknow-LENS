@@ -107,6 +107,8 @@ export class TileStreamer {
 
   private groundGroup = new THREE.Group();
   private tileGroupParent = new THREE.Group();
+  /** Only the first worker failure is logged — they arrive per tile. */
+  private workerErrorLogged = false;
   private debugGroup = new THREE.Group();
 
   private loadedTiles = new Map<string, LoadedTileContainer>();
@@ -361,6 +363,8 @@ export class TileStreamer {
     if (streamRadius > 0 && this.manifest) {
       this.updateStreamedTiles(camera, lod, streamRadius);
     } else {
+      // Nothing streamed at city/district scale, so HLOD must draw everywhere.
+      this.materials.setStreamedCoverage(camera.position.x, camera.position.z, 0);
       this.retireAllStreamedTiles();
     }
 
@@ -420,6 +424,12 @@ export class TileStreamer {
     const aheadX = camX + this.camVelocity.x * 1.5;
     const aheadZ = camZ + this.camVelocity.z * 1.5;
 
+    // Distance to the nearest tile that is wanted but not yet on screen. Every
+    // tile closer than this is loaded, so that disc — less one tile diagonal, so
+    // a half-covered tile never counts — is genuinely covered at full detail and
+    // the HLOD copy underneath it can be discarded.
+    let nearestGap = Infinity;
+
     for (const tile of this.manifest!.tiles) {
       const dist = Math.hypot(tile.center.x - camX, tile.center.z - camZ);
       if (dist > radius) continue;
@@ -431,6 +441,7 @@ export class TileStreamer {
       const inView = this.frustum.intersectsBox(box);
       const existing = this.loadedTiles.get(tile.id);
       if (existing && existing.lod === CONTENT_TIER) continue;
+      if (dist < nearestGap) nearestGap = dist;
       if (this.pending.has(tile.id)) continue;
 
       const aheadDist = Math.hypot(tile.center.x - aheadX, tile.center.z - aheadZ);
@@ -440,6 +451,13 @@ export class TileStreamer {
 
       this.enqueue(tile, CONTENT_TIER, score);
     }
+
+    // One 500 m tile's diagonal of slack, so the cull never eats into a tile that
+    // is only partly present. Shrinks to 0 the instant a near tile is missing,
+    // which brings the HLOD back rather than leaving a hole.
+    const TILE_DIAG = 708;
+    const covered = Number.isFinite(nearestGap) ? Math.max(0, nearestGap - TILE_DIAG) : radius;
+    this.materials.setStreamedCoverage(camX, camZ, Math.min(covered, radius));
 
     // Drop queue entries that have fallen out of range entirely.
     if (this.queue.length > 0) {
@@ -505,7 +523,17 @@ export class TileStreamer {
     this.workerBusy[workerIndex] = false;
     const req = this.pending.get(msg.id);
     this.pending.delete(msg.id);
-    if (!req || !msg.ok) return;
+    if (!req) return;
+    if (!msg.ok) {
+      // Previously a bare `return`. A worker that throws on every tile then looks
+      // exactly like a city with no streamed detail and a clean console, which is
+      // precisely how it went unnoticed.
+      if (!this.workerErrorLogged) {
+        this.workerErrorLogged = true;
+        console.error(`[TileStreamer] tile worker failed on ${msg.id}: ${msg.error}`);
+      }
+      return;
+    }
 
     const group = this.assembleTile(msg);
     // Swap only once the replacement is fully built — no half-built regions.

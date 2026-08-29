@@ -369,6 +369,55 @@ export const CityViewport: React.FC<CityViewportProps> = ({
             requestAnimationFrame(tick);
           });
         },
+        /**
+         * Scene composition by layer. Answers "which representation is actually
+         * drawing this?" — the question that separates a streamed tile not
+         * loading from a streamed tile loading and then not being rendered.
+         */
+        probe() {
+          const acc: Record<string, { meshes: number; visible: number; tris: number }> = {};
+          cityRenderer.scene.traverse((o) => {
+            const m = o as THREE.Mesh;
+            if (!m.isMesh) return;
+            // Walk up to find which subsystem owns this mesh.
+            let owner = 'other';
+            for (let p: THREE.Object3D | null = m; p; p = p.parent) {
+              if (p.name === 'CityOverlay') { owner = 'overlay'; break; }
+              if (p.name === 'HLODLayer') { owner = `hlod:${m.name}`; break; }
+              if (/^tile_/.test(p.name)) { owner = `tile:${m.name}`; break; }
+            }
+            const e = acc[owner] ?? (acc[owner] = { meshes: 0, visible: 0, tris: 0 });
+            e.meshes++;
+            let vis = m.visible;
+            for (let p: THREE.Object3D | null = m.parent; p && vis; p = p.parent) vis = p.visible;
+            if (vis) {
+              e.visible++;
+              const g = m.geometry as THREE.BufferGeometry;
+              const pos = g.getAttribute('position');
+              if (pos) e.tris += (g.index ? g.index.count : pos.count) / 3;
+            }
+          });
+          const tileGroups: number[] = [];
+          cityRenderer.scene.traverse((o) => {
+            if (/^tile_/.test(o.name)) tileGroups.push(o.children.length);
+          });
+          const s = streamer as any;
+          (acc as any).__tileGroups = {
+            count: tileGroups.length,
+            empty: tileGroups.filter((n) => n === 0).length,
+            childrenTotal: tileGroups.reduce((a, b) => a + b, 0),
+            loadedTilesMap: s.loadedTiles?.size ?? -1,
+            parentChildren: s.tileGroupParent?.children?.length ?? -1,
+            parentInScene: !!s.tileGroupParent?.parent,
+            pending: s.pending?.size ?? -1,
+            queue: s.queue?.length ?? -1,
+            workers: s.workers?.length ?? -1,
+            tileBoxes: s.tileBoxes?.size ?? -1,
+            manifestTiles: s.manifest?.tiles?.length ?? -1,
+            currentLOD: s.currentLOD,
+          };
+          return acc;
+        },
       };
     }
 

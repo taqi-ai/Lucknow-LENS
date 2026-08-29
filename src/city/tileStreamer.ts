@@ -363,8 +363,6 @@ export class TileStreamer {
     if (streamRadius > 0 && this.manifest) {
       this.updateStreamedTiles(camera, lod, streamRadius);
     } else {
-      // Nothing streamed at city/district scale, so HLOD must draw everywhere.
-      this.materials.setStreamedCoverage(camera.position.x, camera.position.z, 0);
       this.retireAllStreamedTiles();
     }
 
@@ -424,12 +422,6 @@ export class TileStreamer {
     const aheadX = camX + this.camVelocity.x * 1.5;
     const aheadZ = camZ + this.camVelocity.z * 1.5;
 
-    // Distance to the nearest tile that is wanted but not yet on screen. Every
-    // tile closer than this is loaded, so that disc — less one tile diagonal, so
-    // a half-covered tile never counts — is genuinely covered at full detail and
-    // the HLOD copy underneath it can be discarded.
-    let nearestGap = Infinity;
-
     for (const tile of this.manifest!.tiles) {
       const dist = Math.hypot(tile.center.x - camX, tile.center.z - camZ);
       if (dist > radius) continue;
@@ -441,7 +433,6 @@ export class TileStreamer {
       const inView = this.frustum.intersectsBox(box);
       const existing = this.loadedTiles.get(tile.id);
       if (existing && existing.lod === CONTENT_TIER) continue;
-      if (dist < nearestGap) nearestGap = dist;
       if (this.pending.has(tile.id)) continue;
 
       const aheadDist = Math.hypot(tile.center.x - aheadX, tile.center.z - aheadZ);
@@ -451,13 +442,6 @@ export class TileStreamer {
 
       this.enqueue(tile, CONTENT_TIER, score);
     }
-
-    // One 500 m tile's diagonal of slack, so the cull never eats into a tile that
-    // is only partly present. Shrinks to 0 the instant a near tile is missing,
-    // which brings the HLOD back rather than leaving a hole.
-    const TILE_DIAG = 708;
-    const covered = Number.isFinite(nearestGap) ? Math.max(0, nearestGap - TILE_DIAG) : radius;
-    this.materials.setStreamedCoverage(camX, camZ, Math.min(covered, radius));
 
     // Drop queue entries that have fallen out of range entirely.
     if (this.queue.length > 0) {

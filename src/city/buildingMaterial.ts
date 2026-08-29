@@ -341,8 +341,16 @@ export class BuildingMaterialSystem {
    * source, so inside the streamed radius the two draw identical geometry at
    * identical depth. Sharing one material meant identical fragments with
    * identical depth values, which z-fights: stable while the camera is still,
-   * and shimmering the moment it moves. This variant carries the coverage cull
-   * that stops relief being drawn where the tiles already cover it.
+   * and shimmering the moment it moves.
+   *
+   * The fix is a depth bias, not a cull. Pushing relief fractionally behind the
+   * tiles makes the tiles win that depth test everywhere the two coincide, which
+   * settles the fight deterministically and needs no knowledge of what the
+   * streamer has loaded. Discarding relief inside a "covered" disc was tried and
+   * reverted: coverage is genuinely hard to know (in-frustum tiles, tiles with no
+   * buildings, tiles mid-load), and a fragment discard does not affect the shadow
+   * pass, so culled buildings kept casting shadows onto ground that no longer had
+   * anything standing on it.
    */
   public readonly hlodSolid: THREE.MeshStandardMaterial;
   /** Flat roof-cap material for the city-scale fabric layer — cheaper lighting. */
@@ -377,7 +385,15 @@ export class BuildingMaterialSystem {
     };
 
     this.solid = this.build({ roughness: 0.82, metalness: 0.02 });
-    this.hlodSolid = this.build({ roughness: 0.82, metalness: 0.02 }, true);
+    // Same look, pushed fractionally away from the eye so the streamed tiles win
+    // wherever both extrude the same building.
+    this.hlodSolid = this.build({
+      roughness: 0.82,
+      metalness: 0.02,
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 2,
+    });
     // The fabric layer is viewed from far above and almost edge-on to the sun;
     // flat shading with a touch more roughness keeps it calm and alias-free.
     // Polygon offset pushes it fractionally behind the relief stream so the two
@@ -388,27 +404,10 @@ export class BuildingMaterialSystem {
       polygonOffset: true,
       polygonOffsetFactor: 2,
       polygonOffsetUnits: 4,
-    }, true);
+    });
   }
 
-  /**
-   * Disc, in world XZ, that the streamed tiles currently cover at full detail.
-   * HLOD fragments inside it are discarded. Radius 0 disables the cull.
-   */
-  public setStreamedCoverage(x: number, z: number, radius: number): void {
-    this.cullUniforms.uCullCenter.value.set(x, z);
-    this.cullUniforms.uCullRadius.value = radius;
-  }
-
-  private cullUniforms = {
-    uCullCenter: { value: new THREE.Vector2() },
-    uCullRadius: { value: 0 },
-  };
-
-  private build(
-    params: THREE.MeshStandardMaterialParameters,
-    cull = false,
-  ): THREE.MeshStandardMaterial {
+  private build(params: THREE.MeshStandardMaterialParameters): THREE.MeshStandardMaterial {
     const mat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
       // Buildings are hard-edged, so normals come from screen-space derivatives via
@@ -419,37 +418,16 @@ export class BuildingMaterialSystem {
       ...params,
     });
 
-    // Declared and applied only on the HLOD variants, so the streamed tiles carry
-    // no extra uniforms and no branch.
-    const cullPars = cull ? 'uniform vec2 uCullCenter;\nuniform float uCullRadius;\n' : '';
-    const cullTest = cull ? /* glsl */ `
-  // Discard where the streamed tiles already draw these same buildings at full
-  // detail. Without this the two representations coexist and z-fight, which is
-  // stable when the camera is still and shimmers as soon as it moves.
-  if (uCullRadius > 0.0) {
-    vec2 dCull = vWorldPos.xz - uCullCenter;
-    if (dot(dCull, dCull) < uCullRadius * uCullRadius) discard;
-  }
-` : '';
-
-    // REQUIRED. three keys compiled programs on material parameters, not on what
-    // onBeforeCompile did to the source. `solid` and `hlodSolid` are identical as
-    // parameters, so without distinct cache keys they share one program — and the
-    // streamed tiles silently inherit the HLOD's coverage discard, which makes
-    // every building in the covered disc vanish.
-    mat.customProgramCacheKey = () => (cull ? 'lens-building-cull' : 'lens-building');
-
     mat.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, this.uniforms);
-      if (cull) Object.assign(shader.uniforms, this.cullUniforms);
 
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', `#include <common>\n${VERT_PARS}`)
         .replace('#include <project_vertex>', `${VERT_MAIN}\n#include <project_vertex>`);
 
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', `#include <common>\n${FRAG_PARS}\n${cullPars}`)
-        .replace('#include <color_fragment>', `#include <color_fragment>\n${cullTest}\n${FRAG_COLOR}`)
+        .replace('#include <common>', `#include <common>\n${FRAG_PARS}`)
+        .replace('#include <color_fragment>', `#include <color_fragment>\n${FRAG_COLOR}`)
         .replace('#include <fog_fragment>', `${FRAG_OUTPUT}\n#include <fog_fragment>`);
     };
 

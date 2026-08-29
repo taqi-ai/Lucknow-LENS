@@ -13,3 +13,4 @@ public/lucknow_tiles/
 # Baked HLOD artifacts — regenerate with `npm run bake`
 public/hlod/
 
+dist_bak/

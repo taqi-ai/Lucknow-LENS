@@ -310,6 +310,129 @@ Sleepers (531 km of track, 14 MB) live in `overlay_detail.bin`, fetched lazily t
 first time the camera drops below 900 m. That keeps the blocking overlay load at
 **10.3 MB**, down from 24 MB.
 
+---
+
+# Spatial correctness pass
+
+## Road width — there is no real width to use
+
+Overture's transportation schema carries `road_surface`, `road_flags`,
+`subclass`, `level_rules`, `access_restrictions` and `speed_limits`, but **no
+`width` and no `lanes`** — verified against both `data/overture_transportation.geojson`
+(919 features, full property set) and the 33 MB extract, which has only
+`id / subtype / class / name / level / isElevated / coords`. Nothing in the
+pipeline discards a width; one was never available. Class estimation is
+therefore the mechanism, not a fallback.
+
+What was actually wrong was their size. The old values gave a 28 m motorway
+corridor and a 17 m primary, which drove ribbons through the footprints of
+buildings that legitimately front onto them. `ROAD_HALF_WIDTH` is now Indian
+urban carriageway widths (motorway 22 m, trunk 18 m, primary 14 m, residential
+5.6 m overall).
+
+## Building / infrastructure suppression
+
+`scripts/suppress_conflicts.ts` (`npm run suppress`). Overture buildings and
+Overture transportation are digitised independently, so footprints sit in
+carriageways, across railway yards and in the Gomti.
+
+Runs **offline over the tiles**, so there is no runtime cost, no mask resolution
+to trade off, and the HLOD bake inherits the identical result rather than
+disagreeing with the streamed tiles.
+
+Conservative by construction:
+
+- a building is dropped only when its **area centroid** lies inside the
+  corridor — buildings legitimately abut roads and clip a few metres into any
+  corridor estimate, so any-overlap plus a buffer would delete every shopfront
+  on every arterial;
+- road corridors get **no buffer** beyond the carriageway;
+- water and runway polygons are tested exactly, so the riverbank keeps its
+  buildings;
+- **elevated features are skipped entirely** — a flyover passes over the city
+  and the buildings beneath it are real.
+
+Result: 959,316 → 953,513 (5,803 removed, 0.60%) — water 3,247, roadway 1,918,
+airfield 327, rail 311.
+
+## Vegetation masking
+
+`scripts/place_vegetation.ts` (`npm run vegetation`). The city shipped with
+7,400 trees across 383 of 6,940 tiles, which is why it read as bare. Now
+185,078 across 3,106 tiles:
+
+- **parks** — jittered grid clipped to the real green-area polygon
+- **verges** — avenue planting offset beyond the carriageway of arterials
+
+The placement rules are deliberately generous and the **exclusion mask is what
+makes them safe**: 85,776 candidates were rejected for falling on a road, on
+ballast, in water, on the airfield, on a flyover deck, or inside a building.
+Rendered through the existing per-tile `InstancedMesh` path, so citywide
+vegetation costs four instanced draws per tile.
+
+Both passes share `scripts/lib/spatialIndex.ts`, so suppression and planting
+cannot drift into disagreeing about where a road is.
+
+## Preprocessing order
+
+```
+npm run transport    # roads/rail from the extract -> overview.json + tiles
+npm run suppress     # remove buildings inside infrastructure
+npm run vegetation   # plant trees against the exclusion mask
+npm run bake         # HLOD super-tiles + overlay binaries
+```
+
+---
+
+# Startup
+
+`src/data/resourceCache.ts` gives every caller the **same promise**, so it is a
+parse cache as much as a request cache. The startup profile had
+`places_labels.json` (2 MB, 47,963 records) fetched **four times** — LabelManager
+and SearchIndex want it independently, and React StrictMode double-invokes the
+effect that starts them. Four copies of a 2 MB download is bad; four synchronous
+`JSON.parse` calls of it during startup is what made the tab stop responding.
+
+| resource | before | after |
+|---|---|---|
+| places_labels.json | 4 | 1 |
+| road_labels.json | 4 | 1 |
+| overlay.bin | 2 | 1 |
+| manifest.json | 2 | 1 |
+| hlod_manifest.json | 2 | 1 |
+
+TTFC (first frame carrying real building geometry) 1,422 ms → ~1,150 ms on the
+dev build, ~6 MB less transfer, zero long tasks. Failed loads are evicted so one
+flaky startup cannot poison the app for its lifetime; entries are otherwise
+never evicted, which is deliberate — this holds a fixed handful of startup
+manifests, not tile traffic, which stays bounded by the streamer's own cache.
+
+---
+
+# Visual profiles
+
+Three genuinely different looks, not tints of one.
+
+**Natural White** — the neutral reference: white sun, faintly cool sky fill,
+neutral ground bounce.
+
+**Warm White** — late golden afternoon. This used to be nearly identical to
+Natural White because a golden sun was paired with a *cool blue* ambient
+(`0xc3d8ef`); a warm key cancelled by a cold fill reads as neutral. Every term
+is warm now, with the exposure lifted.
+
+**Cyberpunk** — deep indigo environment, cyan key, magenta ground bounce, neon
+windows via the shader's `uCyber` term. It was previously broken rather than
+subtle: a 1.25 cyan hemisphere flooded the ground into a flat teal sheet, and
+the mode reused the *night* building palette in daylight so every building was a
+black silhouette. Fixed with dedicated cyber-day wall **and roof** palettes (the
+roof palette did not exist — cyber day selected the night roof stock, and roofs
+are what you see from altitude), a much weaker hemisphere, and **style-aware**
+ground/park/water/tree colours. Those surfaces were the actual flood: one
+enormous ground polygon tinted cyan covers the whole frame.
+
+`__LENS.setStyle(style)` switches profile without React state, for validation.
+
 ## Not implemented
 
 - **Live trains.** Adapter and UI states exist; no free API tier available.
@@ -317,3 +440,22 @@ first time the camera drops below 900 m. That keeps the blocking overlay load at
 - **Terrain.** All geometry sits at y = 0; no elevation source exists.
 - **True `level` ranges.** Recovering them needs the Overture parquet, which is
   not in the repository; the length guard above is the stand-in.
+- **Real road width.** Not in Overture's schema at all (see above). Class
+  estimation is the mechanism, not a placeholder for data that exists.
+- **Underpasses.** Deliberately not faked. The extract has no tunnel or
+  below-grade flag of any kind — `level` is only ever ≥ 0 and there is no
+  `road_flags` in the extract — so there is nothing to drive vertical
+  separation below grade. Re-extracting with `road_flags` retained would make
+  this implementable.
+- **Airport environment.** Runway and taxiway centrelines are used as an
+  exclusion mask for buildings and trees, but there is no runway surface,
+  markings, apron, terminal or stand geometry yet.
+- **Static trains and static aircraft.** Not started. Both need external models
+  with verified licences, optimisation and LODs.
+- **Rail LOD tiers.** The track is one representation at all scales rather than
+  corridor → parallel tracks → bed → sleepers by distance.
+- **Flyover segment grouping.** Named structures are matched and detailed per
+  feature; adjacent segments of one structure are not yet merged, so railings
+  and supports can duplicate where Overture split a structure.
+- **Streetlight illumination at altitude.** Lamps exist as instanced geometry
+  derived from real road classes, but do not yet cast readable light pools.

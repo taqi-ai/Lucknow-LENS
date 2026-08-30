@@ -16,8 +16,6 @@ interface CityUIProps {
   cameraController: CameraController | null;
   renderStats: RenderStats;
   streamingStats?: CityStreamingStats;
-  debugTiles: boolean;
-  stableMode: boolean;
   nightMode: boolean;
   showLabels: boolean;
   presentationMode: boolean;
@@ -30,8 +28,6 @@ interface CityUIProps {
   layers: LayerState;
   selectedEntity: SelectedEntity | null;
   flights: SimulatedFlight[];
-  onToggleDebugTiles: () => void;
-  onToggleStableMode: () => void;
   onToggleNightMode: () => void;
   onToggleLabels: () => void;
   onTogglePresentationMode: () => void;
@@ -57,8 +53,6 @@ export const CityUI: React.FC<CityUIProps> = ({
   cameraController,
   renderStats,
   streamingStats,
-  debugTiles,
-  stableMode,
   nightMode,
   showLabels,
   presentationMode,
@@ -66,8 +60,6 @@ export const CityUI: React.FC<CityUIProps> = ({
   layers,
   selectedEntity,
   flights,
-  onToggleDebugTiles,
-  onToggleStableMode,
   onToggleNightMode,
   onToggleLabels,
   onTogglePresentationMode,
@@ -170,7 +162,7 @@ export const CityUI: React.FC<CityUIProps> = ({
                 LUCKNOW LENS
               </h1>
               <span className="bg-emerald-500/10 text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-500/20 uppercase tracking-wider">
-                {stableMode ? 'STABLE MODE' : 'DYNAMIC LOD'}
+                DYNAMIC LOD
               </span>
             </div>
             <p className="text-[11px] text-slate-400 font-medium tracking-wide">
@@ -214,20 +206,6 @@ export const CityUI: React.FC<CityUIProps> = ({
             <span>{nightMode ? 'NIGHT' : 'DAY'}</span>
           </button>
 
-          {!presentationMode && (
-          <button
-            onClick={onToggleStableMode}
-            className={`px-3 py-1.5 text-xs font-extrabold rounded-xl transition-all flex items-center gap-1.5 border ${
-              stableMode
-                ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-lg shadow-emerald-500/20'
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border-slate-700'
-            }`}
-            title="Toggle Stable Mode (Zero-Flicker Consistent Representation)"
-          >
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>[STABLE]</span>
-          </button>
-          )}
 
           <button
             onClick={() => onCameraSignal('fullcity')}
@@ -261,20 +239,6 @@ export const CityUI: React.FC<CityUIProps> = ({
             <span>MAP ONLY</span>
           </button>
 
-          {!presentationMode && (
-          <button
-            onClick={onToggleDebugTiles}
-            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 border ${
-              debugTiles
-                ? 'bg-sky-500 text-slate-950 border-sky-400 shadow-lg shadow-sky-500/20'
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border-slate-700'
-            }`}
-            title="Toggle Spatial Grid Tiles"
-          >
-            <Grid className="w-3.5 h-3.5" />
-            <span>GRID</span>
-          </button>
-          )}
 
           <button
             onClick={() => onCameraSignal('overview')}
@@ -459,110 +423,6 @@ export const CityUI: React.FC<CityUIProps> = ({
         )}
       </div>
 
-      {/* Bottom Left STREAMING ENGINE STATS PANEL — diagnostics, hidden while
-          presenting and on compact layouts, where a 260 px card of engine
-          telemetry is a quarter of the screen. */}
-      {!presentationMode && !compact && (
-      <div className="absolute bottom-3 left-3 z-10 pointer-events-none">
-        <div className="pointer-events-auto glass-panel rounded-2xl p-3.5 text-[11px] text-slate-200 w-[260px] transition-all hover:bg-slate-900/80">
-          <div className="text-[10px] font-extrabold uppercase tracking-wider text-amber-400 mb-2.5 flex items-center justify-between border-b border-slate-800 pb-2">
-            <div className="flex items-center gap-1.5">
-              <Activity className="w-3.5 h-3.5 text-amber-400" />
-              <span>STABILITY ENGINE METRICS</span>
-            </div>
-            <span className="text-[9px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded font-mono font-bold">
-              {stableMode ? 'STABLE MODE' : 'DYNAMIC LOD'}
-            </span>
-          </div>
-
-          <div className="space-y-1.5 font-mono text-[11px]">
-            <div className="flex justify-between items-center">
-              <span className="text-slate-400">Current Zoom Level:</span>
-              <strong className="text-amber-300 font-sans font-bold">{streamingStats?.zoomScaleName ?? 'FULL CITY'}</strong>
-            </div>
-
-            <div className="flex justify-between items-center">
-              <span className="text-slate-400">Active LOD:</span>
-              <strong className="text-emerald-400 font-sans font-bold">LOD {streamingStats?.currentLOD ?? 2}</strong>
-            </div>
-
-            <div className="flex justify-between items-center">
-              <span className="text-slate-400">Loaded Tiles:</span>
-              <strong className="text-sky-300 font-sans font-bold">{streamingStats?.loadedTiles ?? 0} active</strong>
-            </div>
-
-            <div className="flex justify-between items-center">
-              <span className="text-slate-400">Visible Tiles:</span>
-              <strong className="text-indigo-300 font-sans font-bold">{streamingStats?.visibleTiles ?? 0} tiles</strong>
-            </div>
-
-            <div className="flex justify-between items-center">
-              <span className="text-slate-400">Pending Tile Loads:</span>
-              <strong className="text-amber-400 font-sans font-bold">{streamingStats?.pendingLoads ?? 0}</strong>
-            </div>
-
-            <div className="flex justify-between items-center">
-              <span className="text-slate-400">Buildings Rendered:</span>
-              <strong className="text-slate-200 font-sans font-bold">{(streamingStats?.totalBuildings ?? 0).toLocaleString()}</strong>
-            </div>
-
-            <div className="flex justify-between items-center">
-              <span className="text-slate-400">Trees Rendered:</span>
-              <strong className="text-emerald-300 font-sans font-bold">{(streamingStats?.totalTrees ?? 0).toLocaleString()}</strong>
-            </div>
-
-            <div className="pt-2 border-t border-slate-800 flex justify-between items-center text-[10px]">
-              <div>
-                <span className="text-slate-400">FPS:</span>{' '}
-                <strong className={`font-sans ${renderStats.fps >= 45 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                  {renderStats.fps}
-                </strong>
-              </div>
-              <div>
-                <span className="text-slate-400">Draw Calls:</span>{' '}
-                <strong className="text-indigo-300 font-sans">{renderStats.drawCalls}</strong>
-              </div>
-            </div>
-          </div>
-
-          {/* Boundary Debug Info — only shown when DEBUG TILES is active */}
-          {debugTiles && streamingStats?.boundaryDebug && (
-            <div className="mt-3 pt-2.5 border-t border-cyan-500/30">
-              <div className="text-[9px] font-extrabold uppercase tracking-wider text-cyan-400 mb-1.5 flex items-center gap-1">
-                <MapPin className="w-3 h-3" />
-                <span>BOUNDARY DEBUG</span>
-              </div>
-              <div className="space-y-1 font-mono text-[10px]">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Camera X/Z:</span>
-                  <span className="text-cyan-300">
-                    {Math.round(streamingStats.boundaryDebug.camX)}, {Math.round(streamingStats.boundaryDebug.camZ)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Dist to Edge:</span>
-                  <span className={streamingStats.boundaryDebug.distToEdge < 2000 ? 'text-amber-400' : 'text-emerald-300'}>
-                    {Math.round(streamingStats.boundaryDebug.distToEdge)}m
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Inside Playable:</span>
-                  <span className={streamingStats.boundaryDebug.insidePlayable ? 'text-emerald-400' : 'text-rose-400'}>
-                    {streamingStats.boundaryDebug.insidePlayable ? 'YES' : 'NO'}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Horizon Active:</span>
-                  <span className={streamingStats.boundaryDebug.horizonActive ? 'text-emerald-400' : 'text-slate-500'}>
-                    {streamingStats.boundaryDebug.horizonActive ? 'YES' : 'NO'}
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-      )}
       </>
 
       {/* Floating Presentation Mode Exit Button */}

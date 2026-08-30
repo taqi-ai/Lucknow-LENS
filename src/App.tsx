@@ -48,8 +48,6 @@ export default function App() {
   const [cameraController, setCameraController] = useState<CameraController | null>(null);
 
   const [cameraSignal, setCameraSignal] = useState<CameraPreset | 'reset' | null>(null);
-  const [debugTiles, setDebugTiles] = useState<boolean>(false);
-  const [stableMode, setStableMode] = useState<boolean>(true);
   const [nightMode, setNightMode] = useState<boolean>(true); // Default to Night Mode
   const [skylineStyle, setSkylineStyle] = useState<SkylineStyle>('warm');
   const [showLabels, setShowLabels] = useState<boolean>(true); // Default: labels ON
@@ -280,8 +278,6 @@ export default function App() {
       <CityViewport
         mapData={mapData}
         cameraSignal={cameraSignal}
-        debugTiles={debugTiles}
-        stableMode={stableMode}
         nightMode={nightMode}
         skylineStyle={skylineStyle}
         showLabels={showLabels}
@@ -299,8 +295,6 @@ export default function App() {
         cameraController={cameraController}
         renderStats={renderStats}
         streamingStats={streamingStats}
-        debugTiles={debugTiles}
-        stableMode={stableMode}
         nightMode={nightMode}
         showLabels={showLabels}
         presentationMode={presentationMode}
@@ -315,8 +309,6 @@ export default function App() {
         trainFeed={trainFeed}
         trafficFeed={trafficFeed}
         newsFeed={newsFeed}
-        onToggleDebugTiles={() => setDebugTiles(prev => !prev)}
-        onToggleStableMode={() => setStableMode(prev => !prev)}
         onToggleNightMode={() => setNightMode(prev => !prev)}
         skylineStyle={skylineStyle}
         onCycleSkyline={() => setSkylineStyle(p => p === 'warm' ? 'clear' : p === 'clear' ? 'cyberpunk' : 'warm')}

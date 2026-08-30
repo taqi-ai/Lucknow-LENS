@@ -50,8 +50,6 @@ function buildAircraftModel(): THREE.Group {
 interface CityViewportProps {
   mapData: OSMMapData;
   cameraSignal: CameraPreset | 'reset' | null;
-  debugTiles: boolean;
-  stableMode: boolean;
   nightMode: boolean;
   skylineStyle: SkylineStyle;
   showLabels: boolean;
@@ -66,8 +64,6 @@ interface CityViewportProps {
 export const CityViewport: React.FC<CityViewportProps> = ({
   mapData,
   cameraSignal,
-  debugTiles,
-  stableMode,
   nightMode,
   skylineStyle,
   showLabels,
@@ -641,8 +637,6 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       rendererRef.current.setNightMode(nightMode);
     }
     if (streamerRef.current) {
-      streamerRef.current.setDebugMode(debugTiles);
-      streamerRef.current.setStableMode(stableMode);
       streamerRef.current.setNightMode(nightMode);
     }
     if (landmarksRef.current) {
@@ -655,7 +649,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     if (skyRef.current) {
       skyRef.current.setNightMode(nightMode);
     }
-  }, [debugTiles, stableMode, nightMode, showLabels]);
+  }, [nightMode, showLabels]);
 
   // Skyline look — warm white / clear white / cyberpunk. Palette & lighting swap.
   useEffect(() => {

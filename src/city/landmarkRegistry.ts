@@ -86,52 +86,18 @@ export const LANDMARKS: LandmarkDef[] = [
     // which runs east-west here (Bara Imambara sits ~270 m due west of this
     // point), so the gap must run east-west too — a quarter turn, not a
     // 17-degree nudge like the previous value.
-    id: 'rumi-darwaza', name: 'Rumi Darwaza',
-    x: RUMI_X, z: RUMI_Z, archetype: 'gateway',
-    radius: 26, height: 18, rotation: Math.PI / 2, importance: 10, source: 'places',
-  },
-  {
     // No dataset entry. Bara Imambara is ~270 m west of Rumi Darwaza, its main
     // entrance facing the gate. Verified against Google Maps.
     // buildImambara()'s arcaded grand facade runs along local Z=+-hallD/2 at
     // rotation 0, i.e. facing north/south. The facade has to face the
     // Husainabad Road approach (east, toward the gate), so this also needs
     // the quarter turn — same road, same fix as Rumi Darwaza above.
-    id: 'bada-imambara', name: 'Bara Imambara',
-    x: RUMI_X - 270, z: RUMI_Z - 22, archetype: 'imambara',
-    radius: 120, height: 32, rotation: Math.PI / 2, importance: 10, source: 'curated',
-  },
-  {
     // No dataset entry. Chota Imambara is ~800 m due west of Rumi Darwaza along
     // Husainabad Road, at essentially the same latitude. Verified against Maps.
     // Same road, same facade-orientation fix as Bara Imambara above.
-    id: 'chota-imambara', name: 'Chota Imambara',
-    x: RUMI_X - 798, z: RUMI_Z - 4, archetype: 'imambara',
-    radius: 78, height: 26, rotation: Math.PI / 2, importance: 9, source: 'curated',
-  },
-  {
-    id: 'clock-tower', name: 'Hussainabad Clock Tower',
-    // ~467 m west of Rumi Darwaza, between Bara and Chota Imambara along
-    // Husainabad Road. Position curated from Maps; the Overture "Ghanta Ghar"
-    // record at (-4216, -2354) is 90 m too far east.
-    // 221 ft (67.4 m): the tallest clock tower in India, 1881.
-    x: RUMI_X - 467, z: RUMI_Z + 11, archetype: 'tower',
-    radius: 16, height: 67.4, importance: 9, source: 'curated',
-  },
-
-  {
     // The 207 ft (63.1 m) national flagpole in Janeshwar Mishra Park, Gomti
     // Nagar — the tallest in Uttar Pradesh and a replica of the Connaught Place
     // pole. Position from the park's own place record.
-    id: 'janeshwar-flag', name: 'National Flag, Janeshwar Mishra Park',
-    x: 3837, z: 1678, archetype: 'flagpole',
-    radius: 30, height: 63.1, rotation: 0.4, importance: 8, source: 'places',
-    // The park is 376 acres; only the flag plaza should clear bulk geometry.
-    suppressRadius: 60,
-  },
-
-  // ── Civic / transport ─────────────────────────────────────────────────────
-  {
     id: 'charbagh', name: 'Lucknow Charbagh Railway Station',
     x: -1499, z: 1574, archetype: 'station',
     radius: 130, height: 30, rotation: 0.1, importance: 10, source: 'places',
@@ -145,11 +111,6 @@ export const LANDMARKS: LandmarkDef[] = [
     radius: 88, height: 40, rotation: 0.0, importance: 9, source: 'places',
   },
   {
-    id: 'ambedkar-memorial', name: 'Ambedkar Memorial Park',
-    x: -1407, z: -1452, archetype: 'memorial',
-    radius: 130, height: 38, rotation: 0.0, importance: 9, source: 'places',
-  },
-  {
     id: 'airport', name: 'Chaudhary Charan Singh International Airport',
     x: -9988, z: 9769, archetype: 'terminal',
     radius: 185, height: 22, rotation: 0.62, importance: 10, source: 'places',
@@ -158,11 +119,6 @@ export const LANDMARKS: LandmarkDef[] = [
   },
 
   // ── Contemporary ──────────────────────────────────────────────────────────
-  {
-    id: 'phoenix-palassio', name: 'Phoenix Palassio',
-    x: 5433, z: 1427, archetype: 'mall',
-    radius: 105, height: 34, rotation: 0.25, importance: 8, source: 'places',
-  },
   {
     id: 'lucknow-university', name: 'University of Lucknow',
     // Overture "Lucknow University" record at (-3454, -6234) is an outlier 6 km

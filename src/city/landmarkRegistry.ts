@@ -67,7 +67,9 @@ export const LANDMARKS: LandmarkDef[] = [
   },
   {
     id: 'kdsingh', name: "K D Singh 'Babu' Stadium",
-    x: -2854, z: -521, archetype: 'stadium',
+    // Was (-2854, -521), which is the ONE outlying Overture record; the other
+    // records for this stadium cluster 1.6 km east. Consensus of that cluster.
+    x: -1136, z: -659, archetype: 'stadium',
     radius: 95, height: 24, rotation: 0.9, importance: 8, source: 'places',
   },
   {
@@ -124,7 +126,10 @@ export const LANDMARKS: LandmarkDef[] = [
   },
   {
     id: 'vidhan-sabha', name: 'Vidhan Sabha (Legislative Assembly)',
-    x: -738, z: 4200, archetype: 'assembly',
+    // Was (-738, 4200) — the lone outlier, 3.5 km south of the real building.
+    // Four records (UPVidhansabha, Uttar Pradesh Legislative Assembly,
+    // Vidhansabha Bhawan, Vidhan Bhawan Gate No 1) cluster here instead.
+    x: -703, z: 634, archetype: 'assembly',
     radius: 88, height: 40, rotation: 0.0, importance: 9, source: 'places',
   },
   {

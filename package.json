@@ -14,7 +14,8 @@
     "lint": "tsc --noEmit",
     "serve": "npm run build && npm run start",
     "suppress": "tsx --max-old-space-size=8192 scripts/suppress_conflicts.ts",
-    "vegetation": "tsx --max-old-space-size=8192 scripts/place_vegetation.ts"
+    "vegetation": "tsx --max-old-space-size=8192 scripts/place_vegetation.ts",
+    "audit:landmarks": "tsx scripts/audit_landmarks.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

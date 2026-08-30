@@ -70,7 +70,7 @@ export const LANDMARKS: LandmarkDef[] = [
     // Was (-2854, -521), which is the ONE outlying Overture record; the other
     // records for this stadium cluster 1.6 km east. Consensus of that cluster.
     x: -1136, z: -659, archetype: 'stadium',
-    radius: 95, height: 24, rotation: 0.9, importance: 8, source: 'places',
+    radius: 95, height: 24, rotation: 0, importance: 8, source: 'places',
   },
   {
     id: 'chowk-stadium', name: 'Chowk Stadium',

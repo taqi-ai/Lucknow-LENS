@@ -110,12 +110,22 @@ function buildRoadRibbons(roads: RoadIn[], originX: number, originZ: number): Ro
  * that scales with road class. Returned as bare transforms so the main thread can
  * push them straight into an InstancedMesh; nothing here allocates per-lamp objects.
  */
+/**
+ * Spacing between lamp columns, metres. These are deliberately wider than real
+ * highway practice (~30 m). At the old 30-45 m values every arterial in view
+ * carried a dense picket of masts that read as a fence rather than as lighting,
+ * and the count buried the glow pass in overdraw. Real Lucknow arterials are lit
+ * far more sparsely than a motorway spec suggests, so the wider spacing is both
+ * cheaper and closer to the city.
+ */
 const LIT_ROAD_SPACING: Partial<Record<string, number>> = {
-  motorway: 45,
-  trunk: 42,
-  primary: 38,
-  secondary: 34,
-  tertiary: 30,
+  motorway: 78,
+  trunk: 76,
+  primary: 72,
+  secondary: 68,
+  // Tertiary streets get occasional lighting only — they used to be lit at 30 m,
+  // which is what flooded residential-scale streets with masts.
+  tertiary: 95,
 };
 
 function buildStreetlights(roads: RoadIn[], originX: number, originZ: number): Float32Array {
@@ -128,8 +138,10 @@ function buildStreetlights(roads: RoadIn[], originX: number, originZ: number): F
     if (!spacing) continue;
 
     const half = Math.max(ROAD_HALF_WIDTH[cls], (road.width ?? 0) / 2) + 1.2;
-    // Motorways and trunks get lamps on both sides; smaller roads alternate.
-    const bothSides = cls === 'motorway' || cls === 'trunk' || cls === 'primary';
+    // Only genuine dual-carriageway classes are lit from both sides. Primary used
+    // to be included, which doubled the mast count on ordinary city avenues that
+    // in reality carry a single staggered row.
+    const bothSides = cls === 'motorway' || cls === 'trunk';
 
     let carry = 0;
     let flip = false;
@@ -223,8 +235,12 @@ self.onmessage = async (e: MessageEvent<TileWorkerRequest>) => {
     const ids = bldgList.map((b) => b.id);
 
     const roads = buildRoadRibbons(roadList, originX, originZ);
-    // Street-level only: lamps are invisible clutter from neighbourhood and up.
-    const streetlights = lod >= 3 ? buildStreetlights(roadList, originX, originZ) : new Float32Array(0);
+    // Lamps are built for every streamed tile and hidden by the main thread above
+    // street level. They used to be gated on `lod >= 3` here, but the streamer
+    // unified LOD 2 and 3 onto a single content tier (CONTENT_TIER = 2) so that
+    // crossing 600 m stops rebuilding every tile — which meant this branch had
+    // been false for every request since, and no streetlight was ever built.
+    const streetlights = lod >= 2 ? buildStreetlights(roadList, originX, originZ) : new Float32Array(0);
     const parks = buildAreas(parkList, originX, originZ, 0.05);
     const water = buildAreas(waterList, originX, originZ, -0.15);
 

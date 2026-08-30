@@ -54,16 +54,27 @@ export default function App() {
   const [skylineStyle, setSkylineStyle] = useState<SkylineStyle>('warm');
   const [showLabels, setShowLabels] = useState<boolean>(true); // Default: labels ON
   const [presentationMode, setPresentationMode] = useState<boolean>(false);
+  const [mapOnly, setMapOnly] = useState<boolean>(false);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && presentationMode) {
-        setPresentationMode(false);
+      // Never steal a key from a text field — search is a plain input.
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+
+      if (e.key === 'Escape') {
+        // Map-only is the deeper state, so Escape peels it back first.
+        if (mapOnly) setMapOnly(false);
+        else if (presentationMode) setPresentationMode(false);
+        return;
+      }
+      if ((e.key === 'm' || e.key === 'M') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        setMapOnly((v) => !v);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [presentationMode]);
+  }, [presentationMode, mapOnly]);
 
   // Layer toggler state
   const [layers, setLayers] = useState<LayerState>({
@@ -293,6 +304,8 @@ export default function App() {
         nightMode={nightMode}
         showLabels={showLabels}
         presentationMode={presentationMode}
+        mapOnly={mapOnly}
+        onToggleMapOnly={() => setMapOnly((v) => !v)}
         layers={layers}
         selectedEntity={selectedEntity}
         flights={flights}

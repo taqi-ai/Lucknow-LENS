@@ -16,7 +16,36 @@ dotenv.config();
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
-app.use(express.json());
+// Behind a load balancer or PaaS router, req.ip is the proxy unless this is set.
+// The rate limiter below keys on req.ip, so without it every visitor shares one
+// bucket and the first busy client locks everyone else out.
+app.set("trust proxy", 1);
+// Nothing here accepts a payload larger than a few hundred bytes; the default
+// 100 kb is free memory for anyone who wants to spend ours.
+app.use(express.json({ limit: "16kb" }));
+app.disable("x-powered-by");
+
+// ---------------------------------------------------------------------------
+// SECURITY HEADERS
+//
+// Written out rather than pulled from helmet: this is a single-origin static
+// app with six read-only JSON endpoints, so the useful subset is small and a
+// dependency that ships two dozen middlewares to apply five headers is not
+// worth the supply-chain surface.
+//
+// No CSP is set here. The client builds shaders and workers from blob URLs and
+// Vite injects inline styles in dev, so a policy strict enough to be worth
+// having would need `unsafe-inline`/`blob:` anyway — better to add a real one
+// deliberately than to ship a permissive policy that only looks like defence.
+// ---------------------------------------------------------------------------
+app.use((_req, res, next) => {
+  res.set("X-Content-Type-Options", "nosniff");
+  res.set("X-Frame-Options", "SAMEORIGIN");
+  res.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.set("Cross-Origin-Opener-Policy", "same-origin");
+  res.set("Permissions-Policy", "geolocation=(self), microphone=(), camera=()");
+  next();
+});
 
 // ---------------------------------------------------------------------------
 // STATIC ASSET DELIVERY
@@ -103,6 +132,54 @@ const newsFeed = new CachedFeed(new GdeltNewsProvider(), {
   timeoutMs: 10_000,
   maxStaleMs: 3_600_000,
   attribution: "News via the GDELT Project (gdeltproject.org)",
+});
+
+// ---------------------------------------------------------------------------
+// RATE LIMITING
+//
+// Only the /api routes are limited. Static geometry is immutable and cached for
+// a week, so it belongs to the CDN or reverse proxy, not to a Node counter.
+//
+// Every live endpoint answers from a shared CachedFeed, so a flood costs us CPU
+// and bandwidth rather than upstream quota. The limit is therefore generous —
+// it exists to keep one misbehaving client from starving the event loop, not to
+// meter legitimate use. A tab polling all six layers at their real cadences
+// makes roughly 25 requests a minute.
+//
+// The counter is per-process and in memory. With more than one instance behind a
+// balancer each gets its own budget, which is fine for a ceiling of this kind;
+// a shared store would only matter if this were metering a paid quota.
+// ---------------------------------------------------------------------------
+const RATE_WINDOW_MS = 60_000;
+const RATE_MAX = 180;
+const rateBuckets = new Map<string, { count: number; resetAt: number }>();
+
+app.use("/api", (req, res, next) => {
+  const now = Date.now();
+  const key = req.ip ?? "unknown";
+  let b = rateBuckets.get(key);
+  if (!b || b.resetAt <= now) {
+    b = { count: 0, resetAt: now + RATE_WINDOW_MS };
+    rateBuckets.set(key, b);
+  }
+  b.count++;
+
+  // Sweep expired buckets occasionally so a long uptime behind a wide NAT range
+  // cannot grow the map without bound.
+  if (rateBuckets.size > 5000) {
+    for (const [k, v] of rateBuckets) if (v.resetAt <= now) rateBuckets.delete(k);
+  }
+
+  res.set("RateLimit-Limit", String(RATE_MAX));
+  res.set("RateLimit-Remaining", String(Math.max(0, RATE_MAX - b.count)));
+  res.set("RateLimit-Reset", String(Math.ceil((b.resetAt - now) / 1000)));
+
+  if (b.count > RATE_MAX) {
+    res.set("Retry-After", String(Math.ceil((b.resetAt - now) / 1000)));
+    res.status(429).json({ status: "error", error: "rate_limited" });
+    return;
+  }
+  next();
 });
 
 app.get("/api/live/weather", async (_req, res) => {
@@ -354,6 +431,22 @@ async function startServer() {
       setHeaders: (res, filePath) => {
         if (filePath.includes(`${path.sep}assets${path.sep}`)) {
           res.set("Cache-Control", "public, max-age=31536000, immutable");
+          return;
+        }
+        // The city dataset is ~700 MB of tile JSON and HLOD binaries, and a
+        // single session pulls a large slice of it. Without these headers every
+        // visitor re-fetches the lot, which is the difference between this being
+        // hostable for many people and being hostable for one.
+        //
+        // HLOD requests carry `?v=<bake timestamp>` (see hlodLayer.cacheBust),
+        // so the URL itself changes on a re-bake and the response is genuinely
+        // immutable. Tile JSON has no such version, so it gets a day — long
+        // enough to cover a session, short enough that a re-bake lands within
+        // one — plus revalidation rather than a hard expiry.
+        if (filePath.includes(`${path.sep}hlod${path.sep}`)) {
+          res.set("Cache-Control", "public, max-age=31536000, immutable");
+        } else if (filePath.includes(`${path.sep}overture_tiles_full${path.sep}`)) {
+          res.set("Cache-Control", "public, max-age=86400, must-revalidate");
         }
       },
     }));
@@ -364,9 +457,19 @@ async function startServer() {
     console.log("Serving prebuilt bundle from dist/");
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Miniature City server running on http://0.0.0.0:${PORT}`);
   });
+  // Container orchestrators send SIGTERM and then kill after a grace period.
+  // Without this the process dies mid-response and in-flight clients see a
+  // truncated tile rather than a clean retry.
+  const shutdown = (signal: string) => {
+    console.log(`${signal} received — draining connections`);
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 10_000).unref();
+  };
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 }
 
 startServer();

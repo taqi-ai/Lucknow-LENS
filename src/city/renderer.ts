@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OSMMapData, RenderStats } from '../types';
+import { getDeviceProfile } from './deviceProfile';
 
 /**
  * Sun direction relative to the shadow focus point. Azimuth ~west-south-west with a
@@ -34,13 +35,17 @@ export class CityRenderer {
     this.camera = new THREE.PerspectiveCamera(38, width / height, 2, 150000);
 
     // 3. WebGL Renderer Setup — logarithmic depth buffer eliminates z-fighting
+    // Budgets come from deviceProfile, not from a fixed cap: a phone at 3x DPR
+    // with MSAA on asks for roughly 9x the fragment work a desktop does, which is
+    // what made the city unusable on mobile rather than merely slower.
+    const device = getDeviceProfile();
     this.renderer = new THREE.WebGLRenderer({
-      antialias: true,
+      antialias: device.antialias,
       powerPreference: 'high-performance',
       logarithmicDepthBuffer: true,
     });
     this.renderer.setSize(width, height);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // Cap at 1.5x for perf on HiDPI
+    this.renderer.setPixelRatio(device.maxPixelRatio);
     this.renderer.shadowMap.enabled = false; // Shadows off by default — enabled adaptively at low altitude
     this.renderer.shadowMap.type = THREE.PCFShadowMap; // PCFSoft is deprecated in r185
     // Explicit colour management. Materials author colours in sRGB, lighting happens
@@ -124,7 +129,9 @@ export class CityRenderer {
 
   /** Enable/disable shadows based on camera altitude — huge perf win at zoom-out */
   public setAdaptiveShadows(altitude: number): void {
-    const shouldEnable = altitude < 3000;
+    // Shadow maps are a second full scene traversal per frame; mobile GPUs pay
+    // for it in bandwidth they do not have.
+    const shouldEnable = getDeviceProfile().allowShadows && altitude < 3000;
     if (shouldEnable === this.shadowsActive) return;
     this.shadowsActive = shouldEnable;
     this.renderer.shadowMap.enabled = shouldEnable;

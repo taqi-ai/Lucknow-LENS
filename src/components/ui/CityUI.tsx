@@ -1,5 +1,5 @@
 import type { LiveFeedState, LiveWeatherDTO, LiveAirQualityDTO, LiveListState, LiveTrainDTO, LiveTrafficDTO, LiveNewsDTO } from '../../interactions/liveFeed';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { CameraPreset, OSMMapData, RenderStats, CityStreamingStats, SelectedEntity, SimulatedFlight, AIAction, SearchResult } from '../../types';
 import { ReportModal } from './ReportModal';
 import { CameraWidget } from './CameraWidget';
@@ -8,7 +8,7 @@ import { LayerControl, LayerState } from '../features/LayerControl';
 import { InfoPanel } from '../features/InfoPanel';
 import { AnalystPanel } from '../features/AnalystPanel';
 import { LiveDataPanel } from '../features/LiveDataPanel';
-import { Compass, Building2, FileText, Activity, Map, Navigation, MapPin, Grid, Globe, ShieldCheck, Sun, Moon, Tag, Palette } from 'lucide-react';
+import { Compass, Building2, FileText, Activity, Map, Navigation, MapPin, Grid, Globe, ShieldCheck, Sun, Moon, Tag, Palette, Maximize2, Eye, SlidersHorizontal, X } from 'lucide-react';
 import { CameraController } from '../../city/cameraController';
 
 interface CityUIProps {
@@ -21,6 +21,12 @@ interface CityUIProps {
   nightMode: boolean;
   showLabels: boolean;
   presentationMode: boolean;
+  /**
+   * Map-only: every panel is unmounted, not merely hidden, leaving the 3D view
+   * and one restore chip. Distinct from presentation mode, which keeps branding,
+   * search and layer controls and only drops developer surfaces.
+   */
+  mapOnly: boolean;
   layers: LayerState;
   selectedEntity: SelectedEntity | null;
   flights: SimulatedFlight[];
@@ -29,6 +35,7 @@ interface CityUIProps {
   onToggleNightMode: () => void;
   onToggleLabels: () => void;
   onTogglePresentationMode: () => void;
+  onToggleMapOnly: () => void;
   skylineStyle?: 'warm' | 'clear' | 'cyberpunk';
   onCycleSkyline?: () => void;
   /** Freshness of the live aircraft feed. Never rendered as "live" unless status is ok. */
@@ -55,6 +62,7 @@ export const CityUI: React.FC<CityUIProps> = ({
   nightMode,
   showLabels,
   presentationMode,
+  mapOnly,
   layers,
   selectedEntity,
   flights,
@@ -63,6 +71,7 @@ export const CityUI: React.FC<CityUIProps> = ({
   onToggleNightMode,
   onToggleLabels,
   onTogglePresentationMode,
+  onToggleMapOnly,
   skylineStyle,
   onCycleSkyline,
   flightFeed,
@@ -78,6 +87,35 @@ export const CityUI: React.FC<CityUIProps> = ({
   onExecuteAction,
 }) => {
   const [isReportOpen, setIsReportOpen] = useState(false);
+
+  /**
+   * Compact layout. The two dashboard columns are 290 px and 310 px wide, so on
+   * anything narrower than about 640 px they overlap each other and bury the map
+   * they are annotating. Below the breakpoint the right column becomes a sheet
+   * the user opens deliberately, and the developer surfaces drop out entirely.
+   *
+   * Keyed on width rather than on the device profile's `isTouch`: a tablet in
+   * landscape has plenty of room for both columns, and a narrow desktop window
+   * has the same problem a phone does.
+   */
+  const [compact, setCompact] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth < 640,
+  );
+  const [sheetOpen, setSheetOpen] = useState(false);
+  useEffect(() => {
+    const onResize = () => setCompact(window.innerWidth < 640);
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize);
+    };
+  }, []);
+  // Tapping a building on a phone must show its inspector, but the inspector
+  // lives in the sheet — so the selection has to open it.
+  useEffect(() => {
+    if (compact && selectedEntity) setSheetOpen(true);
+  }, [compact, selectedEntity]);
 
   const handleSearchResultClick = (result: SearchResult) => {
     if (cameraController) {
@@ -95,6 +133,24 @@ export const CityUI: React.FC<CityUIProps> = ({
     }
   };
 
+  // Map-only returns before any panel is constructed. Hiding them with CSS
+  // would keep their subscriptions and re-renders alive, which is the opposite
+  // of what "just the map" is for on a phone.
+  if (mapOnly) {
+    return (
+      <div className="absolute bottom-4 right-4 z-30 pointer-events-auto">
+        <button
+          onClick={onToggleMapOnly}
+          className="w-11 h-11 rounded-full bg-slate-900/55 hover:bg-slate-900/85 backdrop-blur-md border border-white/10 text-slate-200 flex items-center justify-center shadow-2xl transition-all"
+          title="Show panels (Esc)"
+          aria-label="Show panels"
+        >
+          <Eye className="w-4 h-4" />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <>
       {/* Presentation Mode keeps branding, search, scale controls and layers.
@@ -102,7 +158,7 @@ export const CityUI: React.FC<CityUIProps> = ({
       <>
 
           {/* Left Column Dashboard Stack (Branding + Search + AI Analyst) */}
-          <div className="absolute top-3 left-3 z-20 w-[290px] max-h-[calc(100vh-1.5rem)] overflow-y-auto no-scrollbar pointer-events-none flex flex-col gap-2.5">
+          <div className={`absolute top-3 left-3 z-20 overflow-y-auto no-scrollbar pointer-events-none flex flex-col gap-2.5 ${compact ? "right-3 w-auto max-h-[40vh]" : "w-[290px] max-h-[calc(100vh-1.5rem)]"}`}>
             {/* Branding header badge */}
             <div className="pointer-events-auto glass-panel rounded-2xl p-3.5 flex items-center gap-4 transition-all hover:bg-slate-900/80">
           <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 via-orange-500 to-amber-300 flex items-center justify-center text-slate-950 shadow-[0_0_15px_rgba(245,158,11,0.3)]">
@@ -128,8 +184,9 @@ export const CityUI: React.FC<CityUIProps> = ({
           <SearchUI mapData={mapData} onSelectResult={handleSearchResultClick} />
         </div>
 
-        {/* Ask Lucknow Lens AI Panel — hidden while presenting */}
-        {!presentationMode && (
+        {/* Ask Lucknow Lens AI Panel — hidden while presenting, and on compact
+            layouts where it would occupy most of the screen. */}
+        {!presentationMode && !compact && (
           <div className="pointer-events-auto">
             <AnalystPanel onExecuteAction={onExecuteAction} />
           </div>
@@ -137,7 +194,11 @@ export const CityUI: React.FC<CityUIProps> = ({
       </div>
 
       {/* Right Column Dashboard Stack (Toggles + Layers + Inspector Card) */}
-      <div className="absolute top-3 right-3 z-20 w-[310px] max-h-[calc(100vh-1.5rem)] overflow-y-auto no-scrollbar pointer-events-none flex flex-col gap-2.5 items-end">
+      <div className={`absolute z-20 overflow-y-auto no-scrollbar pointer-events-none flex flex-col gap-2.5 items-end ${
+          compact
+            ? `left-3 right-3 bottom-16 max-h-[62vh] ${sheetOpen ? "" : "hidden"}`
+            : "top-3 right-3 w-[310px] max-h-[calc(100vh-1.5rem)]"
+        }`}>
         {/* Preset Modes / Preset Camera Signals */}
         <div className="pointer-events-auto flex flex-wrap items-center gap-1.5 bg-slate-900/90 border border-slate-700/80 backdrop-blur-xl rounded-2xl p-1.5 shadow-2xl justify-end">
           <button
@@ -189,6 +250,15 @@ export const CityUI: React.FC<CityUIProps> = ({
           >
             <Tag className="w-3.5 h-3.5" />
             <span>LABELS</span>
+          </button>
+
+          <button
+            onClick={onToggleMapOnly}
+            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 border border-slate-700"
+            title="Hide all panels and show only the map"
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+            <span>MAP ONLY</span>
           </button>
 
           {!presentationMode && (
@@ -389,8 +459,10 @@ export const CityUI: React.FC<CityUIProps> = ({
         )}
       </div>
 
-      {/* Bottom Left STREAMING ENGINE STATS PANEL — diagnostics, hidden while presenting */}
-      {!presentationMode && (
+      {/* Bottom Left STREAMING ENGINE STATS PANEL — diagnostics, hidden while
+          presenting and on compact layouts, where a 260 px card of engine
+          telemetry is a quarter of the screen. */}
+      {!presentationMode && !compact && (
       <div className="absolute bottom-3 left-3 z-10 pointer-events-none">
         <div className="pointer-events-auto glass-panel rounded-2xl p-3.5 text-[11px] text-slate-200 w-[260px] transition-all hover:bg-slate-900/80">
           <div className="text-[10px] font-extrabold uppercase tracking-wider text-amber-400 mb-2.5 flex items-center justify-between border-b border-slate-800 pb-2">
@@ -506,8 +578,36 @@ export const CityUI: React.FC<CityUIProps> = ({
         </div>
       )}
 
-      {/* Camera Controls Widget */}
-      <CameraWidget controller={cameraController} />
+      {/* Camera Controls Widget — the compass/tilt dial is a fine-pointer control
+          and duplicates gestures the touch camera already handles. */}
+      {!compact && <CameraWidget controller={cameraController} />}
+
+      {/* Compact layout: the right column is a sheet, so it needs a handle. */}
+      {compact && !presentationMode && (
+        <div className="absolute bottom-4 right-4 z-30 pointer-events-auto flex flex-col gap-2">
+          <button
+            onClick={onToggleMapOnly}
+            className="w-11 h-11 rounded-full bg-slate-900/60 hover:bg-slate-900/85 backdrop-blur-md border border-white/10 text-slate-200 flex items-center justify-center shadow-2xl"
+            title="Map only"
+            aria-label="Map only"
+          >
+            <Maximize2 className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setSheetOpen((v) => !v)}
+            className={`w-11 h-11 rounded-full backdrop-blur-md border flex items-center justify-center shadow-2xl transition-all ${
+              sheetOpen
+                ? 'bg-amber-500 border-amber-400 text-slate-950'
+                : 'bg-slate-900/60 hover:bg-slate-900/85 border-white/10 text-slate-200'
+            }`}
+            title={sheetOpen ? 'Hide controls' : 'Show controls'}
+            aria-label={sheetOpen ? 'Hide controls' : 'Show controls'}
+            aria-expanded={sheetOpen}
+          >
+            {sheetOpen ? <X className="w-4 h-4" /> : <SlidersHorizontal className="w-4 h-4" />}
+          </button>
+        </div>
+      )}
 
       {/* Report Modal */}
       <ReportModal

@@ -169,6 +169,8 @@ Normal users do **not** need to run data generation. If you want to re-process o
 
 Lucknow Lens is one Node process: Express serves both the API routes and the built static frontend, so it deploys as a single service — no separate frontend/backend hosts needed.
 
+> Hosting it for real users — build-machine memory, cache headers, rate limits, reverse-proxy setup, health checks — is covered in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+
 ```bash
 npm install
 npm run build   # vite build (client) + esbuild bundle (server) -> dist/

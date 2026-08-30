@@ -375,6 +375,8 @@ export const CityViewport: React.FC<CityViewportProps> = ({
             requestAnimationFrame(tick);
           });
         },
+        /** Raw scene handle for ad-hoc inspection from a harness console. */
+        scene: cityRenderer.scene,
         /**
          * Scene composition by layer. Answers "which representation is actually
          * drawing this?" — the question that separates a streamed tile not

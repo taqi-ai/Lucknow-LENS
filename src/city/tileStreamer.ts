@@ -10,6 +10,7 @@ import { CityOverlay } from './cityOverlay';
 import { ROAD_LAYER_Y, type RoadClass } from './ribbon';
 import { SeededRNG } from './rng';
 import type { TileWorkerRequest, TileWorkerResponse } from './tileWorker';
+import { getDeviceProfile } from './deviceProfile';
 
 /**
  * TileStreamer — full-detail streaming for the two close scales.
@@ -58,6 +59,17 @@ const STREAM_RADIUS: Record<number, number> = {
  * when zooming. Both tiers now share one key, so crossing costs nothing.
  */
 const CONTENT_TIER = 2 as LODLevel;
+
+/**
+ * Night lamp brightness. Well above 1.0 on purpose: under ACES tone mapping an
+ * emissive of 1.6 lands in the same range as a sunlit wall, so the old lamps read
+ * as beige boxes. Pushing the head into the highlight rolloff is what makes it
+ * look like a working sodium lamp.
+ */
+const LAMP_EMISSIVE_NIGHT = 5.2;
+/** Halo and ground-pool opacity at night. */
+const LAMP_GLOW_NIGHT = 0.85;
+const LAMP_POOL_NIGHT = 0.5;
 
 const ROAD_COLORS_DAY: Record<RoadClass, number> = {
   motorway: 0x5e5c5a,
@@ -119,7 +131,9 @@ export class TileStreamer {
   // ── Worker pool ───────────────────────────────────────────────────────────
   private workers: Worker[] = [];
   private workerBusy: boolean[] = [];
-  private readonly WORKER_COUNT = 4;
+  // Sized from the device: spawning four decode workers on a two-core phone makes
+  // them fight each other and the compositor rather than parallelising anything.
+  private readonly WORKER_COUNT = getDeviceProfile().workerCount;
   private pending = new Map<string, { tile: TileManifestItem; lod: LODLevel }>();
 
   /**
@@ -131,6 +145,8 @@ export class TileStreamer {
   private queued = new Set<string>();
 
   private currentLOD: LODLevel = 0;
+  /** Lamps are only worth drawing at street scale; see `setLampsVisible`. */
+  private lampsVisible = false;
   public stableMode = true;
   public debugMode = false;
   private isNight = true;
@@ -147,6 +163,11 @@ export class TileStreamer {
   private lampHeadGeo!: THREE.BufferGeometry;
   private lampMastMat!: THREE.MeshStandardMaterial;
   private lampHeadMat!: THREE.MeshStandardMaterial;
+  /** Additive halo + ground pool that make a lamp read as a light, not a lit box. */
+  private lampGlowGeo!: THREE.BufferGeometry;
+  private lampGlowMat!: THREE.Material;
+  private lampPoolGeo!: THREE.BufferGeometry;
+  private lampPoolMat!: THREE.Material;
 
   private lastUpdateTime = 0;
   private readonly UPDATE_INTERVAL = 120;
@@ -263,12 +284,109 @@ export class TileStreamer {
     this.lampMastMat = new THREE.MeshStandardMaterial({
       color: 0x3a3d42, roughness: 0.7, metalness: 0.5,
     });
-    // Sodium-vapour warm. Emissive only — no PointLight per lamp.
+    // Sodium-vapour warm. Emissive only — no PointLight per lamp. Driven well past
+    // 1.0 so ACES tone mapping still resolves the head as a hot white-orange core
+    // rather than clipping it to the same flat amber as the surrounding fitting.
     this.lampHeadMat = new THREE.MeshStandardMaterial({
       color: 0x2a2724,
-      emissive: 0xffb457,
-      emissiveIntensity: 1.6,
+      emissive: 0xffc271,
+      emissiveIntensity: LAMP_EMISSIVE_NIGHT,
       roughness: 0.5,
+    });
+
+    // Halo: a camera-facing quad with a soft radial falloff, additively blended.
+    // This is what actually sells brightness — an emissive box cannot bloom, and a
+    // real PointLight per lamp would be thousands of lights per frame.
+    this.lampGlowGeo = new THREE.PlaneGeometry(7.2, 7.2);
+    // The quad's vertices sit at the origin and are moved to the lamp head by the
+    // vertex shader, so the geometry's own bounds describe the wrong place and the
+    // instanced bounding sphere would cull halos that are still on screen. State
+    // the real extent — centred on the head, radius covering the quad's diagonal.
+    this.lampGlowGeo.boundingSphere = new THREE.Sphere(
+      new THREE.Vector3(1.75, mastH - 0.42, 0), 5.2,
+    );
+    this.lampGlowMat = new THREE.ShaderMaterial({
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      // Seeded to the night values because `isNight` starts true and
+      // `setNightMode` short-circuits when the flag does not change — so
+      // applyPalette never runs on a cold start and a 0 here left the glow
+      // switched off for the whole session.
+      uniforms: { uIntensity: { value: LAMP_GLOW_NIGHT }, uColor: { value: new THREE.Color(0xffb457) } },
+      // Billboarded in view space: the lamp head's world position comes from the
+      // instance matrix, then the quad is expanded on the view axes so the halo
+      // faces the camera from any orbit angle instead of edge-on vanishing.
+      // The logdepthbuf chunks are not optional. The renderer runs with
+      // `logarithmicDepthBuffer: true`, and a raw ShaderMaterial that omits them
+      // writes a depth three's own materials never agree with, so every glow
+      // fragment failed the depth test — the quads were drawn and invisible.
+      vertexShader: `
+        #include <common>
+        #include <logdepthbuf_pars_vertex>
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          vec4 head = instanceMatrix * vec4(${'1.75'}, ${(mastH - 0.42).toFixed(2)}, 0.0, 1.0);
+          vec4 center = modelViewMatrix * head;
+          gl_Position = projectionMatrix * vec4(center.xyz + vec3(position.xy, 0.0), 1.0);
+          #include <logdepthbuf_vertex>
+        }
+      `,
+      fragmentShader: `
+        #include <common>
+        #include <logdepthbuf_pars_fragment>
+        uniform float uIntensity;
+        uniform vec3 uColor;
+        varying vec2 vUv;
+        void main() {
+          #include <logdepthbuf_fragment>
+          float d = distance(vUv, vec2(0.5)) * 2.0;
+          // Two lobes: a tight core plus a wide bloom, so the falloff reads as
+          // light scattering in air rather than as a flat translucent disc.
+          float core = pow(max(0.0, 1.0 - d), 5.0);
+          float bloom = pow(max(0.0, 1.0 - d), 1.6) * 0.35;
+          float a = (core + bloom) * uIntensity;
+          if (a < 0.004) discard;
+          gl_FragColor = vec4(uColor * a, a);
+        }
+      `,
+    });
+
+    // Ground pool: the light actually landing on the carriageway. Laid flat just
+    // above the road surface, which is the cue the previous lamps never gave.
+    this.lampPoolGeo = new THREE.PlaneGeometry(15, 15);
+    this.lampPoolGeo.rotateX(-Math.PI / 2);
+    this.lampPoolGeo.translate(1.75, 0.35, 0);
+    this.lampPoolMat = new THREE.ShaderMaterial({
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      uniforms: { uIntensity: { value: LAMP_POOL_NIGHT }, uColor: { value: new THREE.Color(0xffa845) } },
+      vertexShader: `
+        #include <common>
+        #include <logdepthbuf_pars_vertex>
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+          #include <logdepthbuf_vertex>
+        }
+      `,
+      fragmentShader: `
+        #include <common>
+        #include <logdepthbuf_pars_fragment>
+        uniform float uIntensity;
+        uniform vec3 uColor;
+        varying vec2 vUv;
+        void main() {
+          #include <logdepthbuf_fragment>
+          float d = distance(vUv, vec2(0.5)) * 2.0;
+          float a = pow(max(0.0, 1.0 - d), 2.6) * uIntensity;
+          if (a < 0.004) discard;
+          gl_FragColor = vec4(uColor * a, a);
+        }
+      `,
     });
   }
 
@@ -347,6 +465,7 @@ export class TileStreamer {
     const altitude = camera.position.y;
     const { lod, scaleName } = this.resolveLOD(altitude);
     this.currentLOD = lod;
+    this.setLampsVisible(lod >= 3);
 
     // Detail ramp feeds the building shader: facade banding and AO strength fade in
     // as you descend, so nothing aliases at city scale.
@@ -609,10 +728,34 @@ export class TileStreamer {
     }
 
     if (msg.streetlights && msg.streetlights.length > 0) {
-      this.addStreetlights(group, msg.streetlights);
+      this.addStreetlights(group, msg.streetlights, this.lampsVisible);
     }
 
     return group;
+  }
+
+  /**
+   * Lamps exist on every streamed tile but are only drawn at street scale — from
+   * neighbourhood up they are a picket of sub-pixel masts that costs four draws a
+   * tile and reads as noise. Toggling visibility is far cheaper than the old
+   * approach of rebuilding tile geometry when the altitude band changes.
+   */
+  private setLampsVisible(on: boolean): void {
+    if (on === this.lampsVisible) return;
+    this.lampsVisible = on;
+    for (const t of this.loadedTiles.values()) {
+      for (const child of t.group.children) {
+        if (child.name === 'streetlights') child.visible = on;
+      }
+    }
+  }
+
+  /** Drive both additive lamp passes from one place. */
+  private setLampGlow(halo: number, pool: number): void {
+    const g = this.lampGlowMat as THREE.ShaderMaterial;
+    const p = this.lampPoolMat as THREE.ShaderMaterial;
+    if (g?.uniforms?.uIntensity) g.uniforms.uIntensity.value = halo;
+    if (p?.uniforms?.uIntensity) p.uniforms.uIntensity.value = pool;
   }
 
   /**
@@ -621,7 +764,7 @@ export class TileStreamer {
    * is a real light: the head is emissive and the pooled illumination comes from the
    * building shader's night floor plus the road emissive hierarchy.
    */
-  private addStreetlights(group: THREE.Group, lamps: Float32Array): void {
+  private addStreetlights(group: THREE.Group, lamps: Float32Array, visible: boolean): void {
     const count = lamps.length / 3;
     if (count === 0) return;
 
@@ -631,6 +774,26 @@ export class TileStreamer {
     head.name = 'streetlights';
     mast.castShadow = false;
     head.castShadow = false;
+    // A tile that streams in while the camera is high must not pop its lamps on.
+    mast.visible = visible;
+    head.visible = visible;
+
+    // Glow is two more instanced draws per tile, and only where the device can
+    // afford the additive overdraw.
+    const wantGlow = getDeviceProfile().lampGlow;
+    const glow = wantGlow ? new THREE.InstancedMesh(this.lampGlowGeo, this.lampGlowMat, count) : null;
+    const pool = wantGlow ? new THREE.InstancedMesh(this.lampPoolGeo, this.lampPoolMat, count) : null;
+    if (glow && pool) {
+      glow.name = 'streetlights';
+      pool.name = 'streetlights';
+      // Additive halos must not occlude each other or the buildings behind them.
+      glow.renderOrder = 3;
+      pool.renderOrder = 2;
+      glow.frustumCulled = true;
+      pool.frustumCulled = true;
+      glow.visible = visible;
+      pool.visible = visible;
+    }
 
     const dummy = new THREE.Object3D();
     for (let i = 0; i < count; i++) {
@@ -640,11 +803,19 @@ export class TileStreamer {
       dummy.updateMatrix();
       mast.setMatrixAt(i, dummy.matrix);
       head.setMatrixAt(i, dummy.matrix);
+      glow?.setMatrixAt(i, dummy.matrix);
+      pool?.setMatrixAt(i, dummy.matrix);
     }
     mast.instanceMatrix.needsUpdate = true;
     head.instanceMatrix.needsUpdate = true;
     group.add(mast);
     group.add(head);
+    if (glow && pool) {
+      glow.instanceMatrix.needsUpdate = true;
+      pool.instanceMatrix.needsUpdate = true;
+      group.add(glow);
+      group.add(pool);
+    }
   }
 
   private addTrees(group: THREE.Group, trees: Float32Array): void {
@@ -751,7 +922,8 @@ export class TileStreamer {
       this.groundMaterial.color.setHex(0x1e2430);
       this.parkMaterial.color.setHex(0x1a2a1e);
       this.waterMaterial.color.setHex(0x14293d);
-      this.lampHeadMat.emissiveIntensity = 1.6;
+      this.lampHeadMat.emissiveIntensity = LAMP_EMISSIVE_NIGHT;
+      this.setLampGlow(LAMP_GLOW_NIGHT, LAMP_POOL_NIGHT);
       this.treeMaterials[0].color.setHex(0x101d15);
       this.treeMaterials[1].color.setHex(0x142218);
       this.treeMaterials[2].color.setHex(0x0e1a13);
@@ -762,6 +934,7 @@ export class TileStreamer {
       this.parkMaterial.color.setHex(0x1f3a3a);
       this.waterMaterial.color.setHex(0x16304a);
       this.lampHeadMat.emissiveIntensity = 0.0;
+      this.setLampGlow(0, 0);
       this.treeMaterials[0].color.setHex(0x1d3a34);
       this.treeMaterials[1].color.setHex(0x244440);
       this.treeMaterials[2].color.setHex(0x18322e);
@@ -773,6 +946,7 @@ export class TileStreamer {
       this.waterMaterial.color.setHex(0x5c7d86);
       // Lamps are off in daylight — the head reads as a dark fitting.
       this.lampHeadMat.emissiveIntensity = 0.0;
+      this.setLampGlow(0, 0);
       this.treeMaterials[0].color.setHex(0x3f6136);
       this.treeMaterials[1].color.setHex(0x4a6b3d);
       this.treeMaterials[2].color.setHex(0x374f30);
@@ -832,6 +1006,10 @@ export class TileStreamer {
     this.lampHeadGeo.dispose();
     this.lampMastMat.dispose();
     this.lampHeadMat.dispose();
+    this.lampGlowGeo.dispose();
+    this.lampGlowMat.dispose();
+    this.lampPoolGeo.dispose();
+    this.lampPoolMat.dispose();
     for (const m of this.treeMaterials) m.dispose();
   }
 }

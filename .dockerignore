@@ -7,5 +7,20 @@ coverage
 .env
 .env.*
 !.env.example
-public/hlod
 *.log
+
+# Baked outputs — the image regenerates these from public/overture_tiles_full
+# during `npm run build` (see the `prebuild` script). Shipping them in the build
+# context would add 224 MB that the builder immediately overwrites.
+public/hlod
+
+# Superseded datasets. `public/lucknow_tiles` is the pre-Overture OSM export and
+# is referenced only by scripts/validate_dataset.ts as OLD_DIR; the test tiles
+# are a 39-file sample of overture_tiles_full. Neither is served or baked, and
+# together they are ~300 MB of build context.
+public/lucknow_tiles
+public/overture_tiles_test
+
+# Offline source data for the preprocessing scripts. Nothing in the runtime or
+# in `npm run build` reads it.
+data

@@ -125,7 +125,27 @@ src/components/3d/CityViewport.tsx   — mounts one CityRenderer + one
 Streetlights (`tileStreamer.ts` `addStreetlights()` / `tileWorker.ts`
 `buildStreetlights()`) are placed from road geometry — class, width, elevated
 status — favoring arterials, junctions and flyovers, and rendered as
-instanced emissive meshes rather than per-lamp PointLights.
+instanced emissive meshes rather than per-lamp PointLights. Four instanced
+draws per tile: mast, head, a billboarded additive halo, and a ground light
+pool. Spacing is deliberately wider than highway practice (68-95 m by class,
+`LIT_ROAD_SPACING`) and only motorway/trunk are lit from both sides — at true
+30 m spacing every arterial read as a picket fence and the additive halo pass
+drowned in overdraw.
+
+Two constraints are easy to break here and were both broken in practice:
+
+* Lamps are **built** on every streamed tile (`lod >= 2`) but only **drawn**
+  at street scale, via `setLampsVisible()` on the main thread. Gating
+  construction in the worker was the original design and silently produced
+  zero lamps once the streamer unified LOD 2 and 3 onto `CONTENT_TIER = 2`.
+* The halo and pool are raw `ShaderMaterial`s, and the renderer runs with
+  `logarithmicDepthBuffer: true`. Any such shader **must** include three's
+  `logdepthbuf_*` chunks, or it writes a depth the rest of the scene does not
+  agree with and every fragment fails the depth test — the quads are submitted,
+  counted in the draw calls, and invisible. The halo also relocates its vertices
+  to the lamp head in the vertex shader, so its `geometry.boundingSphere` is set
+  explicitly; the geometry's own bounds describe the wrong place and the
+  instanced cull would drop halos that are still on screen.
 
 ## 4. Live data
 
@@ -145,7 +165,8 @@ One Node process serves both the API and the built static frontend
 missing) → `vite build` (also copies `public/` into `dist/`, including the
 tile data and freshly-baked HLOD) → esbuild-bundle the server. `npm start`
 runs `dist/server.cjs`. See the root [`README.md`](../README.md#-deployment)
-for environment variables and the [`Dockerfile`](../Dockerfile) for a
+for environment variables, [`docs/DEPLOYMENT.md`](./DEPLOYMENT.md) for
+hosting this for real users, and the [`Dockerfile`](../Dockerfile) for a
 container build that works on any Docker-capable host.
 
 ## 6. Known limitations
@@ -157,9 +178,10 @@ from an earlier draft of this document:
   are matched and detailed per Overture feature; adjacent segments of one
   physical structure are not merged first, so railings/supports can duplicate
   where Overture split a flyover into multiple features.
-* **Streetlight illumination at altitude.** Lamps (`tileWorker.ts`
-  `buildStreetlights()`) are real instanced geometry derived from road class,
-  but do not cast a readable ground light pool — no shader-based glow yet.
+* **Streetlight illumination is not a light.** Lamps now carry a shader halo
+  and a ground pool (see §3), but both are painted additively — they do not
+  illuminate nearby geometry, so a building beside a lamp is no brighter for
+  it.
 * **Terrain.** All geometry sits at `y = 0`; no elevation source exists.
 * **True `level` ranges / real road width.** Overture's schema doesn't carry
   either for this extract; `resolveElevation()`/`ROAD_HALF_WIDTH` are

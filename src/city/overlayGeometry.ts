@@ -92,6 +92,52 @@ const RAMP_LEN = 90;
 /** Spatial hash cell for the crossing search, metres. */
 const GRID = 500;
 
+function polylineLength(pts: Pt[]): number {
+  let len = 0;
+  for (let i = 0; i < pts.length - 1; i++) len += Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].z - pts[i].z);
+  return len;
+}
+
+/**
+ * Greedily joins polylines that share an endpoint (within `tol` metres) into
+ * the longest continuous chains it can, reversing pieces as needed. Pieces
+ * that don't touch anything become single-piece chains, so nothing is lost.
+ */
+function chainPolylines(pieces: Pt[][], tol: number): Pt[][] {
+  const remaining = pieces.filter(p => p.length >= 2).map(p => p.slice());
+  const chains: Pt[][] = [];
+  const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.z - b.z);
+
+  while (remaining.length > 0) {
+    let chain = remaining.shift()!;
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (let i = 0; i < remaining.length; i++) {
+        const p = remaining[i];
+        const chainStart = chain[0], chainEnd = chain[chain.length - 1];
+        const pStart = p[0], pEnd = p[p.length - 1];
+        if (dist(chainEnd, pStart) <= tol) {
+          chain = chain.concat(p.slice(1));
+        } else if (dist(chainEnd, pEnd) <= tol) {
+          chain = chain.concat(p.slice(0, -1).reverse());
+        } else if (dist(chainStart, pEnd) <= tol) {
+          chain = p.slice(0, -1).concat(chain);
+        } else if (dist(chainStart, pStart) <= tol) {
+          chain = p.slice(1).reverse().concat(chain);
+        } else {
+          continue;
+        }
+        remaining.splice(i, 1);
+        grew = true;
+        break;
+      }
+    }
+    chains.push(chain);
+  }
+  return chains;
+}
+
 function triangulateArea(out: number[], ring: Pt[], y: number): void {
   if (ring.length < 3) return;
   const tris = triangulate(ring);
@@ -578,35 +624,39 @@ export function buildOverlay(src: OverlaySource): OverlayBuild {
 
   // ── Named structures ──────────────────────────────────────────────────────
   // Signature detail along the real centreline of each curated bridge/flyover.
+  // Overture splits one physical structure into several LineString features
+  // (e.g. Lohia Path Flyover arrives as ~10 pieces), so features sharing a
+  // label are chained end-to-end into continuous polylines first — otherwise
+  // railing/lamp placement restarts from station 0 at every fragment boundary,
+  // producing a duplicated post/rail cluster at each internal seam.
   const structSinks: StructureSinks = { rail: [], lamp: [], truss: [], mass: [] };
   const detailed = new Set<string>();
 
-  // Pre-pass: total length per structure. Fine detail is only worth its vertices
-  // on discrete structures, and a corridor is only recognisable as one once its
-  // features are summed.
-  const structLength = new Map<string, number>();
+  const byLabel = new Map<string, { name: string; half: number; prof: Pt[] }[]>();
   for (const road of roads) {
     const prof = profiles.get(road);
-    if (!prof || !road.name) continue;
-    const def = matchStructure(road.name);
-    if (!def) continue;
-    let len = 0;
-    for (let i = 0; i < prof.length - 1; i++) {
-      len += Math.hypot(prof[i + 1].x - prof[i].x, prof[i + 1].z - prof[i].z);
-    }
-    structLength.set(def.label, (structLength.get(def.label) ?? 0) + len);
-  }
-
-  for (const road of roads) {
-    const prof = profiles.get(road);
-    if (!prof) continue;
+    if (!prof || !road.name || prof.length < 2) continue;
     const def = matchStructure(road.name);
     if (!def) continue;
     const cls = classifyRoad(road.type, road.subtype, road.level, road.isElevated);
     const half = cls === 'railway' ? 2.6 : Math.max(ROAD_HALF_WIDTH[cls], (road.width ?? 0) / 2);
-    const allowFine = (structLength.get(def.label) ?? 0) <= FINE_DETAIL_MAX_TOTAL;
-    const kind = buildNamedStructure(road.name, prof, half, structSinks, allowFine);
-    if (kind) detailed.add(def.label);
+    const list = byLabel.get(def.label) ?? [];
+    list.push({ name: road.name, half, prof });
+    byLabel.set(def.label, list);
+  }
+
+  const CHAIN_JOIN_TOL = 8; // metres — Overture-split endpoints coincide almost exactly
+  for (const [, pieces] of byLabel) {
+    const chains = chainPolylines(pieces.map(p => p.prof), CHAIN_JOIN_TOL);
+    const totalLen = chains.reduce((sum, c) => sum + polylineLength(c), 0);
+    const allowFine = totalLen <= FINE_DETAIL_MAX_TOTAL;
+    const half = Math.max(...pieces.map(p => p.half));
+    const name = pieces[0].name;
+    for (const chain of chains) {
+      if (chain.length < 2) continue;
+      const kind = buildNamedStructure(name, chain, half, structSinks, allowFine);
+      if (kind) detailed.add(matchStructure(name)!.label);
+    }
   }
 
   return {

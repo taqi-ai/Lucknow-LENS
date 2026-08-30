@@ -82,29 +82,30 @@ export const LANDMARKS: LandmarkDef[] = [
   {
     id: 'rumi-darwaza', name: 'Rumi Darwaza',
     x: RUMI_X, z: RUMI_Z, archetype: 'gateway',
-    radius: 26, height: 18, rotation: 1.15, importance: 10, source: 'places',
+    radius: 26, height: 18, rotation: 0.30, importance: 10, source: 'places',
   },
   {
-    // No dataset entry. Bara Imambara sits immediately WNW of Rumi Darwaza.
+    // No dataset entry. Bara Imambara is ~270 m west of Rumi Darwaza, its main
+    // entrance facing south toward the gate. Verified against Google Maps.
     id: 'bada-imambara', name: 'Bara Imambara',
-    x: RUMI_X - 175, z: RUMI_Z - 95, archetype: 'imambara',
-    radius: 120, height: 32, rotation: 1.15, importance: 10, source: 'curated',
+    x: RUMI_X - 270, z: RUMI_Z - 22, archetype: 'imambara',
+    radius: 120, height: 32, rotation: 0.25, importance: 10, source: 'curated',
   },
   {
-    // No dataset entry. Chota Imambara lies roughly 700 m WNW of Rumi Darwaza.
+    // No dataset entry. Chota Imambara is ~800 m due west of Rumi Darwaza along
+    // Husainabad Road, at essentially the same latitude. Verified against Maps.
     id: 'chota-imambara', name: 'Chota Imambara',
-    x: RUMI_X - 640, z: RUMI_Z - 300, archetype: 'imambara',
-    radius: 78, height: 26, rotation: 1.05, importance: 9, source: 'curated',
+    x: RUMI_X - 798, z: RUMI_Z - 4, archetype: 'imambara',
+    radius: 78, height: 26, rotation: 0.15, importance: 9, source: 'curated',
   },
   {
     id: 'clock-tower', name: 'Hussainabad Clock Tower',
-    // Moved from (-3193, -889), which was a generic "Clock Tower" place record
-    // 1.6 km away. The real Ghanta Ghar stands in the Hussainabad complex beside
-    // Chota Imambara — the "Ghanta Ghar" place record, with "Hussainabad &
-    // Allied Trust" 500 m south, both of which sit here.
+    // ~467 m west of Rumi Darwaza, between Bara and Chota Imambara along
+    // Husainabad Road. Position curated from Maps; the Overture "Ghanta Ghar"
+    // record at (-4216, -2354) is 90 m too far east.
     // 221 ft (67.4 m): the tallest clock tower in India, 1881.
-    x: -4216, z: -2354, archetype: 'tower',
-    radius: 13, height: 67.4, importance: 9, source: 'places',
+    x: RUMI_X - 467, z: RUMI_Z + 11, archetype: 'tower',
+    radius: 16, height: 67.4, importance: 9, source: 'curated',
   },
 
   {
@@ -153,8 +154,12 @@ export const LANDMARKS: LandmarkDef[] = [
   },
   {
     id: 'lucknow-university', name: 'University of Lucknow',
-    x: -3454, z: -6234, archetype: 'campus',
-    radius: 110, height: 24, rotation: 0.4, importance: 8, source: 'places',
+    // Overture "Lucknow University" record at (-3454, -6234) is an outlier 6 km
+    // north of the real campus. The main campus (Badshah Bagh / Senate House) is
+    // at ~26.853°N, 80.934°E — verified against Maps and the Lucknow University
+    // metro station.
+    x: -1594, z: -337, archetype: 'campus',
+    radius: 110, height: 24, rotation: 0.4, importance: 8, source: 'curated',
   },
   {
     id: 'sgpgi', name: 'SGPGI',

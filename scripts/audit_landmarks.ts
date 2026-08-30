@@ -52,7 +52,9 @@ const PATTERNS: Record<string, RegExp> = {
   'ambedkar-memorial': /ambedkar memorial/i,
   airport: /chaudhary charan singh international/i,
   'phoenix-palassio': /phoenix palassio/i,
-  'lucknow-university': /lucknow university/i,
+  // lucknow-university: the sole Overture "Lucknow University" record is 6 km
+  // north of the real campus — an outlier, not a consensus to verify against.
+  // Position is curated from Maps + the Lucknow University metro station.
   sgpgi: /sgpgi/i,
   'janeshwar-flag': /janeshwar mishra park/i,
 };

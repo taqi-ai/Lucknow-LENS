@@ -57,9 +57,9 @@ const LOD_CONFIG: Record<LODLevel, LODConfig> = {
   // DISTRICT — landmarks, government, transport
   1: { placeMinImp: 8, placeMax: 11, roadMinImp: 9,  roadMax: 5,  visRadius: 15000, baseScale: 1.0, labelHeight: 200 },
   // NEIGHBORHOOD — notable local POIs
-  2: { placeMinImp: 6, placeMax: 16, roadMinImp: 7,  roadMax: 9,  visRadius: 4000,  baseScale: 1.0, labelHeight: 80  },
+  2: { placeMinImp: 6, placeMax: 12, roadMinImp: 7,  roadMax: 7,  visRadius: 4000,  baseScale: 1.0, labelHeight: 80  },
   // STREET — what is actually within walking distance
-  3: { placeMinImp: 5, placeMax: 20, roadMinImp: 6,  roadMax: 12, visRadius: 900,   baseScale: 1.0, labelHeight: 30  },
+  3: { placeMinImp: 5, placeMax: 12, roadMinImp: 6,  roadMax: 8,  visRadius: 900,   baseScale: 1.0, labelHeight: 30  },
 };
 
 /** Curated landmarks always outrank generic place records of the same importance. */
@@ -176,7 +176,27 @@ export class LabelManager {
         loadJSON<PlaceLabel[]>('/overture_tiles_full/places_labels.json'),
         loadJSON<RoadLabel[]>('/overture_tiles_full/road_labels.json'),
       ]);
-      this.allPlaces = places;
+
+      // The registry is the authority on where a landmark actually sits — the
+      // raw Overture record it started from can be stale (Clock Tower's
+      // "Ghanta Ghar" record is 90 m from the curated position) or simply
+      // absent (Bara/Chota Imambara, University of Lucknow have none at all,
+      // so without this they'd render with no label whatsoever). Drop any
+      // raw place that shares a landmark's name and replace it with a label
+      // pinned to the registry's own x/z, so the label always sits on the
+      // building that's actually drawn there.
+      const landmarkNameSet = new Set(LANDMARKS.map((l) => l.name.toLowerCase()));
+      const landmarkLabels: PlaceLabel[] = LANDMARKS.map((l) => ({
+        id: `landmark:${l.id}`,
+        name: l.name,
+        x: l.x,
+        z: l.z,
+        type: 'landmark',
+        importance: l.importance,
+      }));
+      const filteredPlaces = places.filter((p) => !landmarkNameSet.has(p.name.toLowerCase()));
+
+      this.allPlaces = [...landmarkLabels, ...filteredPlaces].sort((a, b) => b.importance - a.importance);
       this.allRoads = roads;
       this.loaded = true;
       console.log(`[LabelManager] ${this.allPlaces.length} places, ${this.allRoads.length} roads loaded.`);
@@ -233,7 +253,7 @@ export class LabelManager {
 
     // ── Screen-space occupancy grid (pixel rects) ──────────────────────────────
     const occupied: { cx: number; cy: number; hw: number; hh: number }[] = [];
-    const PADDING = 14; // Screen pixels padding between labels
+    const PADDING = 20; // Screen pixels padding between labels
 
     const ndcOf = (wx: number, wz: number, wy: number): THREE.Vector3 | null => {
       if (!this.camera) return null;
@@ -326,7 +346,7 @@ export class LabelManager {
       sprite.position.set(c.x, wy, c.z);
       // Fade with distance so the far field recedes instead of competing.
       const dist = Math.hypot(c.x - camX, c.z - camZ);
-      const fade = 1 - Math.min(1, Math.max(0, (dist / cfg.visRadius - 0.45) / 0.55)) * 0.65;
+      const fade = 1 - Math.min(1, Math.max(0, (dist / cfg.visRadius - 0.45) / 0.55)) * 0.45;
       (sprite.material as THREE.SpriteMaterial).opacity = fade;
       sprite.visible = true;
       this.activeSprites.add(sprite);
@@ -364,11 +384,11 @@ export class LabelManager {
     // Only top-tier landmarks get a filled pill. Everything else is quiet text on a
     // near-transparent scrim, so the hierarchy is obvious at a glance.
     const bgColor = this.isNight
-      ? (highImp ? 'rgba(255,210,140,0.92)' : midImp ? 'rgba(20,25,35,0.65)' : 'rgba(15,20,30,0.4)')
-      : (highImp ? 'rgba(186,104,36,0.95)'  : midImp ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.45)');
+      ? (highImp ? 'rgba(255,210,140,0.92)' : midImp ? 'rgba(15,20,30,0.85)' : 'rgba(10,14,22,0.72)')
+      : (highImp ? 'rgba(186,104,36,0.95)'  : midImp ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.8)');
 
     const textColor = this.isNight
-      ? (highImp ? '#0a0d14' : midImp ? '#f0f5fa' : '#c0ccd9')
+      ? (highImp ? '#0a0d14' : midImp ? '#f0f5fa' : '#d6dee8')
       : (highImp ? '#ffffff' : midImp ? '#1e293b' : '#334155');
 
     const fontSize = highImp ? 16 : midImp ? 13 : 11;

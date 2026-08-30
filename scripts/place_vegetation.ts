@@ -105,6 +105,15 @@ function main(): void {
     airfield.add({ ax, az, bx, bz, half: 90 });
     const ox = -sa * 180, oz = ca * 180;
     airfield.add({ ax: ax + ox, az: az + oz, bx: bx + ox, bz: bz + oz, half: 45 });
+    // Real airfield reservations (runway + taxiway + apron + terminal ramp)
+    // have no trees anywhere inside the movement/operations envelope — the two
+    // narrow corridors above only cover the runway and one taxiway centreline
+    // and left gaps (the median strip, the apron beyond the taxiway) where
+    // trees were still being placed next to parked aircraft. Cover the whole
+    // reservation as one wide corridor spanning well past both sides instead
+    // of hand-tuning each gap.
+    const midOx = -sa * 220, midOz = ca * 220;
+    airfield.add({ ax: ax + midOx, az: az + midOz, bx: bx + midOx, bz: bz + midOz, half: 450 });
   }
 
   const blocked = (x: number, z: number): boolean =>

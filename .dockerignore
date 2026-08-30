@@ -1,0 +1,11 @@
+node_modules
+dist
+dist_bak
+coverage
+.git
+.github
+.env
+.env.*
+!.env.example
+public/hlod
+*.log

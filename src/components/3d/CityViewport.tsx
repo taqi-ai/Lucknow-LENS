@@ -424,6 +424,67 @@ export const CityViewport: React.FC<CityViewportProps> = ({
           };
           return acc;
         },
+        /** Debug: dump every landmark's actual world position/rotation from the scene graph. */
+        dumpLandmarks() {
+          const out: any[] = [];
+          cityRenderer.scene.traverse((o) => {
+            if (o.userData?.type === 'landmark') {
+              const box = new THREE.Box3().setFromObject(o);
+              out.push({
+                id: o.userData.id,
+                name: o.userData.name,
+                pos: [o.position.x, o.position.y, o.position.z],
+                rotY: o.rotation.y,
+                visible: o.visible,
+                bbox: [
+                  +(box.max.x - box.min.x).toFixed(1),
+                  +(box.max.y - box.min.y).toFixed(1),
+                  +(box.max.z - box.min.z).toFixed(1),
+                ],
+                currentLOD: (o as THREE.LOD).getCurrentLevel?.(),
+              });
+            }
+          });
+          return out;
+        },
+        /** Debug: dump every currently-visible label sprite's world position. */
+        dumpLabels() {
+          const out: any[] = [];
+          let groupFound = false, total = 0;
+          cityRenderer.scene.traverse((o) => {
+            if (o.name === 'LabelGroup') {
+              groupFound = true;
+              total = o.children.length;
+              o.children.forEach((s: any) => {
+                if (s.visible) out.push({ pos: [s.position.x, s.position.y, s.position.z], opacity: s.material?.opacity });
+              });
+            }
+          });
+          return { groupFound, total, enabled: labelManager.enabled, activeCount: labelManager.getActiveCount(), visible: out };
+        },
+        controlsState() {
+          return {
+            target: controls.target.toArray(),
+            destTarget: controls.destTarget.toArray(),
+            azimuth: controls.azimuth,
+            destAzimuth: controls.destAzimuth,
+            pitch: controls.pitch,
+            distance: controls.distance,
+            camPos: cityRenderer.camera.position.toArray(),
+          };
+        },
+        debugLabelState() {
+          const lm: any = labelManager;
+          return {
+            loaded: lm.loaded,
+            allPlacesLen: lm.allPlaces?.length,
+            allRoadsLen: lm.allRoads?.length,
+            currentLOD: lm.currentLOD,
+            hasCamera: !!lm.camera,
+            camPos: cityRenderer.camera.position.toArray(),
+            firstPlaces: lm.allPlaces?.slice(0, 5),
+          };
+        },
       };
     }
 

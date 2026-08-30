@@ -1,4 +1,4 @@
-import type { LiveFeedState, LiveWeatherDTO, LiveAirQualityDTO } from '../../interactions/liveFeed';
+import type { LiveFeedState, LiveWeatherDTO, LiveAirQualityDTO, LiveListState, LiveTrainDTO, LiveTrafficDTO, LiveNewsDTO } from '../../interactions/liveFeed';
 import React, { useState } from 'react';
 import { CameraPreset, OSMMapData, RenderStats, CityStreamingStats, SelectedEntity, SimulatedFlight, AIAction, SearchResult } from '../../types';
 import { ReportModal } from './ReportModal';
@@ -7,6 +7,7 @@ import { SearchUI } from '../features/SearchUI';
 import { LayerControl, LayerState } from '../features/LayerControl';
 import { InfoPanel } from '../features/InfoPanel';
 import { AnalystPanel } from '../features/AnalystPanel';
+import { LiveDataPanel } from '../features/LiveDataPanel';
 import { Compass, Building2, FileText, Activity, Map, Navigation, MapPin, Grid, Globe, ShieldCheck, Sun, Moon, Tag, Palette } from 'lucide-react';
 import { CameraController } from '../../city/cameraController';
 
@@ -34,6 +35,9 @@ interface CityUIProps {
   flightFeed?: { status: 'ok' | 'stale' | 'unavailable'; provider: string; ageSeconds: number | null; reason?: string };
   weatherFeed?: LiveFeedState<LiveWeatherDTO>;
   airFeed?: LiveFeedState<LiveAirQualityDTO>;
+  trainFeed?: LiveListState<LiveTrainDTO>;
+  trafficFeed?: LiveListState<LiveTrafficDTO>;
+  newsFeed?: LiveListState<LiveNewsDTO>;
   onCameraSignal: (signal: CameraPreset) => void;
   onReloadOSM: () => void;
   onToggleLayer: (category: 'base' | 'live', layer: string) => void;
@@ -64,6 +68,9 @@ export const CityUI: React.FC<CityUIProps> = ({
   flightFeed,
   weatherFeed,
   airFeed,
+  trainFeed,
+  trafficFeed,
+  newsFeed,
   onCameraSignal,
   onReloadOSM,
   onToggleLayer,
@@ -358,6 +365,20 @@ export const CityUI: React.FC<CityUIProps> = ({
         {/* Layers control manager widget */}
         <div className="pointer-events-auto w-full">
           <LayerControl layers={layers} onToggleLayer={onToggleLayer} />
+        </div>
+
+        {/* Detailed live-data popup: full contents behind each enabled live layer. */}
+        <div className="pointer-events-auto w-full">
+          <LiveDataPanel
+            layers={layers.live}
+            weatherFeed={weatherFeed}
+            airFeed={airFeed}
+            flightFeed={flightFeed}
+            flights={flights}
+            trainFeed={trainFeed}
+            trafficFeed={trafficFeed}
+            newsFeed={newsFeed}
+          />
         </div>
 
         {/* Selected entity inspector info panel card */}

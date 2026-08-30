@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { project } from '../geo/projection';
 
 export const CAMERA_CONFIG = {
   MIN_DISTANCE: 20,
@@ -326,13 +327,7 @@ export class CameraController {
   }
 
   public flyTo(lat: number, lon: number, distance = 400, duration = 1400) {
-    const centerLat = 26.8475;
-    const centerLon = 80.945;
-    const mPerLat = 111320;
-    const mPerLon = 111320 * Math.cos((centerLat * Math.PI) / 180);
-    const x = (lon - centerLon) * mPerLon;
-    const z = -(lat - centerLat) * mPerLat;
-
+    const { x, z } = project(lat, lon);
     const targetVector = new THREE.Vector3(x, 0, z);
     this.transitionTo(targetVector, this.destAzimuth, Math.PI / 4, distance, duration);
   }

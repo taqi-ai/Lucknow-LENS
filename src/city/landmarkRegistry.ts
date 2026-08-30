@@ -80,23 +80,34 @@ export const LANDMARKS: LandmarkDef[] = [
 
   // ── Old Lucknow monuments ─────────────────────────────────────────────────
   {
+    // Rotation is not decorative: buildGateway() puts its two piers apart
+    // along local X and the walk-through gap along local Z, so at rotation 0
+    // the passage runs north-south. The real gate spans Husainabad Road,
+    // which runs east-west here (Bara Imambara sits ~270 m due west of this
+    // point), so the gap must run east-west too — a quarter turn, not a
+    // 17-degree nudge like the previous value.
     id: 'rumi-darwaza', name: 'Rumi Darwaza',
     x: RUMI_X, z: RUMI_Z, archetype: 'gateway',
-    radius: 26, height: 18, rotation: 0.30, importance: 10, source: 'places',
+    radius: 26, height: 18, rotation: Math.PI / 2, importance: 10, source: 'places',
   },
   {
     // No dataset entry. Bara Imambara is ~270 m west of Rumi Darwaza, its main
-    // entrance facing south toward the gate. Verified against Google Maps.
+    // entrance facing the gate. Verified against Google Maps.
+    // buildImambara()'s arcaded grand facade runs along local Z=+-hallD/2 at
+    // rotation 0, i.e. facing north/south. The facade has to face the
+    // Husainabad Road approach (east, toward the gate), so this also needs
+    // the quarter turn — same road, same fix as Rumi Darwaza above.
     id: 'bada-imambara', name: 'Bara Imambara',
     x: RUMI_X - 270, z: RUMI_Z - 22, archetype: 'imambara',
-    radius: 120, height: 32, rotation: 0.25, importance: 10, source: 'curated',
+    radius: 120, height: 32, rotation: Math.PI / 2, importance: 10, source: 'curated',
   },
   {
     // No dataset entry. Chota Imambara is ~800 m due west of Rumi Darwaza along
     // Husainabad Road, at essentially the same latitude. Verified against Maps.
+    // Same road, same facade-orientation fix as Bara Imambara above.
     id: 'chota-imambara', name: 'Chota Imambara',
     x: RUMI_X - 798, z: RUMI_Z - 4, archetype: 'imambara',
-    radius: 78, height: 26, rotation: 0.15, importance: 9, source: 'curated',
+    radius: 78, height: 26, rotation: Math.PI / 2, importance: 9, source: 'curated',
   },
   {
     id: 'clock-tower', name: 'Hussainabad Clock Tower',

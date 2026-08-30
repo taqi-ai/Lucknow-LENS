@@ -68,10 +68,14 @@ export class CorridorIndex {
 
   add(c: Corridor): void {
     this.count++;
-    const x0 = Math.floor(Math.min(c.ax, c.bx) / CELL);
-    const x1 = Math.floor(Math.max(c.ax, c.bx) / CELL);
-    const z0 = Math.floor(Math.min(c.az, c.bz) / CELL);
-    const z1 = Math.floor(Math.max(c.az, c.bz) / CELL);
+    // Register every cell the corridor's full width could touch, not just
+    // cells along its centreline — otherwise a corridor wider than one grid
+    // cell (half > CELL) leaves points that are genuinely inside it, but off
+    // to the side, in cells it was never added to, so hits() misses them.
+    const x0 = Math.floor((Math.min(c.ax, c.bx) - c.half) / CELL);
+    const x1 = Math.floor((Math.max(c.ax, c.bx) + c.half) / CELL);
+    const z0 = Math.floor((Math.min(c.az, c.bz) - c.half) / CELL);
+    const z1 = Math.floor((Math.max(c.az, c.bz) + c.half) / CELL);
     for (let gx = x0; gx <= x1; gx++) {
       for (let gz = z0; gz <= z1; gz++) {
         const k = `${gx},${gz}`;

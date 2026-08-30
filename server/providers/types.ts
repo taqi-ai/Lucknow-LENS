@@ -70,6 +70,35 @@ export interface LiveTrain {
   positionTime: number | null;
 }
 
+/** One traffic incident, normalized. */
+export interface LiveTrafficIncident {
+  id: string;
+  /** Human description, e.g. "Lane closure due to roadworks". */
+  description: string | null;
+  roadName: string | null;
+  /** TomTom incident category, e.g. "JAM", "ROAD_CLOSED", "ACCIDENT". */
+  category: string | null;
+  /** 0 (unknown) to 4 (major impact), as reported upstream. */
+  severity: number | null;
+  latitude: number;
+  longitude: number;
+  /** km/h of traffic actually flowing through this segment, when reported. */
+  currentSpeedKph: number | null;
+  freeFlowSpeedKph: number | null;
+  delaySeconds: number | null;
+}
+
+/** One news article, normalized. */
+export interface LiveNewsArticle {
+  id: string;
+  title: string;
+  url: string;
+  source: string | null;
+  /** Epoch ms the article was published/indexed. */
+  publishedAt: number | null;
+  imageUrl: string | null;
+}
+
 export interface LiveProvider<T> {
   readonly name: string;
   /** False when the adapter cannot run at all — e.g. no API key configured. */

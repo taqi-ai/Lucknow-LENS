@@ -40,6 +40,71 @@ function empty<T>(): LiveFeedState<T> {
   return { status: 'unavailable', provider: '', ageSeconds: null, value: null };
 }
 
+/** Same envelope handling as useLiveFeed, but for feeds that are lists — trains,
+ * traffic incidents, news articles — where the UI needs every item, not just one. */
+export interface LiveListState<T> {
+  status: LiveStatus;
+  provider: string;
+  ageSeconds: number | null;
+  reason?: string;
+  attribution?: string;
+  items: T[];
+}
+
+function emptyList<T>(): LiveListState<T> {
+  return { status: 'unavailable', provider: '', ageSeconds: null, items: [] };
+}
+
+export function useLiveList<T>(
+  url: string,
+  enabled: boolean,
+  intervalMs: number,
+): LiveListState<T> {
+  const [state, setState] = useState<LiveListState<T>>(emptyList<T>());
+
+  useEffect(() => {
+    if (!enabled) {
+      setState(emptyList<T>());
+      return;
+    }
+
+    let cancelled = false;
+    let timer: number | undefined;
+
+    const poll = async () => {
+      try {
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const env = await resp.json() as LiveEnvelope<T>;
+        if (cancelled) return;
+        setState({
+          status: env.status,
+          provider: env.provider,
+          ageSeconds: env.ageSeconds,
+          reason: env.reason,
+          attribution: env.attribution,
+          items: env.items,
+        });
+      } catch (e) {
+        if (cancelled) return;
+        setState({
+          status: 'unavailable',
+          provider: '',
+          ageSeconds: null,
+          reason: e instanceof Error ? e.message : 'request failed',
+          items: [],
+        });
+      }
+      if (!cancelled) timer = window.setTimeout(poll, intervalMs);
+    };
+
+    poll();
+    return () => { cancelled = true; if (timer) window.clearTimeout(timer); };
+  }, [url, enabled, intervalMs]);
+
+  return state;
+}
+
 export function useLiveFeed<T>(
   url: string,
   enabled: boolean,
@@ -118,4 +183,40 @@ export interface LiveAirQualityDTO {
   nitrogenDioxide: number | null;
   ozone: number | null;
   sulphurDioxide: number | null;
+}
+
+export interface LiveTrainDTO {
+  id: string;
+  number: string | null;
+  name: string | null;
+  latitude: number;
+  longitude: number;
+  heading: number | null;
+  speed: number | null;
+  delayMinutes: number | null;
+  status: string | null;
+  nextStation: string | null;
+  positionTime: number | null;
+}
+
+export interface LiveTrafficDTO {
+  id: string;
+  description: string | null;
+  roadName: string | null;
+  category: string | null;
+  severity: number | null;
+  latitude: number;
+  longitude: number;
+  currentSpeedKph: number | null;
+  freeFlowSpeedKph: number | null;
+  delaySeconds: number | null;
+}
+
+export interface LiveNewsDTO {
+  id: string;
+  title: string;
+  url: string;
+  source: string | null;
+  publishedAt: number | null;
+  imageUrl: string | null;
 }

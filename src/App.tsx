@@ -7,7 +7,11 @@ import { parseOvertureGeoJSON } from './osm/overtureParser';
 import { CameraController } from './city/cameraController';
 import { LayerState } from './components/features/LayerControl';
 import { useLiveFlights } from './interactions/flights';
-import { useLiveFeed, type LiveWeatherDTO, type LiveAirQualityDTO } from './interactions/liveFeed';
+import {
+  useLiveFeed, useLiveList,
+  type LiveWeatherDTO, type LiveAirQualityDTO,
+  type LiveTrainDTO, type LiveTrafficDTO, type LiveNewsDTO,
+} from './interactions/liveFeed';
 import type { SkylineStyle } from './city/buildingMaterial';
 
 const INITIAL_MAP_DATA: OSMMapData = {
@@ -95,6 +99,13 @@ export default function App() {
   // and hourly respectively, so there is nothing to gain from polling faster.
   const weatherFeed = useLiveFeed<LiveWeatherDTO>('/api/live/weather', layers.live.weather, 300_000);
   const airFeed = useLiveFeed<LiveAirQualityDTO>('/api/live/air', layers.live.aqi, 600_000);
+
+  // Trains, traffic and news: real backends (RailRadar, TomTom, GDELT), each
+  // honestly reporting 'unavailable' rather than inventing data when a paid key
+  // is missing (trains, traffic) or a query returns nothing (news).
+  const trainFeed = useLiveList<LiveTrainDTO>('/api/live/trains', layers.live.railways, 20_000);
+  const trafficFeed = useLiveList<LiveTrafficDTO>('/api/live/traffic', layers.live.traffic, 60_000);
+  const newsFeed = useLiveList<LiveNewsDTO>('/api/live/news', layers.live.news, 900_000);
 
   const [renderStats, setRenderStats] = useState<RenderStats>({
     fps: 60,
@@ -288,6 +299,9 @@ export default function App() {
         flightFeed={{ status: flightFeed.status, provider: flightFeed.provider, ageSeconds: flightFeed.ageSeconds, reason: flightFeed.reason }}
         weatherFeed={weatherFeed}
         airFeed={airFeed}
+        trainFeed={trainFeed}
+        trafficFeed={trafficFeed}
+        newsFeed={newsFeed}
         onToggleDebugTiles={() => setDebugTiles(prev => !prev)}
         onToggleStableMode={() => setStableMode(prev => !prev)}
         onToggleNightMode={() => setNightMode(prev => !prev)}

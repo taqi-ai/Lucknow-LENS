@@ -8,11 +8,13 @@ import { CachedFeed } from "./server/providers/cache";
 import { OpenSkyProvider } from "./server/providers/opensky";
 import { OpenMeteoWeatherProvider, OpenMeteoAirQualityProvider } from "./server/providers/openmeteo";
 import { RailRadarProvider } from "./server/providers/railradar";
+import { TomTomTrafficProvider } from "./server/providers/tomtomTraffic";
+import { GdeltNewsProvider } from "./server/providers/gdeltNews";
 
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json());
 
@@ -89,6 +91,20 @@ const airFeed = new CachedFeed(new OpenMeteoAirQualityProvider(), {
   attribution: "Air quality by Open-Meteo.com (CC BY 4.0)",
 });
 
+const trafficFeed = new CachedFeed(new TomTomTrafficProvider(), {
+  ttlMs: 60_000,
+  timeoutMs: 9_000,
+  maxStaleMs: 300_000,
+  attribution: "Traffic incidents by TomTom",
+});
+
+const newsFeed = new CachedFeed(new GdeltNewsProvider(), {
+  ttlMs: 900_000,        // GDELT's own index updates roughly every 15 min
+  timeoutMs: 10_000,
+  maxStaleMs: 3_600_000,
+  attribution: "News via the GDELT Project (gdeltproject.org)",
+});
+
 app.get("/api/live/weather", async (_req, res) => {
   res.set("Cache-Control", "no-store");
   res.json(await weatherFeed.get());
@@ -109,10 +125,24 @@ app.get("/api/live/trains", async (_req, res) => {
   res.json(await trainFeed.get());
 });
 
+app.get("/api/live/traffic", async (_req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.json(await trafficFeed.get());
+});
+
+app.get("/api/live/news", async (_req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.json(await newsFeed.get());
+});
+
+app.get("/api/version", (_req, res) => {
+  res.json({ name: "lucknow-lens", version: "1.0.0", nodeEnv: process.env.NODE_ENV ?? "development" });
+});
+
 // API Health Check
 app.get("/api/health", async (_req, res) => {
-  const [flights, trains, weather, air] = await Promise.all([
-    flightFeed.get(), trainFeed.get(), weatherFeed.get(), airFeed.get(),
+  const [flights, trains, weather, air, traffic, news] = await Promise.all([
+    flightFeed.get(), trainFeed.get(), weatherFeed.get(), airFeed.get(), trafficFeed.get(), newsFeed.get(),
   ]);
   res.json({
     status: "ok",
@@ -121,6 +151,8 @@ app.get("/api/health", async (_req, res) => {
       trains: { status: trains.status, provider: trains.provider, count: trains.items.length },
       weather: { status: weather.status, provider: weather.provider, count: weather.items.length },
       air: { status: air.status, provider: air.provider, count: air.items.length },
+      traffic: { status: traffic.status, provider: traffic.provider, count: traffic.items.length },
+      news: { status: news.status, provider: news.provider, count: news.items.length },
     },
   });
 });

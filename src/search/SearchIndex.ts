@@ -1,22 +1,8 @@
 import { SearchResult, OSMMapData } from '../types';
 import { loadJSON } from '../data/resourceCache';
+import { project, unproject } from '../geo/projection';
 
-const centerLat = 26.8475;
-const centerLon = 80.945;
-const mPerLat = 111320;
-const mPerLon = 111320 * Math.cos((centerLat * Math.PI) / 180);
-
-export function unproject(x: number, z: number) {
-  const lat = centerLat - z / mPerLat;
-  const lon = centerLon + x / mPerLon;
-  return { lat, lon };
-}
-
-export function project(lat: number, lon: number) {
-  const x = (lon - centerLon) * mPerLon;
-  const z = -(lat - centerLat) * mPerLat;
-  return { x, z };
-}
+export { project, unproject };
 
 // Custom Registry of major landmarks with exact coordinates/projected meters
 const LUCKNOW_CUSTOM_REGISTRY: Omit<SearchResult, 'x' | 'z'>[] = [

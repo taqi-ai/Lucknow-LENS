@@ -61,17 +61,27 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser.
 
 ---
 
-### 🟡 Planned / Roadmap (Future Digital Twin Expansion)
+### 🟢 Live Data (real providers, honest degradation)
 
-* **Live Traffic & Mobility Layer**: Real-time traffic congestion heatmaps, speed vectors, and incident alerts.
-* **Environmental & AQI Monitoring**: Live Air Quality Index (AQI) station sensors, ambient temperature, and Gomti River water quality telemetry.
-* **Flight & Transit Tracking**: Live ADSB aircraft trajectories over Chaudhary Charan Singh International Airport (LKO) and real-time train status for Lucknow Charbagh Railway Station.
-* **Lucknow City Live Feeds**: Integration with civic CCTV streams, news alerts, and crowd hotspot detection.
-* **AI City Analyst**: LLM-powered urban intelligence assistant answering queries like *"Why is traffic backed up near Hazratganj right now?"* or *"What is the AQI trend around Janeshwar Mishra Park?"*.
+Every layer below calls a real upstream API server-side, normalizes it into a shared `status: 'ok' | 'stale' | 'unavailable'` envelope, and caches/retries with backoff. If a provider has no key configured, or is unreachable, the layer reports **unavailable with a stated reason** — it never fabricates a plausible-looking value.
+
+| Layer | Provider | Requires a key? |
+| :--- | :--- | :--- |
+| Flights | OpenSky Network | No (optional account raises quota) |
+| Weather / Air Quality | Open-Meteo | No |
+| Trains | RailRadar | Yes — `RAILRADAR_API_KEY` |
+| Traffic incidents | TomTom | Yes — `TOMTOM_API_KEY` |
+| News | GDELT Project | No (keyless) |
+| CCTV cameras | — | No public lawful feed exists; always reports unavailable |
+| AI City Analyst | Gemini | Yes — `GEMINI_API_KEY` (falls back to a deterministic rule-based answer without it) |
+
+See [.env.example](.env.example) for the full list of environment variables.
 
 ---
 
 ## 🏗 Architecture
+
+> For the full rendering pipeline — data flow, coordinate system, LOD tiers, live-data providers, build/deploy — see [`docs/RENDERING_ARCHITECTURE.md`](docs/RENDERING_ARCHITECTURE.md).
 
 ```
                        [ Overture Maps Foundation Data ]
@@ -151,6 +161,41 @@ Normal users do **not** need to run data generation. If you want to re-process o
 | `npm run start` | Runs the compiled production build from `dist/` |
 | `npm run lint` | Runs TypeScript type checking (`tsc --noEmit`) |
 | `npm run preview` | Previews production build |
+| `npm run smoke` | Boots the built server and verifies `/api/health`, `/api/version`, `/` respond |
+
+---
+
+## 🚢 Deployment
+
+Lucknow Lens is one Node process: Express serves both the API routes and the built static frontend, so it deploys as a single service — no separate frontend/backend hosts needed.
+
+> Hosting it for real users — build-machine memory, cache headers, rate limits, reverse-proxy setup, health checks — is covered in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+
+```bash
+npm install
+npm run build   # vite build (client) + esbuild bundle (server) -> dist/
+npm run start   # node dist/server.cjs, serves API + static bundle on $PORT
+```
+
+* **`PORT`** — the server reads `process.env.PORT`, defaulting to 3000. Most PaaS hosts (Render, Railway, Fly.io) inject this automatically.
+* **Health check**: `GET /api/health` — reports `status: "ok"` plus per-provider live-feed status. Use this as your host's health-check path.
+* **Version**: `GET /api/version` — returns `{ name, version, nodeEnv }`.
+* Any host that runs a persistent Node process works (Render, Railway, Fly.io, a VPS with `pm2`/systemd). Static-only hosts (Netlify/Vercel static) are not sufficient on their own since the live-data API routes need a running server.
+* Copy `.env.example` to `.env` and fill in the provider keys you want enabled; secrets are read server-side only and never bundled into the client.
+* **HLOD is generated, not committed** — `public/hlod/*.bin` is gitignored (it's a ~190 MB derived artifact rebuilt from the committed `public/overture_tiles_full/tile_*.json`). `npm run build` now runs a `prebuild` step that bakes it automatically if `public/hlod/hlod_manifest.json` is missing, so a fresh clone builds a complete deployment with no manual step. Re-run `npm run bake` yourself only when you've changed tile data and want to force a rebake.
+
+### Docker
+
+A [`Dockerfile`](Dockerfile) is included for any container host (Fly.io, Railway, Render's Docker runtime, Cloud Run, a bare VPS with Docker). It's a two-stage build — `npm ci && npm run build` (which bakes HLOD, builds the client, and bundles the server), then a slim runtime image with only production dependencies and `dist/`.
+
+```bash
+docker build -t lucknow-lens .
+docker run -p 3000:3000 --env-file .env lucknow-lens
+```
+
+## ⚙️ CI/CD
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push/PR to `main`: install deps → `tsc --noEmit` → `npm run build` → `npm run smoke` (boots the built server and checks `/api/health`, `/api/version`, and `/`). The workflow fails the build on any error. There is no automatic deploy step configured — wire one up for your chosen host once you've picked it (most hosts either auto-deploy from a connected GitHub repo, or take a deploy step added to this workflow).
 
 ---
 

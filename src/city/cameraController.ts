@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { project } from '../geo/projection';
 
 export const CAMERA_CONFIG = {
   MIN_DISTANCE: 20,
@@ -34,6 +35,12 @@ export class CameraController {
   private isDragging = false;
   private dragMode: 'pan' | 'rotate' | null = null;
   private lastMouse = new THREE.Vector2();
+
+  // Touch state. Tracked per pointerId because a phone has no wheel and no right
+  // button: pinch is the only zoom, and two-finger drag is the only rotate/tilt.
+  private activePointers = new Map<number, { x: number; y: number }>();
+  private pinchDistance = 0;
+  private pinchMidpoint = new THREE.Vector2();
 
   // Presets
   private presetActive = false;
@@ -106,6 +113,9 @@ export class CameraController {
     window.addEventListener('pointercancel', this.onPointerUp);
     this.domElement.addEventListener('wheel', this.onWheel, { passive: false });
     this.domElement.addEventListener('contextmenu', e => e.preventDefault());
+    // Without this the browser claims pan/pinch for scroll and page zoom, and the
+    // canvas never sees the second pointer at all.
+    this.domElement.style.touchAction = 'none';
   }
 
   public dispose() {
@@ -118,9 +128,27 @@ export class CameraController {
 
   private onPointerDown = (e: PointerEvent) => {
     e.preventDefault();
+    this.presetActive = false; // Cancel preset animation on user input
+
+    if (e.pointerType === 'touch') {
+      this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.activePointers.size === 2) {
+        // Second finger down: leave pan, enter pinch. Seed the baseline here so
+        // the first move frame does not read a spurious scale jump.
+        this.isDragging = false;
+        this.dragMode = null;
+        this.seedPinch();
+        return;
+      }
+      if (this.activePointers.size > 2) return;
+      this.isDragging = true;
+      this.dragMode = 'pan';
+      this.lastMouse.set(e.clientX, e.clientY);
+      return;
+    }
+
     this.isDragging = true;
     this.lastMouse.set(e.clientX, e.clientY);
-    this.presetActive = false; // Cancel preset animation on user input
 
     if (e.button === 0 && !e.ctrlKey) {
       this.dragMode = 'pan';
@@ -131,7 +159,55 @@ export class CameraController {
     }
   };
 
+  /** Record the current two-finger span and midpoint as the pinch baseline. */
+  private seedPinch(): void {
+    const pts = [...this.activePointers.values()];
+    if (pts.length < 2) return;
+    this.pinchDistance = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    this.pinchMidpoint.set((pts[0].x + pts[1].x) / 2, (pts[0].y + pts[1].y) / 2);
+  }
+
+  /**
+   * Two fingers: span drives zoom, midpoint travel drives rotate/tilt. Both are
+   * applied from the same gesture because a phone has no other way to reach them.
+   */
+  private handlePinch(): void {
+    const pts = [...this.activePointers.values()];
+    if (pts.length < 2) return;
+
+    const span = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    const midX = (pts[0].x + pts[1].x) / 2;
+    const midY = (pts[0].y + pts[1].y) / 2;
+
+    if (this.pinchDistance > 0 && span > 0) {
+      // Ratio-based so the zoom tracks the fingers rather than a pixel delta.
+      const ratio = this.pinchDistance / span;
+      if (Number.isFinite(ratio) && ratio > 0) {
+        this.destDistance *= Math.pow(ratio, 1.35);
+      }
+    }
+
+    const mdx = midX - this.pinchMidpoint.x;
+    const mdy = midY - this.pinchMidpoint.y;
+    const rotSens = 0.005 * this.moveResponsivenessMultiplier;
+    this.destAzimuth -= mdx * rotSens;
+    this.destPitch -= mdy * rotSens;
+
+    this.pinchDistance = span;
+    this.pinchMidpoint.set(midX, midY);
+    this.clampDesiredState();
+  }
+
   private onPointerMove = (e: PointerEvent) => {
+    if (e.pointerType === 'touch' && this.activePointers.has(e.pointerId)) {
+      this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.activePointers.size >= 2) {
+        e.preventDefault();
+        this.handlePinch();
+        return;
+      }
+    }
+
     if (!this.isDragging) return;
     e.preventDefault();
 
@@ -171,6 +247,21 @@ export class CameraController {
   };
 
   private onPointerUp = (e: PointerEvent) => {
+    if (e.pointerType === 'touch') {
+      this.activePointers.delete(e.pointerId);
+      if (this.activePointers.size === 1) {
+        // Lifting one finger of a pinch resumes panning with the finger that is
+        // still down, instead of stranding the gesture until both are released.
+        const [p] = [...this.activePointers.values()];
+        this.lastMouse.set(p.x, p.y);
+        this.isDragging = true;
+        this.dragMode = 'pan';
+        return;
+      }
+      if (this.activePointers.size === 0) {
+        this.pinchDistance = 0;
+      }
+    }
     this.isDragging = false;
     this.dragMode = null;
   };
@@ -326,13 +417,7 @@ export class CameraController {
   }
 
   public flyTo(lat: number, lon: number, distance = 400, duration = 1400) {
-    const centerLat = 26.8475;
-    const centerLon = 80.945;
-    const mPerLat = 111320;
-    const mPerLon = 111320 * Math.cos((centerLat * Math.PI) / 180);
-    const x = (lon - centerLon) * mPerLon;
-    const z = -(lat - centerLat) * mPerLat;
-
+    const { x, z } = project(lat, lon);
     const targetVector = new THREE.Vector3(x, 0, z);
     this.transitionTo(targetVector, this.destAzimuth, Math.PI / 4, distance, duration);
   }

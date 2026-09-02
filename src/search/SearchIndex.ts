@@ -1,21 +1,8 @@
 import { SearchResult, OSMMapData } from '../types';
+import { loadJSON } from '../data/resourceCache';
+import { project, unproject } from '../geo/projection';
 
-const centerLat = 26.8475;
-const centerLon = 80.945;
-const mPerLat = 111320;
-const mPerLon = 111320 * Math.cos((centerLat * Math.PI) / 180);
-
-export function unproject(x: number, z: number) {
-  const lat = centerLat - z / mPerLat;
-  const lon = centerLon + x / mPerLon;
-  return { lat, lon };
-}
-
-export function project(lat: number, lon: number) {
-  const x = (lon - centerLon) * mPerLon;
-  const z = -(lat - centerLat) * mPerLat;
-  return { x, z };
-}
+export { project, unproject };
 
 // Custom Registry of major landmarks with exact coordinates/projected meters
 const LUCKNOW_CUSTOM_REGISTRY: Omit<SearchResult, 'x' | 'z'>[] = [
@@ -117,55 +104,43 @@ export class SearchIndex {
     if (this.initialized) return;
 
     try {
-      const [placesRes, roadsRes] = await Promise.all([
-        fetch('/overture_tiles_full/places_labels.json'),
-        fetch('/overture_tiles_full/road_labels.json')
+      // Same shared cache LabelManager uses — these two files are parsed once
+      // for the whole app.
+      const [placesData, roadsData] = await Promise.all([
+        loadJSON<any[]>('/overture_tiles_full/places_labels.json'),
+        loadJSON<any[]>('/overture_tiles_full/road_labels.json'),
       ]);
 
-      if (placesRes.ok) {
-        const places = await placesRes.json();
-        const mappedPlaces: SearchResult[] = places.map((p: any) => {
-          const coords = unproject(p.x, p.z);
-          return {
-            id: p.id,
-            name: p.name,
-            category: p.type || 'Landmark',
-            latitude: coords.lat,
-            longitude: coords.lon,
-            x: p.x,
-            z: p.z,
-            importance: p.importance || 5
-          };
-        });
-        // Merge without duplicating names
-        mappedPlaces.forEach(p => {
-          if (!this.items.some(existing => existing.name.toLowerCase() === p.name.toLowerCase())) {
-            this.items.push(p);
-          }
-        });
-      }
+      // Name dedup runs through a Set. The previous version called
+      // `this.items.some(...)` once per incoming record against an array that grew
+      // to ~48,000 entries — roughly 2.3 billion lowercase string comparisons, and
+      // the single 50-second main-thread stall that made the page look hung on load.
+      const seenNames = new Set<string>(
+        this.items.map((item) => item.name.toLowerCase()),
+      );
 
-      if (roadsRes.ok) {
-        const roads = await roadsRes.json();
-        const mappedRoads: SearchResult[] = roads.map((r: any) => {
-          const coords = unproject(r.x, r.z);
-          return {
-            id: r.id,
-            name: r.name,
-            category: 'Road',
-            latitude: coords.lat,
-            longitude: coords.lon,
-            x: r.x,
-            z: r.z,
-            importance: r.importance || 5
-          };
+      const merge = (record: any, category: string) => {
+        const name: string = record?.name;
+        if (!name) return;
+        const key = name.toLowerCase();
+        if (seenNames.has(key)) return;
+        seenNames.add(key);
+
+        const coords = unproject(record.x, record.z);
+        this.items.push({
+          id: record.id,
+          name,
+          category,
+          latitude: coords.lat,
+          longitude: coords.lon,
+          x: record.x,
+          z: record.z,
+          importance: record.importance || 5,
         });
-        mappedRoads.forEach(r => {
-          if (!this.items.some(existing => existing.name.toLowerCase() === r.name.toLowerCase())) {
-            this.items.push(r);
-          }
-        });
-      }
+      };
+
+      for (const p of placesData) merge(p, p.type || 'Landmark');
+      for (const r of roadsData) merge(r, 'Road');
 
       this.initialized = true;
     } catch (e) {

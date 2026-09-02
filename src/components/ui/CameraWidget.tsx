@@ -1,12 +1,16 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { CameraController, CAMERA_CONFIG } from '../../city/cameraController';
-import { Compass, RotateCcw, Sliders } from 'lucide-react';
+import { Compass, RotateCcw, Sliders, X } from 'lucide-react';
 
 interface CameraWidgetProps {
   controller: CameraController | null;
 }
 
 export const CameraWidget: React.FC<CameraWidgetProps> = ({ controller }) => {
+  // Collapsed to a single chip by default — the full dial/sliders panel is a
+  // tuning surface, not something that should occupy a corner of the viewport
+  // permanently.
+  const [open, setOpen] = useState(false);
   const compassDialRef = useRef<HTMLDivElement>(null);
   const headingTextRef = useRef<HTMLSpanElement>(null);
   const tiltTextRef = useRef<HTMLSpanElement>(null);
@@ -172,6 +176,21 @@ export const CameraWidget: React.FC<CameraWidgetProps> = ({ controller }) => {
     ? Math.round(controller.zoomResponsiveness) 
     : CAMERA_CONFIG.DEFAULT_RESPONSIVENESS;
 
+  if (!open) {
+    return (
+      <div className="absolute right-4 bottom-4 z-30 pointer-events-none">
+        <button
+          onClick={() => setOpen(true)}
+          className="pointer-events-auto bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 backdrop-blur-xl rounded-xl px-3 py-2 shadow-2xl flex items-center gap-2 text-[11px] font-bold text-slate-200 tracking-wide transition-all"
+          title="Camera controls"
+        >
+          <Compass className="w-3.5 h-3.5 text-amber-500" />
+          <span>CAMERA</span>
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="absolute right-4 bottom-4 z-30 pointer-events-none">
       <div 
@@ -179,8 +198,15 @@ export const CameraWidget: React.FC<CameraWidgetProps> = ({ controller }) => {
         onPointerDown={(e) => e.stopPropagation()}
         onWheel={(e) => e.stopPropagation()}
       >
-        <div className="text-[10px] font-extrabold tracking-widest text-slate-400 uppercase flex items-center gap-1 w-full justify-center">
-          <Compass className="w-3 h-3 text-amber-500" /> CAMERA
+        <div className="text-[10px] font-extrabold tracking-widest text-slate-400 uppercase flex items-center gap-1 w-full justify-between">
+          <span className="flex items-center gap-1"><Compass className="w-3 h-3 text-amber-500" /> CAMERA</span>
+          <button
+            onClick={() => setOpen(false)}
+            className="text-slate-500 hover:text-slate-200 transition-colors"
+            title="Collapse"
+          >
+            <X className="w-3 h-3" />
+          </button>
         </div>
 
         {/* Compass Dial */}

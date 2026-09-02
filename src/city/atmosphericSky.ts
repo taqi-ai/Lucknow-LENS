@@ -183,17 +183,17 @@ interface SkyPalette {
 }
 
 const DAY_PALETTE: SkyPalette = {
-  zenith:   0x5ba3d9,  // Clear sky blue
-  horizon:  0xc8dae8,  // Warm atmospheric haze
-  fog:      0xc8dae8,  // Match horizon for seamless blending
-  fogDensity: 0.000018,
+  zenith:   0x3b82f6,  // Stronger blue sky for cinematic day
+  horizon:  0xd6e5f0,  // Match new fog
+  fog:      0xd6e5f0,  // Match horizon for seamless blending
+  fogDensity: 0.000000, // Haze removed completely
 };
 
 const NIGHT_PALETTE: SkyPalette = {
   zenith:   0x050c1a,  // Deep starfield navy
   horizon:  0x0c1628,  // Dark blue atmospheric band (matched to fog)
   fog:      0x0c1628,  // Match horizon
-  fogDensity: 0.000022,
+  fogDensity: 0.000000, // Haze removed completely
 };
 
 // ─── AtmosphericSky Class ──────────────────────────────────────────────────────

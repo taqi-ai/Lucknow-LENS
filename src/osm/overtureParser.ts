@@ -1,5 +1,6 @@
 import { OSMMapData, OSMPoint, OSMBounds, BuildingFootprint, RoadSegmentOSM, WaterwayOSM, GreenAreaOSM, LandmarkOSM } from '../types';
 import { estimateBuildingHeight } from '../city/buildingHeightEstimator';
+import { CENTER_LAT, CENTER_LON, project as projectLatLon } from '../geo/projection';
 
 function stringHash(str: string): number {
   let hash = 0;
@@ -33,17 +34,15 @@ export async function parseOvertureGeoJSON(): Promise<OSMMapData> {
   const minLat = 26.840;
   const maxLat = 26.855;
 
-  // 2. Coordinate System Projection Setup (Same as osmParser)
-  const centerLat = (minLat + maxLat) / 2;
-  const centerLon = (minLon + maxLon) / 2;
-
-  const mPerLat = 111320; // Meters per degree latitude
-  const mPerLon = 111320 * Math.cos((centerLat * Math.PI) / 180); // Meters per degree longitude
+  // Project with the same origin as every other subsystem (tiles, HLOD,
+  // labels, camera flythrough) — this dataset's own bbox midpoint is NOT used
+  // here, or buildings/landmarks parsed from it would land tens to hundreds of
+  // metres away from the geometry everything else agrees on.
+  const mPerLat = 111320;
+  const mPerLon = 111320 * Math.cos((CENTER_LAT * Math.PI) / 180);
 
   function project(lon: number, lat: number): OSMPoint {
-    const x = (lon - centerLon) * mPerLon;
-    const z = -(lat - centerLat) * mPerLat;
-    return { x, z };
+    return projectLatLon(lat, lon);
   }
 
   const widthMeters = Math.round((maxLon - minLon) * mPerLon);
@@ -54,8 +53,8 @@ export async function parseOvertureGeoJSON(): Promise<OSMMapData> {
     minLon,
     maxLat,
     maxLon,
-    centerLat,
-    centerLon,
+    centerLat: CENTER_LAT,
+    centerLon: CENTER_LON,
     widthMeters,
     heightMeters,
   };

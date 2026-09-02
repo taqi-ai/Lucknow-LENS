@@ -86,7 +86,10 @@ export interface RenderStats {
   textures: number;
 }
 
-export type CameraPreset = 'fullcity' | 'overview' | 'neighborhood' | 'street' | 'top' | 'frame';
+export type CameraPreset =
+  | 'fullcity' | 'overview' | 'neighborhood' | 'street' | 'top' | 'frame'
+  /** Cinematic framings over the same real city — see CAMERA_PRESETS. */
+  | 'hero' | 'gomti' | 'hazratganj' | 'ekana' | 'oldlucknow' | 'charbagh';
 
 export type LODLevel = 0 | 1 | 2 | 3;
 
@@ -195,17 +198,31 @@ export interface SelectedEntity {
   z: number;
 }
 
+/** Freshness of a live feed. There is no state meaning "made up". */
+export type LiveFeedStatus = 'ok' | 'stale' | 'unavailable';
+
+/**
+ * An aircraft as the renderer sees it. Named SimulatedFlight for continuity with
+ * the original prototype, but every instance now originates from real ADS-B via
+ * /api/live/flights; only the position between polls is dead-reckoned.
+ */
 export interface SimulatedFlight {
   id: string;
+  /** Callsign where ADS-B provides one, otherwise the ICAO 24-bit address. */
   airline: string;
   altitude: number;
+  /** Ground speed in m/s. */
   speed: number;
   heading: number;
+  /** Origin country from the ADS-B registry; route origin is not available. */
   origin: string;
   destination: string;
   x: number;
   z: number;
   progress: number;
+  onGround?: boolean;
+  verticalRate?: number | null;
+  positionTime?: number | null;
 }
 
 export interface AIAction {

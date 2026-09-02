@@ -1,831 +1,1059 @@
 import * as THREE from 'three';
-import { TileManifest, TileManifestItem, TileJSONData, OverviewData, BuildingFootprint, RoadSegmentOSM, WaterwayOSM, GreenAreaOSM, CityStreamingStats, LODLevel } from '../types';
-import { BuildingVisuals } from './buildingVisuals';
+import { loadJSON } from '../data/resourceCache';
+import {
+  TileManifest, TileManifestItem, BuildingFootprint,
+  CityStreamingStats, LODLevel,
+} from '../types';
+import { BuildingMaterialSystem, type SkylineStyle } from './buildingMaterial';
+import { HLODLayer } from './hlodLayer';
+import { CityOverlay } from './cityOverlay';
+import { ROAD_LAYER_Y, type RoadClass } from './ribbon';
 import { SeededRNG } from './rng';
+import type { TileWorkerRequest, TileWorkerResponse } from './tileWorker';
+import { getDeviceProfile } from './deviceProfile';
+
+/**
+ * TileStreamer — full-detail streaming for the two close scales.
+ *
+ * The representation is now split by altitude:
+ *   FULL CITY / DISTRICT  -> HLODLayer only (baked real-footprint super-tiles)
+ *   NEIGHBOURHOOD / STREET -> these 500 m JSON tiles, inside a small radius
+ *
+ * That split is the fix for the audit's core failure. Previously DISTRICT asked for
+ * 500 m tiles across a 25 km radius with 2 concurrent loads, queued hundreds of
+ * fetches, and never rendered a single building. 500 m tiles are only requested now
+ * when they are actually resolvable on screen.
+ */
 
 export enum TileState {
   UNLOADED = 'UNLOADED',
   LOADING = 'LOADING',
-  LOADED = 'LOADED',
   VISIBLE = 'VISIBLE',
-  PENDING_UNLOAD = 'PENDING_UNLOAD',
 }
 
 interface LoadedTileContainer {
   id: string;
   group: THREE.Group;
-  debugHelper?: THREE.LineSegments;
   lod: LODLevel;
-  state: TileState;
   stats: { buildings: number; roads: number; trees: number };
 }
+
+/** Altitude breakpoints, metres. */
+const ALT_DISTRICT = 4000;
+const ALT_NEIGHBOURHOOD = 1800;
+const ALT_STREET = 600;
+
+/** Streaming radius per LOD. Deliberately small — HLOD covers everything beyond. */
+const STREAM_RADIUS: Record<number, number> = {
+  0: 0,
+  1: 0,
+  2: 2600,
+  3: 2600,
+};
+
+/**
+ * Content tier actually requested from the worker. LOD 2 and LOD 3 both read
+ * `data.lod2` from the source tiles, so their geometry is byte-identical — the only
+ * difference was the radius. Keying loaded tiles on the raw LOD made every 600 m
+ * crossing invalidate and rebuild every tile in view, which is the flicker you see
+ * when zooming. Both tiers now share one key, so crossing costs nothing.
+ */
+const CONTENT_TIER = 2 as LODLevel;
+
+/**
+ * Night lamp brightness. Well above 1.0 on purpose: under ACES tone mapping an
+ * emissive of 1.6 lands in the same range as a sunlit wall, so the old lamps read
+ * as beige boxes. Pushing the head into the highlight rolloff is what makes it
+ * look like a working sodium lamp.
+ */
+const LAMP_EMISSIVE_NIGHT = 5.2;
+/** Halo and ground-pool opacity at night. */
+const LAMP_GLOW_NIGHT = 0.85;
+const LAMP_POOL_NIGHT = 0.5;
+
+const ROAD_COLORS_DAY: Record<RoadClass, number> = {
+  motorway: 0x5e5c5a,
+  trunk: 0x646260,
+  primary: 0x6b6966,
+  secondary: 0x74716d,
+  tertiary: 0x7d7a75,
+  residential: 0x86837e,
+  service: 0x8d8a85,
+  footway: 0x99958f,
+  railway: 0x47494d,
+  flyover: 0x525459,
+};
+
+const ROAD_COLORS_NIGHT: Record<RoadClass, number> = {
+  motorway: 0x3d3f46,
+  trunk: 0x393b42,
+  primary: 0x34363c,
+  secondary: 0x2e3036,
+  tertiary: 0x282a30,
+  residential: 0x232529,
+  service: 0x1f2124,
+  footway: 0x1b1d20,
+  railway: 0x2b2c30,
+  flyover: 0x3a3c42,
+};
+
+/** Night lighting hierarchy: bigger corridors are lit more consistently. */
+const ROAD_EMISSIVE_NIGHT: Record<RoadClass, number> = {
+  motorway: 0x3e352a,
+  trunk: 0x372f25,
+  primary: 0x2f2921,
+  secondary: 0x24201a,
+  tertiary: 0x1a1713,
+  residential: 0x100e0b,
+  service: 0x080706,
+  footway: 0x000000,
+  railway: 0x121418,
+  flyover: 0x483a24,
+};
 
 export class TileStreamer {
   private scene: THREE.Scene;
   private manifest: TileManifest | null = null;
-  private overviewData: OverviewData | null = null;
+  private hlod: HLODLayer;
+  private overlay: CityOverlay;
+  private materials: BuildingMaterialSystem;
 
-  // Render Groups
-  private overviewGroup = new THREE.Group();
+  private groundGroup = new THREE.Group();
   private tileGroupParent = new THREE.Group();
+  /** Only the first worker failure is logged — they arrive per tile. */
+  private workerErrorLogged = false;
   private debugGroup = new THREE.Group();
 
   private loadedTiles = new Map<string, LoadedTileContainer>();
-  private tileStateMap = new Map<string, TileState>();
   public loadedBuildings = new Map<string, BuildingFootprint>();
   private tileBuildingsMap = new Map<string, string[]>();
-  private loadQueue: Array<{ tile: TileManifestItem; lod: LODLevel; dist: number }> = [];
-  private activeFetches = new Set<string>();
 
-  private MAX_CONCURRENT_LOADS = 2; // Reduced from 4 — fewer concurrent geometry builds = smoother frames
-  public stableMode = true; // STABLE CITY MODE ON BY DEFAULT (Spec Requirement)
-  public debugMode = false;
+  // ── Worker pool ───────────────────────────────────────────────────────────
+  private workers: Worker[] = [];
+  private workerBusy: boolean[] = [];
+  // Sized from the device: spawning four decode workers on a two-core phone makes
+  // them fight each other and the compositor rather than parallelising anything.
+  private readonly WORKER_COUNT = getDeviceProfile().workerCount;
+  private pending = new Map<string, { tile: TileManifestItem; lod: LODLevel }>();
 
-  // Hysteresis Thresholds for LOD & Distance Streaming
+  /**
+   * Stable priority queue. The old implementation rebuilt and re-sorted the queue
+   * from scratch every 200 ms, which continuously displaced in-flight work. This one
+   * only inserts genuinely new requests and re-scores existing entries in place.
+   */
+  private queue: Array<{ id: string; tile: TileManifestItem; lod: LODLevel; score: number }> = [];
+  private queued = new Set<string>();
+
   private currentLOD: LODLevel = 0;
-  
-  // Visuals & Materials
-  private buildingVisuals: BuildingVisuals;
-  private roadMaterials: Record<string, THREE.MeshLambertMaterial | THREE.MeshBasicMaterial>;
-  private parkMaterials: THREE.MeshBasicMaterial[];
-  private waterMaterial: THREE.MeshStandardMaterial;
-  private treeMeshTemplates: THREE.Mesh[] = [];
-
-  private stats: CityStreamingStats = {
-    loadedTiles: 0,
-    visibleTiles: 0,
-    totalBuildings: 0,
-    totalRoads: 0,
-    totalTrees: 0,
-    currentLOD: 0,
-    zoomScaleName: 'FULL CITY',
-    stableMode: true,
-    pendingLoads: 0,
-  };
-
+  /** Lamps are only worth drawing at street scale; see `setLampsVisible`. */
+  private lampsVisible = false;
+  public stableMode = true;
+  public debugMode = false;
   private isNight = true;
-  private groundMaterial: THREE.MeshLambertMaterial;
+  private skylineStyle: SkylineStyle = 'warm';
 
-  // Throttle state — update tile logic max 5Hz to avoid starving render loop
+  private roadMaterials: Record<string, THREE.MeshStandardMaterial> = {};
+  private parkMaterial: THREE.MeshStandardMaterial;
+  private waterMaterial: THREE.MeshStandardMaterial;
+  private groundMaterial: THREE.MeshStandardMaterial;
+  private treeGeometries: THREE.BufferGeometry[] = [];
+  private treeMaterials: THREE.MeshStandardMaterial[] = [];
+
+  private lampMastGeo!: THREE.BufferGeometry;
+  private lampHeadGeo!: THREE.BufferGeometry;
+  private lampMastMat!: THREE.MeshStandardMaterial;
+  private lampHeadMat!: THREE.MeshStandardMaterial;
+  /** Additive halo + ground pool that make a lamp read as a light, not a lit box. */
+  private lampGlowGeo!: THREE.BufferGeometry;
+  private lampGlowMat!: THREE.Material;
+  private lampPoolGeo!: THREE.BufferGeometry;
+  private lampPoolMat!: THREE.Material;
+
   private lastUpdateTime = 0;
-  private readonly UPDATE_INTERVAL = 200; // ms
+  private readonly UPDATE_INTERVAL = 120;
 
-  // Frustum culling
   private frustum = new THREE.Frustum();
   private frustumMatrix = new THREE.Matrix4();
   private tileBoxes = new Map<string, THREE.Box3>();
 
-  // Tile cache — keep dormant tiles to avoid refetch on pan-back
-  private tileCache = new Map<string, LoadedTileContainer>();
-  private readonly MAX_CACHE_SIZE = 50;
+  /** Camera motion, used to bias loading along the direction of travel. */
+  private lastCamPos = new THREE.Vector3();
+  private camVelocity = new THREE.Vector3();
 
-  constructor(scene: THREE.Scene) {
+  private layerVisibility = { buildings: true, roads: true, parks: true, water: true };
+
+  private stats: CityStreamingStats = {
+    loadedTiles: 0, visibleTiles: 0, totalBuildings: 0, totalRoads: 0,
+    totalTrees: 0, currentLOD: 0, zoomScaleName: 'FULL CITY',
+    stableMode: true, pendingLoads: 0,
+  };
+
+  constructor(scene: THREE.Scene, materials: BuildingMaterialSystem) {
     this.scene = scene;
-    this.scene.add(this.overviewGroup);
-    this.scene.add(this.tileGroupParent);
-    this.scene.add(this.debugGroup);
+    this.materials = materials;
 
-    this.groundMaterial = new THREE.MeshLambertMaterial({
-      color: 0x1e293b,
+    scene.add(this.groundGroup);
+    scene.add(this.tileGroupParent);
+    scene.add(this.debugGroup);
+
+    this.groundMaterial = new THREE.MeshStandardMaterial({
+      color: 0x0c1628, roughness: 1.0, metalness: 0.0,
     });
 
-    this.buildingVisuals = new BuildingVisuals();
+    for (const cat of Object.keys(ROAD_COLORS_DAY) as RoadClass[]) {
+      this.roadMaterials[cat] = new THREE.MeshStandardMaterial({
+        color: ROAD_COLORS_NIGHT[cat],
+        emissive: ROAD_EMISSIVE_NIGHT[cat],
+        roughness: cat === 'motorway' || cat === 'trunk' ? 0.62 : 0.86,
+        metalness: 0.0,
+      });
+    }
 
-    this.roadMaterials = {
-      motorway: new THREE.MeshLambertMaterial({ color: 0x475569 }),
-      arterial: new THREE.MeshLambertMaterial({ color: 0x94a3b8 }),
-      normal: new THREE.MeshLambertMaterial({ color: 0xcbd5e1 }),
-      pedestrian: new THREE.MeshBasicMaterial({ color: 0xe2e8f0 })
-    };
+    this.parkMaterial = new THREE.MeshStandardMaterial({
+      color: 0x2f3e2f, roughness: 0.98, metalness: 0.0,
+    });
 
     this.waterMaterial = new THREE.MeshStandardMaterial({
-      color: 0x0284c7,
-      roughness: 0.2,
-      metalness: 0.7,
-      transparent: true,
-      opacity: 0.85,
+      color: 0x0d2438, roughness: 0.32, metalness: 0.08,
     });
 
-    this.parkMaterials = [
-      new THREE.MeshBasicMaterial({ color: 0x5c7a5c, transparent: true, opacity: 0.6 }), // Muted natural green
-      new THREE.MeshBasicMaterial({ color: 0x6b8a64, transparent: true, opacity: 0.6 }), // Lighter muted
-      new THREE.MeshBasicMaterial({ color: 0x4d664d, transparent: true, opacity: 0.6 })  // Darker muted
+    this.buildTreePrototypes();
+    this.buildLampPrototype();
+    this.initWorkers();
+
+    this.hlod = new HLODLayer(scene, materials);
+    this.overlay = new CityOverlay(scene);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // SETUP
+
+  private buildTreePrototypes(): void {
+    // Three silhouettes rather than four near-identical blobs. Low poly by design;
+    // trees are instanced in the thousands.
+    const mkTrunk = (h: number, r: number) => {
+      const g = new THREE.CylinderGeometry(r * 0.7, r, h, 5);
+      g.translate(0, h / 2, 0);
+      return g;
+    };
+
+    // Neem / mango — broad rounded crown.
+    const c1 = new THREE.IcosahedronGeometry(3.4, 1);
+    c1.scale(1, 0.82, 1);
+    c1.translate(0, 5.6, 0);
+
+    // Ashoka / palm-ish — tall narrow.
+    const c2 = new THREE.ConeGeometry(1.9, 8.5, 6);
+    c2.translate(0, 6.0, 0);
+
+    // Banyan / acacia — wide umbrella.
+    const c3 = new THREE.SphereGeometry(4.2, 7, 5);
+    c3.scale(1, 0.5, 1);
+    c3.translate(0, 5.2, 0);
+
+    this.treeGeometries = [
+      mergePositionOnly([c1, mkTrunk(4.2, 0.34)]),
+      mergePositionOnly([c2, mkTrunk(3.4, 0.26)]),
+      mergePositionOnly([c3, mkTrunk(4.6, 0.42)]),
     ];
 
-    // 4 Distinct Tree Prototypes
-    // 1. Dark Green Cone (Cypress/Pine)
-    const coneGeo = new THREE.ConeGeometry(2.5, 7, 5);
-    coneGeo.translate(0, 3.5, 0);
-    const coneMat = new THREE.MeshBasicMaterial({ color: 0x14532d });
-
-    // 2. Medium Green Sphere (Mango/Neem)
-    const sphereGeo = new THREE.SphereGeometry(3.5, 6, 6);
-    sphereGeo.translate(0, 4, 0);
-    const sphereMat = new THREE.MeshBasicMaterial({ color: 0x15803d });
-
-    // 3. Light Green Dodecahedron (Smaller avenue trees)
-    const dodecGeo = new THREE.DodecahedronGeometry(2.8, 0);
-    dodecGeo.translate(0, 3.5, 0);
-    const dodecMat = new THREE.MeshBasicMaterial({ color: 0x4ade80 });
-
-    // 4. Olive Green Cylinder/Umbrella (Banyan/Acacia)
-    const cylGeo = new THREE.CylinderGeometry(4, 3, 5, 6);
-    cylGeo.translate(0, 4.5, 0);
-    const cylMat = new THREE.MeshBasicMaterial({ color: 0x4d7c0f });
-
-    this.treeMeshTemplates = [
-      new THREE.Mesh(coneGeo, coneMat),
-      new THREE.Mesh(sphereGeo, sphereMat),
-      new THREE.Mesh(dodecGeo, dodecMat),
-      new THREE.Mesh(cylGeo, cylMat)
+    this.treeMaterials = [
+      new THREE.MeshStandardMaterial({ color: 0x1d3524, roughness: 0.95, flatShading: true }),
+      new THREE.MeshStandardMaterial({ color: 0x24402a, roughness: 0.95, flatShading: true }),
+      new THREE.MeshStandardMaterial({ color: 0x1a2e20, roughness: 0.95, flatShading: true }),
     ];
+  }
+
+  /**
+   * A single lamp prototype: vertical mast plus a short cantilever arm, and a
+   * separate head so only the head can be emissive at night. Both are shared by
+   * every InstancedMesh, so lamp count costs matrices, not geometry.
+   */
+  private buildLampPrototype(): void {
+    const mastH = 8.5;
+    const pole = new THREE.CylinderGeometry(0.11, 0.16, mastH, 5);
+    pole.translate(0, mastH / 2, 0);
+    const arm = new THREE.BoxGeometry(1.9, 0.13, 0.13);
+    arm.translate(0.95, mastH - 0.25, 0);
+    this.lampMastGeo = mergePositionOnly([pole, arm]);
+
+    const head = new THREE.BoxGeometry(0.85, 0.22, 0.42);
+    head.translate(1.75, mastH - 0.42, 0);
+    this.lampHeadGeo = head;
+
+    this.lampMastMat = new THREE.MeshStandardMaterial({
+      color: 0x3a3d42, roughness: 0.7, metalness: 0.5,
+    });
+    // Sodium-vapour warm. Emissive only — no PointLight per lamp. Driven well past
+    // 1.0 so ACES tone mapping still resolves the head as a hot white-orange core
+    // rather than clipping it to the same flat amber as the surrounding fitting.
+    this.lampHeadMat = new THREE.MeshStandardMaterial({
+      color: 0x2a2724,
+      emissive: 0xffc271,
+      emissiveIntensity: LAMP_EMISSIVE_NIGHT,
+      roughness: 0.5,
+    });
+
+    // Halo: a camera-facing quad with a soft radial falloff, additively blended.
+    // This is what actually sells brightness — an emissive box cannot bloom, and a
+    // real PointLight per lamp would be thousands of lights per frame.
+    this.lampGlowGeo = new THREE.PlaneGeometry(7.2, 7.2);
+    // The quad's vertices sit at the origin and are moved to the lamp head by the
+    // vertex shader, so the geometry's own bounds describe the wrong place and the
+    // instanced bounding sphere would cull halos that are still on screen. State
+    // the real extent — centred on the head, radius covering the quad's diagonal.
+    this.lampGlowGeo.boundingSphere = new THREE.Sphere(
+      new THREE.Vector3(1.75, mastH - 0.42, 0), 5.2,
+    );
+    this.lampGlowMat = new THREE.ShaderMaterial({
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      // Seeded to the night values because `isNight` starts true and
+      // `setNightMode` short-circuits when the flag does not change — so
+      // applyPalette never runs on a cold start and a 0 here left the glow
+      // switched off for the whole session.
+      uniforms: { uIntensity: { value: LAMP_GLOW_NIGHT }, uColor: { value: new THREE.Color(0xffb457) } },
+      // Billboarded in view space: the lamp head's world position comes from the
+      // instance matrix, then the quad is expanded on the view axes so the halo
+      // faces the camera from any orbit angle instead of edge-on vanishing.
+      // The logdepthbuf chunks are not optional. The renderer runs with
+      // `logarithmicDepthBuffer: true`, and a raw ShaderMaterial that omits them
+      // writes a depth three's own materials never agree with, so every glow
+      // fragment failed the depth test — the quads were drawn and invisible.
+      vertexShader: `
+        #include <common>
+        #include <logdepthbuf_pars_vertex>
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          vec4 head = instanceMatrix * vec4(${'1.75'}, ${(mastH - 0.42).toFixed(2)}, 0.0, 1.0);
+          vec4 center = modelViewMatrix * head;
+          gl_Position = projectionMatrix * vec4(center.xyz + vec3(position.xy, 0.0), 1.0);
+          #include <logdepthbuf_vertex>
+        }
+      `,
+      fragmentShader: `
+        #include <common>
+        #include <logdepthbuf_pars_fragment>
+        uniform float uIntensity;
+        uniform vec3 uColor;
+        varying vec2 vUv;
+        void main() {
+          #include <logdepthbuf_fragment>
+          float d = distance(vUv, vec2(0.5)) * 2.0;
+          // Two lobes: a tight core plus a wide bloom, so the falloff reads as
+          // light scattering in air rather than as a flat translucent disc.
+          float core = pow(max(0.0, 1.0 - d), 5.0);
+          float bloom = pow(max(0.0, 1.0 - d), 1.6) * 0.35;
+          float a = (core + bloom) * uIntensity;
+          if (a < 0.004) discard;
+          gl_FragColor = vec4(uColor * a, a);
+        }
+      `,
+    });
+
+    // Ground pool: the light actually landing on the carriageway. Laid flat just
+    // above the road surface, which is the cue the previous lamps never gave.
+    this.lampPoolGeo = new THREE.PlaneGeometry(15, 15);
+    this.lampPoolGeo.rotateX(-Math.PI / 2);
+    this.lampPoolGeo.translate(1.75, 0.35, 0);
+    this.lampPoolMat = new THREE.ShaderMaterial({
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      uniforms: { uIntensity: { value: LAMP_POOL_NIGHT }, uColor: { value: new THREE.Color(0xffa845) } },
+      vertexShader: `
+        #include <common>
+        #include <logdepthbuf_pars_vertex>
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+          #include <logdepthbuf_vertex>
+        }
+      `,
+      fragmentShader: `
+        #include <common>
+        #include <logdepthbuf_pars_fragment>
+        uniform float uIntensity;
+        uniform vec3 uColor;
+        varying vec2 vUv;
+        void main() {
+          #include <logdepthbuf_fragment>
+          float d = distance(vUv, vec2(0.5)) * 2.0;
+          float a = pow(max(0.0, 1.0 - d), 2.6) * uIntensity;
+          if (a < 0.004) discard;
+          gl_FragColor = vec4(uColor * a, a);
+        }
+      `,
+    });
+  }
+
+  private initWorkers(): void {
+    for (let i = 0; i < this.WORKER_COUNT; i++) {
+      const w = new Worker(new URL('./tileWorker.ts', import.meta.url), { type: 'module' });
+      w.onmessage = (e: MessageEvent<TileWorkerResponse>) => this.onWorkerMessage(i, e.data);
+      w.onerror = (err) => {
+        console.warn('[TileStreamer] worker error:', err.message);
+        this.workerBusy[i] = false;
+      };
+      this.workers.push(w);
+      this.workerBusy.push(false);
+    }
+  }
+
+  public async init(): Promise<void> {
+    const [manifestResult, hlodManifest] = await Promise.all([
+      loadJSON<TileManifest>('/overture_tiles_full/manifest.json').catch(() => null),
+      this.hlod.init(),
+      // The city-wide road network, Gomti and parks are built once and stay
+      // resident — they are what makes Lucknow legible at every altitude.
+      this.overlay.init(),
+    ]);
+
+    if (manifestResult) {
+      this.manifest = manifestResult;
+      for (const t of this.manifest!.tiles) {
+        this.tileBoxes.set(t.id, new THREE.Box3(
+          new THREE.Vector3(t.bounds.minX, -20, t.bounds.minZ),
+          new THREE.Vector3(t.bounds.maxX, 320, t.bounds.maxZ),
+        ));
+      }
+    }
+
+    void hlodManifest;
+    this.buildGround();
+  }
+
+  private buildGround(): void {
+    this.groundGroup.clear();
+    const extent = this.getSpatialExtent();
+    const cx = (extent.minX + extent.maxX) / 2;
+    const cz = (extent.minZ + extent.maxZ) / 2;
+
+    // Single large disc so the horizon reads as a curve rather than a rectangle edge.
+    const geo = new THREE.CircleGeometry(150000, 96);
+    const ground = new THREE.Mesh(geo, this.groundMaterial);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.set(cx, -0.6, cz);
+    ground.receiveShadow = false;
+    ground.matrixAutoUpdate = false;
+    ground.updateMatrix();
+    this.groundGroup.add(ground);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // UPDATE
+
+  public update(camera: THREE.PerspectiveCamera): void {
+    const now = performance.now();
+
+    this.frustumMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    this.frustum.setFromProjectionMatrix(this.frustumMatrix);
+
+    if (now - this.lastUpdateTime < this.UPDATE_INTERVAL) {
+      this.cullLoadedTiles();
+      return;
+    }
+    const dt = Math.max(1, now - this.lastUpdateTime);
+    this.lastUpdateTime = now;
+
+    this.camVelocity.subVectors(camera.position, this.lastCamPos).multiplyScalar(1000 / dt);
+    this.lastCamPos.copy(camera.position);
+
+    const altitude = camera.position.y;
+    const { lod, scaleName } = this.resolveLOD(altitude);
+    this.currentLOD = lod;
+    this.setLampsVisible(lod >= 3);
+
+    // Detail ramp feeds the building shader: facade banding and AO strength fade in
+    // as you descend, so nothing aliases at city scale.
+    this.materials.setDetail(1 - THREE.MathUtils.clamp((altitude - 300) / 3000, 0, 1));
+
+    const streamRadius = STREAM_RADIUS[lod] ?? 0;
+
+    // Minor road classes drop out with altitude; major corridors never do.
+    this.overlay.update(altitude);
+    this.overlay.updateTime(now / 1000);
+
+    // HLOD carries district and above; below that it fills in beyond the streamed
+    // radius so the horizon stays continuous.
+    this.hlod.update(camera, lod >= 1 || altitude < ALT_DISTRICT, streamRadius * 0.85);
+
+    if (streamRadius > 0 && this.manifest) {
+      this.updateStreamedTiles(camera, lod, streamRadius);
+    } else {
+      this.retireAllStreamedTiles();
+    }
+
+    this.pumpQueue();
+    this.cullLoadedTiles();
+    this.debugGroup.visible = this.debugMode;
+
+    let bldgs = 0, roads = 0, trees = 0;
+    for (const c of this.loadedTiles.values()) {
+      bldgs += c.stats.buildings;
+      roads += c.stats.roads;
+      trees += c.stats.trees;
+    }
+
+    const h = this.hlod.getStats();
+    this.stats = {
+      loadedTiles: this.loadedTiles.size + h.superTilesLoaded,
+      visibleTiles: this.loadedTiles.size + h.fabricMeshes + h.reliefMeshes,
+      // HLOD buildings are real Overture footprints, so they count.
+      totalBuildings: bldgs + h.buildings,
+      totalRoads: roads,
+      totalTrees: trees,
+      currentLOD: lod,
+      zoomScaleName: scaleName,
+      stableMode: this.stableMode,
+      pendingLoads: this.queue.length + this.pending.size + h.pending,
+    };
+  }
+
+  private resolveLOD(altitude: number): { lod: LODLevel; scaleName: CityStreamingStats['zoomScaleName'] } {
+    // Hysteresis applies in both modes. Hard thresholds meant hovering near a
+    // boundary flipped LOD every tick.
+    const cur0 = this.currentLOD;
+    const up = 1.12;
+    const down = 0.89;
+    let lod0 = cur0;
+    if (cur0 === 0 && altitude < ALT_DISTRICT * down) lod0 = 1;
+    else if (cur0 === 1) {
+      if (altitude > ALT_DISTRICT * up) lod0 = 0;
+      else if (altitude < ALT_NEIGHBOURHOOD * down) lod0 = 2;
+    } else if (cur0 === 2) {
+      if (altitude > ALT_NEIGHBOURHOOD * up) lod0 = 1;
+      else if (altitude < ALT_STREET * down) lod0 = 3;
+    } else if (cur0 === 3 && altitude > ALT_STREET * up) lod0 = 2;
+
+    const names: CityStreamingStats['zoomScaleName'][] = ['FULL CITY', 'DISTRICT', 'NEIGHBORHOOD', 'STREET'];
+    return { lod: lod0 as LODLevel, scaleName: names[lod0] };
+  }
+
+  private updateStreamedTiles(camera: THREE.PerspectiveCamera, lod: LODLevel, radius: number): void {
+    const camX = camera.position.x;
+    const camZ = camera.position.z;
+    const unloadRadius = radius * 1.5;
+
+    // Look-ahead point: where the camera will be in ~1.5 s. Tiles near it score
+    // better, so flying forward preloads forward instead of behind.
+    const aheadX = camX + this.camVelocity.x * 1.5;
+    const aheadZ = camZ + this.camVelocity.z * 1.5;
+
+    for (const tile of this.manifest!.tiles) {
+      const dist = Math.hypot(tile.center.x - camX, tile.center.z - camZ);
+      if (dist > radius) continue;
+      if ((tile.bldgsLOD2 ?? 0) === 0 && (tile.roadsCount ?? 0) === 0) continue;
+
+      const box = this.tileBoxes.get(tile.id);
+      if (!box) continue;
+
+      const inView = this.frustum.intersectsBox(box);
+      const existing = this.loadedTiles.get(tile.id);
+      if (existing && existing.lod === CONTENT_TIER) continue;
+      if (this.pending.has(tile.id)) continue;
+
+      const aheadDist = Math.hypot(tile.center.x - aheadX, tile.center.z - aheadZ);
+      // Lower score = loaded sooner. In-frustum tiles win outright; everything else
+      // is ordered by how soon the camera is heading towards it.
+      const score = (inView ? 0 : 100000) + Math.min(dist, aheadDist);
+
+      this.enqueue(tile, CONTENT_TIER, score);
+    }
+
+    // Drop queue entries that have fallen out of range entirely.
+    if (this.queue.length > 0) {
+      this.queue = this.queue.filter((q) => {
+        const d = Math.hypot(q.tile.center.x - camX, q.tile.center.z - camZ);
+        if (d > unloadRadius) {
+          this.queued.delete(q.id);
+          return false;
+        }
+        return true;
+      });
+    }
+
+    // Retire far tiles.
+    for (const [id, container] of this.loadedTiles) {
+      const meta = this.tileBoxes.get(id);
+      if (!meta) continue;
+      const cx = (meta.min.x + meta.max.x) / 2;
+      const cz = (meta.min.z + meta.max.z) / 2;
+      if (Math.hypot(cx - camX, cz - camZ) > unloadRadius) {
+        this.retireTile(id, container);
+      }
+    }
+  }
+
+  private enqueue(tile: TileManifestItem, lod: LODLevel, score: number): void {
+    if (this.queued.has(tile.id)) {
+      // Re-score in place rather than rebuilding the queue.
+      const entry = this.queue.find((q) => q.id === tile.id);
+      if (entry) { entry.score = score; entry.lod = lod; }
+      return;
+    }
+    this.queue.push({ id: tile.id, tile, lod, score });
+    this.queued.add(tile.id);
+  }
+
+  private pumpQueue(): void {
+    if (this.queue.length === 0) return;
+    this.queue.sort((a, b) => a.score - b.score);
+
+    for (let i = 0; i < this.workers.length && this.queue.length > 0; i++) {
+      if (this.workerBusy[i]) continue;
+      const next = this.queue.shift()!;
+      this.queued.delete(next.id);
+
+      const originX = next.tile.center.x;
+      const originZ = next.tile.center.z;
+      this.pending.set(next.id, { tile: next.tile, lod: next.lod });
+      this.workerBusy[i] = true;
+
+      const req: TileWorkerRequest = {
+        id: next.id,
+        url: `/overture_tiles_full/${next.tile.id}.json`,
+        lod: next.lod,
+        originX,
+        originZ,
+      };
+      this.workers[i].postMessage(req);
+    }
+  }
+
+  private onWorkerMessage(workerIndex: number, msg: TileWorkerResponse): void {
+    this.workerBusy[workerIndex] = false;
+    const req = this.pending.get(msg.id);
+    this.pending.delete(msg.id);
+    if (!req) return;
+    if (!msg.ok) {
+      // Previously a bare `return`. A worker that throws on every tile then looks
+      // exactly like a city with no streamed detail and a clean console, which is
+      // precisely how it went unnoticed.
+      if (!this.workerErrorLogged) {
+        this.workerErrorLogged = true;
+        console.error(`[TileStreamer] tile worker failed on ${msg.id}: ${msg.error}`);
+      }
+      return;
+    }
+
+    const group = this.assembleTile(msg);
+    // Swap only once the replacement is fully built — no half-built regions.
+    const old = this.loadedTiles.get(msg.id);
+    if (old) {
+      this.tileGroupParent.remove(old.group);
+      disposeGroup(old.group);
+    }
+    applyLayerVisibility(group, this.layerVisibility);
+    this.tileGroupParent.add(group);
+
+    this.loadedTiles.set(msg.id, {
+      id: msg.id,
+      group,
+      lod: req.lod,
+      stats: {
+        buildings: msg.counts?.buildings ?? 0,
+        roads: msg.counts?.roads ?? 0,
+        trees: msg.counts?.trees ?? 0,
+      },
+    });
+
+    // Building records back the click-to-inspect path.
+    if (msg.buildings?.ids) {
+      this.tileBuildingsMap.set(msg.id, msg.buildings.ids);
+    }
+
+    // Immediately pull more work through.
+    this.pumpQueue();
+  }
+
+  private assembleTile(msg: TileWorkerResponse): THREE.Group {
+    const group = new THREE.Group();
+    group.name = msg.id;
+    group.position.set(msg.originX, 0, msg.originZ);
+    group.matrixAutoUpdate = false;
+    group.updateMatrix();
+
+    if (msg.buildings && msg.buildings.count > 0) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(msg.buildings.pos, 3));
+      geo.setAttribute('aPack', new THREE.Uint8BufferAttribute(msg.buildings.pack, 4, true));
+      geo.computeBoundingSphere();
+      const mesh = new THREE.Mesh(geo, this.materials.solid);
+      mesh.name = 'buildings';
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      group.add(mesh);
+    }
+
+    if (msg.roads) {
+      for (const strip of msg.roads) {
+        if (strip.pos.length === 0) continue;
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(strip.pos, 3));
+        geo.computeBoundingSphere();
+        const mat = this.roadMaterials[strip.category] || this.roadMaterials.residential;
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.name = 'roads';
+        mesh.position.y = ROAD_LAYER_Y[strip.category as RoadClass] ?? 0.12;
+        mesh.receiveShadow = true;
+        group.add(mesh);
+      }
+    }
+
+    if (msg.parks && msg.parks.length > 0) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(msg.parks, 3));
+      geo.computeBoundingSphere();
+      const mesh = new THREE.Mesh(geo, this.parkMaterial);
+      mesh.name = 'parks';
+      mesh.receiveShadow = true;
+      group.add(mesh);
+    }
+
+    if (msg.water && msg.water.length > 0) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(msg.water, 3));
+      geo.computeBoundingSphere();
+      const mesh = new THREE.Mesh(geo, this.waterMaterial);
+      mesh.name = 'water';
+      group.add(mesh);
+    }
+
+    if (msg.trees && msg.trees.length > 0) {
+      this.addTrees(group, msg.trees);
+    }
+
+    if (msg.streetlights && msg.streetlights.length > 0) {
+      this.addStreetlights(group, msg.streetlights, this.lampsVisible);
+    }
+
+    return group;
+  }
+
+  /**
+   * Lamps exist on every streamed tile but are only drawn at street scale — from
+   * neighbourhood up they are a picket of sub-pixel masts that costs four draws a
+   * tile and reads as noise. Toggling visibility is far cheaper than the old
+   * approach of rebuilding tile geometry when the altitude band changes.
+   */
+  private setLampsVisible(on: boolean): void {
+    if (on === this.lampsVisible) return;
+    this.lampsVisible = on;
+    for (const t of this.loadedTiles.values()) {
+      for (const child of t.group.children) {
+        if (child.name === 'streetlights') child.visible = on;
+      }
+    }
+  }
+
+  /** Drive both additive lamp passes from one place. */
+  private setLampGlow(halo: number, pool: number): void {
+    const g = this.lampGlowMat as THREE.ShaderMaterial;
+    const p = this.lampPoolMat as THREE.ShaderMaterial;
+    if (g?.uniforms?.uIntensity) g.uniforms.uIntensity.value = halo;
+    if (p?.uniforms?.uIntensity) p.uniforms.uIntensity.value = pool;
+  }
+
+  /**
+   * Streetlights as two InstancedMeshes per tile — mast and lamp head. Thousands of
+   * lamps therefore cost two draw calls, not thousands of objects, and none of them
+   * is a real light: the head is emissive and the pooled illumination comes from the
+   * building shader's night floor plus the road emissive hierarchy.
+   */
+  private addStreetlights(group: THREE.Group, lamps: Float32Array, visible: boolean): void {
+    const count = lamps.length / 3;
+    if (count === 0) return;
+
+    const mast = new THREE.InstancedMesh(this.lampMastGeo, this.lampMastMat, count);
+    const head = new THREE.InstancedMesh(this.lampHeadGeo, this.lampHeadMat, count);
+    mast.name = 'streetlights';
+    head.name = 'streetlights';
+    mast.castShadow = false;
+    head.castShadow = false;
+    // A tile that streams in while the camera is high must not pop its lamps on.
+    mast.visible = visible;
+    head.visible = visible;
+
+    // Glow is two more instanced draws per tile, and only where the device can
+    // afford the additive overdraw.
+    const wantGlow = getDeviceProfile().lampGlow;
+    const glow = wantGlow ? new THREE.InstancedMesh(this.lampGlowGeo, this.lampGlowMat, count) : null;
+    const pool = wantGlow ? new THREE.InstancedMesh(this.lampPoolGeo, this.lampPoolMat, count) : null;
+    if (glow && pool) {
+      glow.name = 'streetlights';
+      pool.name = 'streetlights';
+      // Additive halos must not occlude each other or the buildings behind them.
+      glow.renderOrder = 3;
+      pool.renderOrder = 2;
+      glow.frustumCulled = true;
+      pool.frustumCulled = true;
+      glow.visible = visible;
+      pool.visible = visible;
+    }
+
+    const dummy = new THREE.Object3D();
+    for (let i = 0; i < count; i++) {
+      dummy.position.set(lamps[i * 3], 0, lamps[i * 3 + 1]);
+      dummy.rotation.set(0, -lamps[i * 3 + 2], 0);
+      dummy.scale.setScalar(1);
+      dummy.updateMatrix();
+      mast.setMatrixAt(i, dummy.matrix);
+      head.setMatrixAt(i, dummy.matrix);
+      glow?.setMatrixAt(i, dummy.matrix);
+      pool?.setMatrixAt(i, dummy.matrix);
+    }
+    mast.instanceMatrix.needsUpdate = true;
+    head.instanceMatrix.needsUpdate = true;
+    group.add(mast);
+    group.add(head);
+    if (glow && pool) {
+      glow.instanceMatrix.needsUpdate = true;
+      pool.instanceMatrix.needsUpdate = true;
+      group.add(glow);
+      group.add(pool);
+    }
+  }
+
+  private addTrees(group: THREE.Group, trees: Float32Array): void {
+    const count = trees.length / 4;
+    const buckets: number[][] = [[], [], []];
+    for (let i = 0; i < count; i++) {
+      const hash = SeededRNG.hashString(`${trees[i * 4].toFixed(1)},${trees[i * 4 + 2].toFixed(1)}`);
+      buckets[hash % 3].push(i);
+    }
+
+    const dummy = new THREE.Object3D();
+    for (let b = 0; b < 3; b++) {
+      const idx = buckets[b];
+      if (idx.length === 0) continue;
+      const inst = new THREE.InstancedMesh(this.treeGeometries[b], this.treeMaterials[b], idx.length);
+      inst.name = 'trees';
+      inst.castShadow = false;
+      inst.receiveShadow = false;
+      for (let j = 0; j < idx.length; j++) {
+        const i = idx[j];
+        const hash = SeededRNG.hashString(`${trees[i * 4].toFixed(2)},${trees[i * 4 + 2].toFixed(2)}`);
+        const s = (trees[i * 4 + 3] || 1) * (0.8 + ((hash % 100) / 100) * 0.55);
+        dummy.position.set(trees[i * 4], trees[i * 4 + 1], trees[i * 4 + 2]);
+        dummy.scale.set(s, s * (0.9 + ((hash >> 3) % 40) / 100), s);
+        dummy.rotation.set(0, ((hash % 360) * Math.PI) / 180, 0);
+        dummy.updateMatrix();
+        inst.setMatrixAt(j, dummy.matrix);
+      }
+      inst.instanceMatrix.needsUpdate = true;
+      group.add(inst);
+    }
+  }
+
+  private cullLoadedTiles(): void {
+    for (const container of this.loadedTiles.values()) {
+      const g = container.group;
+      if (g.children.length === 0) continue;
+      let sphere = g.userData.boundingSphere as THREE.Sphere | undefined;
+      if (!sphere) {
+        const box = new THREE.Box3().setFromObject(g);
+        sphere = box.getBoundingSphere(new THREE.Sphere());
+        g.userData.boundingSphere = sphere;
+      }
+      g.visible = this.frustum.intersectsSphere(sphere);
+    }
+  }
+
+  private retireTile(id: string, container: LoadedTileContainer): void {
+    this.tileGroupParent.remove(container.group);
+    disposeGroup(container.group);
+    this.loadedTiles.delete(id);
+    const ids = this.tileBuildingsMap.get(id);
+    if (ids) {
+      for (const bid of ids) this.loadedBuildings.delete(bid);
+      this.tileBuildingsMap.delete(id);
+    }
+  }
+
+  private retireAllStreamedTiles(): void {
+    if (this.loadedTiles.size === 0 && this.queue.length === 0) return;
+    for (const [id, c] of this.loadedTiles) this.retireTile(id, c);
+    this.queue.length = 0;
+    this.queued.clear();
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // MODES & ACCESSORS
+
+  /**
+   * Ground, parks and water are style-aware, not just day/night aware.
+   *
+   * They were not, and it showed: under Cyberpunk's cyan key the warm grey-green
+   * daytime ground (0x8d9080) turned into a flat teal sheet covering the entire
+   * frame. The surface colour has to move with the light, or a stylised profile
+   * just tints one enormous polygon.
+   */
+  public setSkylineStyle(style: SkylineStyle): void {
+    if (this.skylineStyle === style) return;
+    this.skylineStyle = style;
+    this.applyPalette();
   }
 
   public setNightMode(night: boolean): void {
     if (this.isNight === night) return;
     this.isNight = night;
+    this.materials.setNightMode(night);
+    this.applyPalette();
+  }
 
-    this.buildingVisuals.setNightMode(night);
+  private applyPalette(): void {
+    const night = this.isNight;
+    const cyber = this.skylineStyle === 'cyberpunk';
+
+    const roadColors = night ? ROAD_COLORS_NIGHT : ROAD_COLORS_DAY;
+    for (const cat of Object.keys(this.roadMaterials) as RoadClass[]) {
+      const mat = this.roadMaterials[cat];
+      mat.color.setHex(roadColors[cat]);
+      mat.emissive.setHex(night ? ROAD_EMISSIVE_NIGHT[cat] : 0x000000);
+      mat.emissiveIntensity = night ? 1 : 0;
+    }
+    this.overlay.setNightMode(night);
 
     if (night) {
-      this.groundMaterial.color.setHex(0x0c1628); // matches atmosphericSky night horizon
-      this.roadMaterials.motorway.color.setHex(0x18181b);
-      this.roadMaterials.arterial.color.setHex(0x27272a);
-      this.roadMaterials.normal.color.setHex(0x3f3f46);
-      this.roadMaterials.pedestrian.color.setHex(0x52525b);
-      this.waterMaterial.color.setHex(0x0ea5e9);
-      this.parkMaterials[0].color.setHex(0x2f3e2f);
-      this.parkMaterials[1].color.setHex(0x384734);
-      this.parkMaterials[2].color.setHex(0x273627);
-      (this.treeMeshTemplates[0].material as THREE.MeshBasicMaterial).color.setHex(0x064e3b);
-      (this.treeMeshTemplates[1].material as THREE.MeshBasicMaterial).color.setHex(0x065f46);
-      (this.treeMeshTemplates[2].material as THREE.MeshBasicMaterial).color.setHex(0x059669);
-      (this.treeMeshTemplates[3].material as THREE.MeshBasicMaterial).color.setHex(0x166534);
+      this.groundMaterial.color.setHex(0x1e2430);
+      this.parkMaterial.color.setHex(0x1a2a1e);
+      this.waterMaterial.color.setHex(0x14293d);
+      this.lampHeadMat.emissiveIntensity = LAMP_EMISSIVE_NIGHT;
+      this.setLampGlow(LAMP_GLOW_NIGHT, LAMP_POOL_NIGHT);
+      this.treeMaterials[0].color.setHex(0x101d15);
+      this.treeMaterials[1].color.setHex(0x142218);
+      this.treeMaterials[2].color.setHex(0x0e1a13);
+    } else if (cyber) {
+      // Dark desaturated slate so the cyan key reads as light falling on a
+      // surface rather than as the surface's own colour.
+      this.groundMaterial.color.setHex(0x2b3247);
+      this.parkMaterial.color.setHex(0x1f3a3a);
+      this.waterMaterial.color.setHex(0x16304a);
+      this.lampHeadMat.emissiveIntensity = 0.0;
+      this.setLampGlow(0, 0);
+      this.treeMaterials[0].color.setHex(0x1d3a34);
+      this.treeMaterials[1].color.setHex(0x244440);
+      this.treeMaterials[2].color.setHex(0x18322e);
     } else {
-      this.groundMaterial.color.setHex(0xc8dae8); // matches atmosphericSky day horizon
-      this.roadMaterials.motorway.color.setHex(0x3f3f46);
-      this.roadMaterials.arterial.color.setHex(0x52525b);
-      this.roadMaterials.normal.color.setHex(0x9ca3af);
-      this.roadMaterials.pedestrian.color.setHex(0xd1d5db);
-      this.waterMaterial.color.setHex(0x0ea5e9);
-      this.parkMaterials[0].color.setHex(0x5c7a5c);
-      this.parkMaterials[1].color.setHex(0x6b8a64);
-      this.parkMaterials[2].color.setHex(0x4d664d);
-      (this.treeMeshTemplates[0].material as THREE.MeshBasicMaterial).color.setHex(0x14532d);
-      (this.treeMeshTemplates[1].material as THREE.MeshBasicMaterial).color.setHex(0x15803d);
-      (this.treeMeshTemplates[2].material as THREE.MeshBasicMaterial).color.setHex(0x4ade80);
-      (this.treeMeshTemplates[3].material as THREE.MeshBasicMaterial).color.setHex(0x4d7c0f);
+      // Warm neutral earth. The old pale mint-grey dominated every aerial frame and
+      // pushed the whole image green.
+      this.groundMaterial.color.setHex(0x8d9080);
+      this.parkMaterial.color.setHex(0x6f8a5c);
+      this.waterMaterial.color.setHex(0x5c7d86);
+      // Lamps are off in daylight — the head reads as a dark fitting.
+      this.lampHeadMat.emissiveIntensity = 0.0;
+      this.setLampGlow(0, 0);
+      this.treeMaterials[0].color.setHex(0x3f6136);
+      this.treeMaterials[1].color.setHex(0x4a6b3d);
+      this.treeMaterials[2].color.setHex(0x374f30);
     }
   }
 
-  public async init(): Promise<void> {
-    try {
-      const respManifest = await fetch('/overture_tiles_full/manifest.json');
-      if (!respManifest.ok) throw new Error(`Manifest fetch failed: ${respManifest.statusText}`);
-      this.manifest = await respManifest.json();
-
-      // Precompute tile bounding boxes
-      this.manifest!.tiles.forEach(t => {
-        this.tileBoxes.set(t.id, new THREE.Box3(
-          new THREE.Vector3(t.bounds.minX, -20, t.bounds.minZ),
-          new THREE.Vector3(t.bounds.maxX, 200, t.bounds.maxZ)
-        ));
-      });
-
-      const respOverview = await fetch('/overture_tiles_full/overview.json');
-      if (respOverview.ok) {
-        this.overviewData = await respOverview.json();
-        this.buildGlobalOverview();
-      }
-    } catch (e) {
-      console.warn('Failed to load tile streamer manifests:', e);
+  /**
+   * Apply layer toggles. Called only when a toggle actually changes — the render
+   * loop previously ran a full scene.traverse() for this on every frame.
+   */
+  public setLayerVisibility(v: { buildings: boolean; roads: boolean; parks: boolean; water: boolean }): void {
+    this.layerVisibility = v;
+    this.hlod.setVisible(v.buildings);
+    this.overlay.setLayerVisibility({ roads: v.roads, parks: v.parks, water: v.water });
+    for (const container of this.loadedTiles.values()) {
+      applyLayerVisibility(container.group, v);
     }
   }
 
-  private buildGlobalOverview(): void {
-    if (!this.overviewData || !this.manifest) return;
-
-    this.overviewGroup.clear();
-
-    const extent = this.manifest.spatialExtent || { minX: -20000, maxX: 20000, minZ: -20000, maxZ: 20000 };
-    const width = Math.abs(extent.maxX - extent.minX) + 10000;
-    const depth = Math.abs(extent.maxZ - extent.minZ) + 10000;
-    const centerX = (extent.minX + extent.maxX) / 2;
-    const centerZ = (extent.minZ + extent.maxZ) / 2;
-
-    // Use a massive circular ground plane (150km radius) matching the max camera far plane.
-    // A circle ensures that even if the geometry is somehow clipped or rendered near the edge,
-    // it forms a natural curved horizon instead of a straight diagonal rectangular edge.
-    const groundRadius = 150000;
-    const groundGeo = new THREE.CircleGeometry(groundRadius, 64);
-    const ground = new THREE.Mesh(groundGeo, this.groundMaterial);
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.set(centerX, -0.5, centerZ);
-    ground.receiveShadow = false;
-    this.overviewGroup.add(ground);
-
-    this.buildRoadsMesh(this.overviewGroup, this.overviewData.majorRoads);
-    this.buildWaterwaysMesh(this.overviewGroup, this.overviewData.waterways);
-    this.buildParksMesh(this.overviewGroup, this.overviewData.greenAreas);
-
-  }
-
-  public update(camera: THREE.PerspectiveCamera): void {
-    if (!this.manifest) return;
-
-    // Throttle tile logic to max 5Hz — camera/render loop runs at 60fps independently
-    const now = performance.now();
-    if (now - this.lastUpdateTime < this.UPDATE_INTERVAL) {
-      // Still do frustum culling every frame (cheap)
-      this.updateFrustumCulling(camera);
-      return;
-    }
-    this.lastUpdateTime = now;
-
-    // Build Frustum
-    this.frustumMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-    this.frustum.setFromProjectionMatrix(this.frustumMatrix);
-
-    const altitude = camera.position.y;
-    const camX = camera.position.x;
-    const camZ = camera.position.z;
-
-    // Hysteresis LOD State Machine
-    let targetLOD: LODLevel = this.currentLOD;
-    let zoomScaleName: 'FULL CITY' | 'DISTRICT' | 'NEIGHBORHOOD' | 'STREET' = 'FULL CITY';
-
-    if (this.stableMode) {
-      targetLOD = altitude > 4000 ? 0 : altitude > 1800 ? 1 : altitude > 600 ? 2 : 3;
-      zoomScaleName = altitude > 4000 ? 'FULL CITY' : altitude > 1800 ? 'DISTRICT' : altitude > 600 ? 'NEIGHBORHOOD' : 'STREET';
-    } else {
-      if (this.currentLOD === 0) {
-        if (altitude < 4500) targetLOD = 1;
-      } else if (this.currentLOD === 1) {
-        if (altitude > 5200) targetLOD = 0;
-        else if (altitude < 2000) targetLOD = 2;
-      } else if (this.currentLOD === 2) {
-        if (altitude > 2400) targetLOD = 1;
-        else if (altitude < 700) targetLOD = 3;
-      } else if (this.currentLOD === 3) {
-        if (altitude > 850) targetLOD = 2;
-      }
-
-      if (targetLOD === 0) zoomScaleName = 'FULL CITY';
-      else if (targetLOD === 1) zoomScaleName = 'DISTRICT';
-      else if (targetLOD === 2) zoomScaleName = 'NEIGHBORHOOD';
-      else zoomScaleName = 'STREET';
-    }
-
-    this.currentLOD = targetLOD;
-
-    // Dynamic load radius — extends as camera zooms out for Google Earth-style wide view
-    const viewScale = Math.max(1, altitude / 1200);
-    const baseRadius = targetLOD === 0 ? 12000 : targetLOD === 1 ? 8000 : targetLOD === 2 ? 6000 : 4000;
-    const loadRadius = Math.min(baseRadius * viewScale, 25000);
-    // Increase hysteresis slightly for smoother transitions
-    const unloadRadius = loadRadius + 4000;
-
-    // 1. Calculate desired tiles for loading
-    const newQueue: Array<{ tile: TileManifestItem; lod: LODLevel; dist: number }> = [];
-    const visibleTilesThisFrame = new Set<string>();
-
-    for (const tile of this.manifest.tiles) {
-      const tileBox = this.tileBoxes.get(tile.id);
-      if (!tileBox) continue;
-
-      const dist = Math.hypot(tile.center.x - camX, tile.center.z - camZ);
-
-      // Fast distance reject
-      if (dist > unloadRadius) continue;
-
-      // Frustum check
-      if (this.frustum.intersectsBox(tileBox)) {
-        visibleTilesThisFrame.add(tile.id);
-
-        if (dist <= loadRadius) {
-          const loaded = this.loadedTiles.get(tile.id);
-          const fetchKey = `${tile.id}_${targetLOD}`;
-
-          if ((!loaded || loaded.lod !== targetLOD) && !this.activeFetches.has(fetchKey)) {
-            // Check tile cache first before queuing fetch
-            const cached = this.tileCache.get(fetchKey);
-            if (cached) {
-              // Restore from cache instead of refetching
-              this.tileGroupParent.add(cached.group);
-              if (cached.debugHelper) this.debugGroup.add(cached.debugHelper);
-              cached.state = TileState.VISIBLE;
-              this.loadedTiles.set(tile.id, cached);
-              this.tileCache.delete(fetchKey);
-            } else {
-              newQueue.push({ tile, lod: targetLOD, dist });
-            }
-          }
-        }
-      }
-    }
-
-    // Sort loading queue by distance (camera center first)
-    newQueue.sort((a, b) => a.dist - b.dist);
-    this.loadQueue = newQueue;
-
-    // Process Prioritized Asynchronous Queue
-    while (this.activeFetches.size < this.MAX_CONCURRENT_LOADS && this.loadQueue.length > 0) {
-      const nextItem = this.loadQueue.shift();
-      if (nextItem) {
-        this.fetchAndBuildTile(nextItem.tile, nextItem.lod);
-      }
-    }
-
-    // 2. Unload distant tiles — move to cache instead of destroying
-    let totalBldgs = 0;
-    let totalRds = 0;
-    let totalTrs = 0;
-
-    for (const [tileId, container] of this.loadedTiles.entries()) {
-      const tileMeta = this.manifest.tiles.find(t => t.id === tileId);
-      if (!tileMeta) continue;
-
-      const dist = Math.hypot(tileMeta.center.x - camX, tileMeta.center.z - camZ);
-      const isVisible = visibleTilesThisFrame.has(tileId);
-
-      if (dist > unloadRadius || (!isVisible && dist > loadRadius * 0.5)) {
-        // Move to cache instead of destroying
-        this.tileGroupParent.remove(container.group);
-        if (container.debugHelper) this.debugGroup.remove(container.debugHelper);
-        container.state = TileState.PENDING_UNLOAD;
-
-        const cacheKey = `${tileId}_${container.lod}`;
-        this.tileCache.set(cacheKey, container);
-        this.loadedTiles.delete(tileId);
-        this.tileStateMap.set(tileId, TileState.UNLOADED);
-
-        const bldgIds = this.tileBuildingsMap.get(tileId);
-        if (bldgIds) {
-          bldgIds.forEach(id => this.loadedBuildings.delete(id));
-          this.tileBuildingsMap.delete(tileId);
-        }
-
-        // Evict oldest cache entries if over limit
-        if (this.tileCache.size > this.MAX_CACHE_SIZE) {
-          const firstKey = this.tileCache.keys().next().value;
-          if (firstKey) {
-            const evicted = this.tileCache.get(firstKey);
-            if (evicted) this.disposeGroup(evicted.group);
-            this.tileCache.delete(firstKey);
-          }
-        }
-      } else {
-        totalBldgs += container.stats.buildings;
-        totalRds += container.stats.roads;
-        totalTrs += container.stats.trees;
-      }
-    }
-
-    this.debugGroup.visible = this.debugMode;
-
-    // Frustum cull after tile updates
-    this.updateFrustumCulling(camera);
-
-    this.stats = {
-      loadedTiles: this.loadedTiles.size,
-      visibleTiles: this.loadedTiles.size,
-      totalBuildings: totalBldgs,
-      totalRoads: totalRds,
-      totalTrees: totalTrs,
-      currentLOD: targetLOD,
-      zoomScaleName,
-      stableMode: this.stableMode,
-      pendingLoads: this.activeFetches.size + this.loadQueue.length,
-    };
-  }
-
-  /** Frustum culling — hide tiles behind the camera to save 40-60% draw calls */
-  private updateFrustumCulling(camera: THREE.PerspectiveCamera): void {
-    if (!camera.matrixWorldInverse) {
-      console.error("Camera missing matrixWorldInverse:", camera);
-      return;
-    }
-    // Build frustum from current camera
-    this.frustumMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-    this.frustum.setFromProjectionMatrix(this.frustumMatrix);
-
-    for (const [, container] of this.loadedTiles) {
-      if (container.group.children.length === 0) continue;
-      // Use bounding sphere check — fast and sufficient for tile-sized groups
-      if (!container.group.userData.boundingSphere) {
-        const box = new THREE.Box3().setFromObject(container.group);
-        container.group.userData.boundingSphere = box.getBoundingSphere(new THREE.Sphere());
-      }
-      const sphere = container.group.userData.boundingSphere as THREE.Sphere;
-      container.group.visible = this.frustum.intersectsSphere(sphere);
-    }
-  }
-
-  private async fetchAndBuildTile(tileMeta: TileManifestItem, lod: LODLevel): Promise<void> {
-    const fetchKey = `${tileMeta.id}_${lod}`;
-    this.activeFetches.add(fetchKey);
-    this.tileStateMap.set(tileMeta.id, TileState.LOADING);
-
-    try {
-      const resp = await fetch(`/overture_tiles_full/${tileMeta.id}.json`);
-      if (!resp.ok) return;
-      const data: TileJSONData = await resp.json();
-
-      const tileGroup = new THREE.Group();
-      tileGroup.name = tileMeta.id;
-
-      let bldgCount = 0;
-      let roadCount = 0;
-      let treeCount = 0;
-
-      const bldgList = lod <= 1 ? (data.lod1?.buildings || []) : (lod >= 2 ? data.lod2.buildings : []);
-      const roadList = lod <= 1 ? (data.lod1?.roads || []) : (lod >= 2 ? data.lod2.roads : []);
-      const waterList = data.lod2.waterways || data.lod1?.waterways || [];
-      const parkList = data.lod2.greenAreas || data.lod1?.greenAreas || [];
-      const treeList = data.lod2.trees || [];
-
-      bldgCount = this.buildBuildingsMesh(tileGroup, bldgList, lod);
-      roadCount = this.buildRoadsMesh(tileGroup, roadList);
-      this.buildWaterwaysMesh(tileGroup, waterList);
-      this.buildParksMesh(tileGroup, parkList);
-      treeCount = this.buildInstancedTrees(tileGroup, treeList);
-
-      const bldgIds: string[] = [];
-      bldgList.forEach(b => {
-        this.loadedBuildings.set(b.id, b);
-        bldgIds.push(b.id);
-      });
-      this.tileBuildingsMap.set(tileMeta.id, bldgIds);
-
-
-      const debugHelper = this.createTileDebugOutline(tileMeta);
-      this.debugGroup.add(debugHelper);
-
-      // NEVER DESTROY OLD TILE UNTIL NEW TILE IS READY (Zero Tearing)
-      const oldContainer = this.loadedTiles.get(tileMeta.id);
-      if (oldContainer) {
-        this.tileGroupParent.remove(oldContainer.group);
-        if (oldContainer.debugHelper) this.debugGroup.remove(oldContainer.debugHelper);
-        this.disposeGroup(oldContainer.group);
-      }
-
-      this.tileGroupParent.add(tileGroup);
-
-      this.loadedTiles.set(tileMeta.id, {
-        id: tileMeta.id,
-        group: tileGroup,
-        debugHelper,
-        lod,
-        state: TileState.VISIBLE,
-        stats: { buildings: bldgCount, roads: roadCount, trees: treeCount },
-      });
-
-
-      this.tileStateMap.set(tileMeta.id, TileState.VISIBLE);
-
-    } catch (err) {
-      console.error(`Failed to load tile ${tileMeta.id}:`, err);
-    } finally {
-      this.activeFetches.delete(fetchKey);
-    }
-  }
-
-  private buildBuildingsMesh(parent: THREE.Group, buildings: BuildingFootprint[], lod: LODLevel): number {
-    if (!buildings || buildings.length === 0) return 0;
-
-    const wallGeos: THREE.BufferGeometry[][] = [[], [], [], [], []];
-    const roofGeos: THREE.BufferGeometry[][] = [[], [], [], [], []];
-
-    for (const bldg of buildings) {
-      if (!bldg.points || bldg.points.length < 3) continue;
-
-      const matIndex = this.buildingVisuals.getMaterialIndexForId(bldg.id);
-      const bldgHeight = bldg.height || 10;
-
-      const shape = new THREE.Shape();
-      shape.moveTo(bldg.points[0].x, -bldg.points[0].z);
-      for (let i = 1; i < bldg.points.length; i++) {
-        shape.lineTo(bldg.points[i].x, -bldg.points[i].z);
-      }
-      shape.closePath();
-
-      const geo = new THREE.ExtrudeGeometry(shape, { depth: bldgHeight, bevelEnabled: false });
-      geo.rotateX(-Math.PI / 2);
-      wallGeos[matIndex].push(geo);
-
-      // LOD 3 (Street level): Add roof caps for buildings to give visual definition
-      if (lod === 3) {
-        let roofDepth = 0.3; // Mid-rise default
-        if (bldgHeight < 8) {
-          roofDepth = 0.1; // Low-rise: very subtle parapet
-        } else if (bldgHeight >= 15) {
-          roofDepth = 0.6; // High-rise: prominent roof structure
-        }
-
-        const roofGeo = new THREE.ExtrudeGeometry(shape, { depth: roofDepth, bevelEnabled: false });
-        roofGeo.rotateX(-Math.PI / 2);
-        roofGeo.translate(0, bldgHeight, 0);
-        
-        // Use a slightly different material index to add visual variation for high rises if desired,
-        // or keep consistent. We will keep consistent to ensure matched palettes.
-        roofGeos[matIndex].push(roofGeo);
-      }
-    }
-
-    for (let i = 0; i < 5; i++) {
-      if (wallGeos[i].length > 0) {
-        const mergedWall = this.mergeGeometries(wallGeos[i]);
-        if (mergedWall) {
-          const mesh = new THREE.Mesh(mergedWall, this.buildingVisuals.wallMaterials[i]);
-          mesh.name = 'buildings';
-          mesh.castShadow = true;
-          mesh.receiveShadow = true;
-          parent.add(mesh);
-        }
-      }
-      
-      if (roofGeos[i].length > 0) {
-        const mergedRoof = this.mergeGeometries(roofGeos[i]);
-        if (mergedRoof) {
-          const mesh = new THREE.Mesh(mergedRoof, this.buildingVisuals.roofMaterials[i]);
-          mesh.name = 'buildings';
-          mesh.castShadow = true;
-          mesh.receiveShadow = true;
-          parent.add(mesh);
-        }
-      }
-    }
-
-    return buildings.length;
-  }
-
-  private buildRoadsMesh(parent: THREE.Group, roads: RoadSegmentOSM[]): number {
-    if (!roads || roads.length === 0) return 0;
-
-    const geos: Record<string, THREE.BufferGeometry[]> = {
-      motorway: [],
-      arterial: [],
-      normal: [],
-      pedestrian: []
-    };
-
-    for (const road of roads) {
-      if (!road.points || road.points.length < 2) continue;
-
-      let category = 'normal';
-      if (road.type === 'motorway' || road.type === 'trunk') category = 'motorway';
-      else if (road.type === 'primary' || road.type === 'secondary') category = 'arterial';
-      else if (road.type === 'footway' || road.type === 'path' || road.type === 'pedestrian') category = 'pedestrian';
-
-      for (let i = 0; i < road.points.length - 1; i++) {
-        const p1 = road.points[i];
-        const p2 = road.points[i + 1];
-
-        const dx = p2.x - p1.x;
-        const dz = p2.z - p1.z;
-        const len = Math.hypot(dx, dz);
-        if (len < 0.1) continue;
-
-        const angle = Math.atan2(dz, dx);
-        const w = road.width || (category === 'motorway' ? 12 : category === 'arterial' ? 8 : category === 'pedestrian' ? 2 : 6);
-
-        const planeGeo = new THREE.PlaneGeometry(len, w);
-        planeGeo.rotateX(-Math.PI / 2);
-        planeGeo.rotateY(-angle);
-        const yOff = category === 'motorway' ? 0.13 : category === 'arterial' ? 0.12 : category === 'normal' ? 0.11 : 0.14;
-        planeGeo.translate((p1.x + p2.x) / 2, yOff, (p1.z + p2.z) / 2);
-
-        geos[category].push(planeGeo);
-      }
-    }
-
-    for (const cat of Object.keys(geos)) {
-      if (geos[cat].length > 0) {
-        const mergedGeo = this.mergeGeometries(geos[cat]);
-        if (mergedGeo) {
-          const mesh = new THREE.Mesh(mergedGeo, this.roadMaterials[cat]);
-          mesh.name = 'roads';
-          mesh.receiveShadow = true;
-          parent.add(mesh);
-        }
-      }
-    }
-
-    return roads.length;
-  }
-
-  private buildWaterwaysMesh(parent: THREE.Group, waterways: WaterwayOSM[]): void {
-    if (!waterways || waterways.length === 0) return;
-
-    for (const w of waterways) {
-      if (!w.points || w.points.length < 2) continue;
-
-      if (w.isPolygon && w.points.length >= 3) {
-        const shape = new THREE.Shape();
-        shape.moveTo(w.points[0].x, -w.points[0].z);
-        for (let i = 1; i < w.points.length; i++) {
-          shape.lineTo(w.points[i].x, -w.points[i].z);
-        }
-        shape.closePath();
-
-        const geo = new THREE.ShapeGeometry(shape);
-        geo.rotateX(-Math.PI / 2);
-        const mesh = new THREE.Mesh(geo, this.waterMaterial);
-        mesh.name = 'water';
-        mesh.position.y = -0.2;
-        parent.add(mesh);
-      } else {
-        for (let i = 0; i < w.points.length - 1; i++) {
-          const p1 = w.points[i];
-          const p2 = w.points[i + 1];
-          const dx = p2.x - p1.x;
-          const dz = p2.z - p1.z;
-          const len = Math.hypot(dx, dz);
-          if (len < 0.1) continue;
-
-          const angle = Math.atan2(dz, dx);
-          const width = w.width || 35;
-
-          const geo = new THREE.PlaneGeometry(len, width);
-          geo.rotateX(-Math.PI / 2);
-          geo.rotateY(-angle);
-          geo.translate((p1.x + p2.x) / 2, -0.1, (p1.z + p2.z) / 2);
-
-          const mesh = new THREE.Mesh(geo, this.waterMaterial);
-          mesh.name = 'water';
-          parent.add(mesh);
-        }
-      }
-    }
-  }
-
-  private buildParksMesh(parent: THREE.Group, greenAreas: GreenAreaOSM[]): void {
-    if (!greenAreas || greenAreas.length === 0) return;
-
-    const geos: THREE.BufferGeometry[][] = [[], [], []];
-
-    for (const park of greenAreas) {
-      if (!park.points || park.points.length < 3) continue;
-
-      const hash = SeededRNG.hashString(park.id || '');
-      const matIndex = hash % 3;
-
-      const shape = new THREE.Shape();
-      shape.moveTo(park.points[0].x, -park.points[0].z);
-      for (let i = 1; i < park.points.length; i++) {
-        shape.lineTo(park.points[i].x, -park.points[i].z);
-      }
-      shape.closePath();
-
-      const geo = new THREE.ShapeGeometry(shape);
-      geo.rotateX(-Math.PI / 2);
-      geo.translate(0, 0.05, 0);
-      geos[matIndex].push(geo);
-    }
-
-    for (let i = 0; i < 3; i++) {
-      if (geos[i].length > 0) {
-        const merged = this.mergeGeometries(geos[i]);
-        if (merged) {
-          const mesh = new THREE.Mesh(merged, this.parkMaterials[i]);
-          mesh.name = 'parks';
-          parent.add(mesh);
-        }
-      }
-    }
-  }
-
-  private buildInstancedTrees(parent: THREE.Group, trees: Array<{ x: number; y: number; z: number; scale: number }>): number {
-    if (!trees || trees.length === 0) return 0;
-
-    const count = trees.length;
-    const buckets: number[][] = [[], [], [], []];
-
-    for (let i = 0; i < count; i++) {
-      const t = trees[i];
-      const hash = SeededRNG.hashString(`${t.x.toFixed(2)},${t.z.toFixed(2)}`);
-      const bucketIdx = hash % 4;
-      buckets[bucketIdx].push(i);
-    }
-
-    const dummy = new THREE.Object3D();
-
-    for (let b = 0; b < 4; b++) {
-      const indices = buckets[b];
-      if (indices.length === 0) continue;
-
-      const template = this.treeMeshTemplates[b];
-      const instancedMesh = new THREE.InstancedMesh(template.geometry, template.material, indices.length);
-      instancedMesh.name = 'trees';
-
-      for (let j = 0; j < indices.length; j++) {
-        const t = trees[indices[j]];
-        const hash = SeededRNG.hashString(`${t.x.toFixed(2)},${t.z.toFixed(2)}`);
-        
-        dummy.position.set(t.x, t.y, t.z);
-        
-        const scaleMod = 0.8 + ((hash % 100) / 100) * 0.6; // 0.8 to 1.4
-        const finalScale = (t.scale || 1) * scaleMod;
-        
-        dummy.scale.set(finalScale, finalScale, finalScale);
-        dummy.rotation.set(0, ((hash % 360) * Math.PI) / 180, 0);
-        
-        dummy.updateMatrix();
-        instancedMesh.setMatrixAt(j, dummy.matrix);
-      }
-
-      instancedMesh.instanceMatrix.needsUpdate = true;
-      parent.add(instancedMesh);
-    }
-
-    return count;
-  }
-
-  private createTileDebugOutline(tile: TileManifestItem): THREE.LineSegments {
-    const { minX, maxX, minZ, maxZ } = tile.bounds;
-    const points = [
-      new THREE.Vector3(minX, 2, minZ), new THREE.Vector3(maxX, 2, minZ),
-      new THREE.Vector3(maxX, 2, minZ), new THREE.Vector3(maxX, 2, maxZ),
-      new THREE.Vector3(maxX, 2, maxZ), new THREE.Vector3(minX, 2, maxZ),
-      new THREE.Vector3(minX, 2, maxZ), new THREE.Vector3(minX, 2, minZ),
-    ];
-    const geo = new THREE.BufferGeometry().setFromPoints(points);
-    const mat = new THREE.LineBasicMaterial({ color: 0x00ffcc, linewidth: 2 });
-    return new THREE.LineSegments(geo, mat);
-  }
-
-  private mergeGeometries(geometries: THREE.BufferGeometry[]): THREE.BufferGeometry | null {
-    if (geometries.length === 0) return null;
-
-    let totalPositions = 0;
-    let totalIndex = 0;
-
-    for (const g of geometries) {
-      const pos = g.getAttribute('position');
-      if (pos) totalPositions += pos.array.length;
-      if (g.index) totalIndex += g.index.array.length;
-    }
-
-    const mergedPositions = new Float32Array(totalPositions);
-    const mergedIndices = totalIndex > 0 ? new Uint32Array(totalIndex) : null;
-
-    let posOffset = 0;
-    let indexOffset = 0;
-    let vertexOffset = 0;
-
-    for (const g of geometries) {
-      const pos = g.getAttribute('position');
-      if (pos) {
-        mergedPositions.set(pos.array, posOffset);
-        posOffset += pos.array.length;
-      }
-
-      if (g.index && mergedIndices) {
-        for (let i = 0; i < g.index.array.length; i++) {
-          mergedIndices[indexOffset + i] = g.index.array[i] + vertexOffset;
-        }
-        indexOffset += g.index.array.length;
-      }
-
-      if (pos) vertexOffset += pos.count;
-    }
-
-    const merged = new THREE.BufferGeometry();
-    merged.setAttribute('position', new THREE.BufferAttribute(mergedPositions, 3));
-    if (mergedIndices) merged.setIndex(new THREE.BufferAttribute(mergedIndices, 1));
-    merged.computeVertexNormals();
-
-    return merged;
-  }
-
-  private disposeGroup(group: THREE.Group): void {
-    group.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        (child as THREE.Mesh).geometry.dispose();
-      }
-    });
-  }
-
-  public getStats(): CityStreamingStats {
-    return this.stats;
-  }
-
-  public setDebugMode(enabled: boolean): void {
-    this.debugMode = enabled;
-  }
-
-  public setStableMode(enabled: boolean): void {
-    this.stableMode = enabled;
-  }
-
-  public getManifest(): TileManifest | null {
-    return this.manifest;
-  }
-
+  public getStats(): CityStreamingStats { return this.stats; }
+  public setDebugMode(enabled: boolean): void { this.debugMode = enabled; }
+  public setStableMode(enabled: boolean): void { this.stableMode = enabled; }
+  public getManifest(): TileManifest | null { return this.manifest; }
+
+  /**
+   * True data extent. The HLOD manifest computes this from the real tile bounds;
+   * the legacy fallback of +/-15,000 was wrong (actual data spans +/-20,000).
+   */
   public getSpatialExtent(): { minX: number; maxX: number; minZ: number; maxZ: number } {
-    if (this.manifest?.spatialExtent) {
-      return this.manifest.spatialExtent;
+    const fromHlod = this.hlod.getSpatialExtent();
+    if (fromHlod) return fromHlod;
+    if (this.manifest?.spatialExtent) return this.manifest.spatialExtent;
+
+    if (this.manifest?.tiles?.length) {
+      let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+      for (const t of this.manifest.tiles) {
+        if (t.bounds.minX < minX) minX = t.bounds.minX;
+        if (t.bounds.maxX > maxX) maxX = t.bounds.maxX;
+        if (t.bounds.minZ < minZ) minZ = t.bounds.minZ;
+        if (t.bounds.maxZ > maxZ) maxZ = t.bounds.maxZ;
+      }
+      return { minX, maxX, minZ, maxZ };
     }
-    return { minX: -15000, maxX: 15000, minZ: -15000, maxZ: 15000 };
+    return { minX: -20000, maxX: 20000, minZ: -20000, maxZ: 20000 };
   }
+
+  public getHLODStats() { return this.hlod.getStats(); }
+
+  public dispose(): void {
+    for (const w of this.workers) w.terminate();
+    this.workers = [];
+    for (const [id, c] of this.loadedTiles) this.retireTile(id, c);
+    this.hlod.dispose();
+    this.overlay.dispose();
+    for (const g of this.treeGeometries) g.dispose();
+    this.lampMastGeo.dispose();
+    this.lampHeadGeo.dispose();
+    this.lampMastMat.dispose();
+    this.lampHeadMat.dispose();
+    this.lampGlowGeo.dispose();
+    this.lampGlowMat.dispose();
+    this.lampPoolGeo.dispose();
+    this.lampPoolMat.dispose();
+    for (const m of this.treeMaterials) m.dispose();
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+
+function applyLayerVisibility(
+  group: THREE.Group,
+  v: { buildings: boolean; roads: boolean; parks: boolean; water: boolean },
+): void {
+  for (const child of group.children) {
+    switch (child.name) {
+      case 'buildings': child.visible = v.buildings; break;
+      case 'roads': child.visible = v.roads; break;
+      case 'parks': child.visible = v.parks; break;
+      case 'water': child.visible = v.water; break;
+      case 'trees': child.visible = v.parks; break; // trees ride with the parks layer
+      case 'streetlights': child.visible = v.roads; break;
+    }
+  }
+}
+
+function disposeGroup(group: THREE.Group): void {
+  group.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (mesh.isMesh) mesh.geometry.dispose();
+  });
+}
+
+/** Minimal position-only merge for the tree prototypes. */
+function mergePositionOnly(geos: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  let total = 0;
+  const nonIndexed = geos.map((g) => (g.index ? g.toNonIndexed() : g));
+  for (const g of nonIndexed) total += g.getAttribute('position').array.length;
+
+  const positions = new Float32Array(total);
+  let off = 0;
+  for (const g of nonIndexed) {
+    const arr = g.getAttribute('position').array as ArrayLike<number>;
+    positions.set(arr as unknown as Float32Array, off);
+    off += arr.length;
+  }
+  const merged = new THREE.BufferGeometry();
+  merged.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  merged.computeVertexNormals();
+  return merged;
 }

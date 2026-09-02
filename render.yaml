@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: lucknow-lens
+    runtime: docker
+    branch: main
+    healthCheckPath: /api/health
+    autoDeploy: true

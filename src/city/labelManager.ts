@@ -71,6 +71,8 @@ interface SpriteStyle {
   text: string;
   textColor: string;
   bgColor: string;
+  borderColor?: string;
+  badgeColor?: string;
   fontSize: number;
   bold: boolean;
   paddingH: number;
@@ -78,42 +80,65 @@ interface SpriteStyle {
 }
 
 function createTextSprite(style: SpriteStyle): THREE.Sprite {
-  const { text, textColor, bgColor, fontSize, bold, paddingH, paddingV } = style;
+  const { text, textColor, bgColor, borderColor, badgeColor, fontSize, bold, paddingH, paddingV } = style;
 
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d')!;
 
-  const fontStr = `${bold ? 'bold' : '500'} ${fontSize}px Inter, ui-sans-serif, sans-serif`;
+  const dpr = 2; // Crisp 2x backing store for ultra-sharp typography
+  const fontStr = `${bold ? '600' : '500'} ${fontSize}px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
   ctx.font = fontStr;
   const measured = ctx.measureText(text);
   const textW = measured.width;
 
-  canvas.width  = Math.ceil(textW + paddingH * 2);
-  canvas.height = Math.ceil(fontSize + paddingV * 2 + 2);
+  const badgeOffset = badgeColor ? 14 : 0;
+  const logicalW = Math.ceil(textW + paddingH * 2 + badgeOffset);
+  const logicalH = Math.ceil(fontSize + paddingV * 2 + 4);
 
-  // Re-apply font after resize
+  canvas.width = Math.ceil(logicalW * dpr);
+  canvas.height = Math.ceil(logicalH * dpr);
+
+  ctx.scale(dpr, dpr);
   ctx.font = fontStr;
   ctx.textBaseline = 'middle';
 
+  const r = Math.min(logicalH / 2, 7);
+
   // Pill background
-  const r = Math.min(canvas.height / 2, 10);
   ctx.fillStyle = bgColor;
   ctx.beginPath();
-  ctx.roundRect(0, 0, canvas.width, canvas.height, r);
+  ctx.roundRect(0.5, 0.5, logicalW - 1, logicalH - 1, r);
   ctx.fill();
 
+  // Subtle border
+  if (borderColor) {
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // Accent dot badge
+  if (badgeColor) {
+    ctx.fillStyle = badgeColor;
+    ctx.beginPath();
+    ctx.arc(paddingH + 4, logicalH / 2, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   // Text with drop shadow
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
-  ctx.shadowBlur = 6;
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
+  ctx.shadowBlur = 4;
   ctx.shadowOffsetY = 1;
   ctx.fillStyle = textColor;
-  ctx.fillText(text, paddingH, canvas.height / 2 + 1);
-  
-  // Reset shadow for next draw
+  ctx.fillText(text, paddingH + badgeOffset, logicalH / 2 + 0.5);
+
   ctx.shadowBlur = 0;
   ctx.shadowOffsetY = 0;
 
   const tex = new THREE.CanvasTexture(canvas);
+  tex.generateMipmaps = true;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
   tex.needsUpdate = true;
 
   // sizeAttenuation: false ensures scale is evaluated in clip/viewport space.
@@ -128,8 +153,8 @@ function createTextSprite(style: SpriteStyle): THREE.Sprite {
   const sprite = new THREE.Sprite(mat);
 
   // Store original canvas size so we can project scale correctly based on viewport
-  (sprite as any).__canvasW = canvas.width;
-  (sprite as any).__canvasH = canvas.height;
+  (sprite as any).__canvasW = logicalW;
+  (sprite as any).__canvasH = logicalH;
 
   return sprite;
 }
@@ -378,24 +403,64 @@ export class LabelManager {
   }
 
   private makePlaceSprite(p: Candidate, cfg: LODConfig): THREE.Sprite {
-    const highImp = p.importance >= 8;
+    const isLandmark = LANDMARK_NAMES.has(p.name.toLowerCase());
+    const highImp = isLandmark || p.importance >= 8;
     const midImp  = p.importance >= 6;
 
-    // Only top-tier landmarks get a filled pill. Everything else is quiet text on a
-    // near-transparent scrim, so the hierarchy is obvious at a glance.
-    const bgColor = this.isNight
-      ? (highImp ? 'rgba(255,210,140,0.92)' : midImp ? 'rgba(15,20,30,0.85)' : 'rgba(10,14,22,0.72)')
-      : (highImp ? 'rgba(186,104,36,0.95)'  : midImp ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.8)');
+    let bgColor: string;
+    let textColor: string;
+    let borderColor: string | undefined;
+    let badgeColor: string | undefined;
 
-    const textColor = this.isNight
-      ? (highImp ? '#0a0d14' : midImp ? '#f0f5fa' : '#d6dee8')
-      : (highImp ? '#ffffff' : midImp ? '#1e293b' : '#334155');
+    if (this.isNight) {
+      if (isLandmark) {
+        bgColor = 'rgba(245, 175, 75, 0.95)';
+        textColor = '#0f172a';
+        borderColor = 'rgba(255, 235, 180, 0.85)';
+        badgeColor = '#b45309';
+      } else if (highImp) {
+        bgColor = 'rgba(15, 23, 42, 0.88)';
+        textColor = '#f8fafc';
+        borderColor = 'rgba(255, 255, 255, 0.25)';
+        badgeColor = '#38bdf8';
+      } else {
+        bgColor = midImp ? 'rgba(15, 23, 42, 0.78)' : 'rgba(10, 14, 22, 0.70)';
+        textColor = midImp ? '#cbd5e1' : '#94a3b8';
+        borderColor = 'rgba(255, 255, 255, 0.12)';
+      }
+    } else {
+      if (isLandmark) {
+        bgColor = 'rgba(194, 95, 20, 0.96)';
+        textColor = '#ffffff';
+        borderColor = 'rgba(255, 255, 255, 0.4)';
+        badgeColor = '#fef08a';
+      } else if (highImp) {
+        bgColor = 'rgba(255, 255, 255, 0.94)';
+        textColor = '#0f172a';
+        borderColor = 'rgba(0, 0, 0, 0.16)';
+        badgeColor = '#0284c7';
+      } else {
+        bgColor = midImp ? 'rgba(255, 255, 255, 0.86)' : 'rgba(255, 255, 255, 0.75)';
+        textColor = midImp ? '#1e293b' : '#475569';
+        borderColor = 'rgba(0, 0, 0, 0.08)';
+      }
+    }
 
-    const fontSize = highImp ? 16 : midImp ? 13 : 11;
-    const bold     = highImp;
+    const fontSize = isLandmark ? 15 : highImp ? 13 : midImp ? 12 : 11;
+    const bold = highImp;
 
-    const sprite = createTextSprite({ text: p.name, textColor, bgColor, fontSize, bold, paddingH: 10, paddingV: 5 });
-    sprite.renderOrder = 999;
+    const sprite = createTextSprite({
+      text: p.name,
+      textColor,
+      bgColor,
+      borderColor,
+      badgeColor,
+      fontSize,
+      bold,
+      paddingH: isLandmark ? 11 : 9,
+      paddingV: isLandmark ? 6 : 4,
+    });
+    sprite.renderOrder = isLandmark ? 1000 : 999;
     return sprite;
   }
 
@@ -404,15 +469,29 @@ export class LabelManager {
 
     // Roads read as unobtrusive route markers, never as chips competing with places.
     const bgColor = this.isNight
-      ? 'rgba(15,20,30,0.55)'
-      : 'rgba(255,255,255,0.6)';
+      ? 'rgba(15, 23, 42, 0.65)'
+      : 'rgba(255, 255, 255, 0.72)';
 
     const textColor = this.isNight
-      ? (highImp ? '#b3d9ff' : '#90a4ba')
-      : (highImp ? '#1c425c' : '#3d5263');
-    const fontSize = highImp ? 13 : 11;
+      ? (highImp ? '#93c5fd' : '#94a3b8')
+      : (highImp ? '#0369a1' : '#475569');
 
-    const sprite = createTextSprite({ text: r.name, textColor, bgColor, fontSize, bold: highImp, paddingH: 8, paddingV: 3 });
+    const borderColor = this.isNight
+      ? 'rgba(148, 163, 184, 0.2)'
+      : 'rgba(0, 0, 0, 0.08)';
+
+    const fontSize = highImp ? 12 : 10;
+
+    const sprite = createTextSprite({
+      text: r.name,
+      textColor,
+      bgColor,
+      borderColor,
+      fontSize,
+      bold: highImp,
+      paddingH: 8,
+      paddingV: 3,
+    });
     sprite.renderOrder = 998;
     return sprite;
   }

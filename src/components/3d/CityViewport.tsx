@@ -8,7 +8,7 @@ import { CameraController } from '../../city/cameraController';
 import { AtmosphericSky } from '../../city/atmosphericSky';
 import { BuildingMaterialSystem, type SkylineStyle } from '../../city/buildingMaterial';
 import { LandmarkSystem } from '../../city/landmarks';
-import { LANDMARKS } from '../../city/landmarkRegistry';
+import { LANDMARKS, getLandmarkAt } from '../../city/landmarkRegistry';
 import { CINEMATIC_PRESETS } from '../../city/cameraPresets';
 import { LayerState } from '../features/LayerControl';
 import { findClickedPOI, findClickedBuilding } from '../../interactions/picking';
@@ -536,20 +536,45 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       if (raycaster.ray.intersectPlane(groundPlane, groundIntersect)) {
         const { x, z } = groundIntersect;
 
-        // Custom Registry of Landmarks for clicking
+        // 0. Exact Footprint Check for Registered 3D Landmarks
+        const registeredLm = getLandmarkAt(x, z);
+        if (registeredLm) {
+          const latLon = unproject(registeredLm.x, registeredLm.z);
+          onSelectEntityRef.current({
+            type: 'poi',
+            id: registeredLm.id,
+            name: registeredLm.name,
+            details: registeredLm,
+            latitude: latLon.lat,
+            longitude: latLon.lon,
+            x: registeredLm.x,
+            z: registeredLm.z
+          });
+          controls.flyTo(latLon.lat, latLon.lon, Math.max(320, registeredLm.radius * 3.6));
+          return;
+        }
+
+        // Custom Registry of Key Landmarks & Districts
         const customRegistry = [
           { id: 'custom-hazratganj', name: 'Hazratganj', category: 'Area', x: -382, z: 372, latitude: 26.8467, longitude: 80.9461, importance: 10 },
-          { id: 'custom-charbagh', name: 'Charbagh Railway Station', category: 'Railway', x: -1499.08, z: 1573.89, latitude: 26.8322, longitude: 80.9221, importance: 10 },
-          { id: 'custom-amausi', name: 'Amausi Airport', category: 'Airport', x: -9987.75, z: 9769.48, latitude: 26.7606, longitude: 80.8893, importance: 10 },
-          { id: 'custom-palassio', name: 'Phoenix Palassio', category: 'Shopping', x: 5433.29, z: 1427.02, latitude: 26.8015, longitude: 81.0028, importance: 10 },
-          { id: 'custom-sgpgi', name: 'SGPGI Hospital', category: 'Hospital', x: -315.22, z: 11420.92, latitude: 26.7538, longitude: 80.9392, importance: 10 },
-          { id: 'custom-university', name: 'Lucknow University', category: 'University', x: -3453.56, z: -6233.88, latitude: 26.8643, longitude: 80.9382, importance: 9 },
-          { id: 'custom-rumi', name: 'Rumi Darwaza', category: 'Landmark', x: -3700, z: -2500, latitude: 26.8694, longitude: 80.9115, importance: 10 },
-          { id: 'custom-gomti', name: 'Gomti River Viewpoint', category: 'Gomti', x: 0, z: 0, latitude: 26.8525, longitude: 80.9545, importance: 9 }
+          { id: 'custom-gomti', name: 'Gomti Riverfront Promenade', category: 'Gomti', x: 0, z: 0, latitude: 26.8525, longitude: 80.9545, importance: 9 },
+          ...LANDMARKS.map(lm => {
+            const ll = unproject(lm.x, lm.z);
+            return {
+              id: lm.id,
+              name: lm.name,
+              category: lm.archetype,
+              x: lm.x,
+              z: lm.z,
+              latitude: ll.lat,
+              longitude: ll.lon,
+              importance: lm.importance
+            };
+          })
         ];
 
-        // 1. Proximity POI Click Check
-        const clickedPOI = findClickedPOI(x, z, mapDataRef.current, customRegistry);
+        // 1. Proximity POI Click Check (45m radius)
+        const clickedPOI = findClickedPOI(x, z, mapDataRef.current, customRegistry, 45);
         if (clickedPOI) {
           const lm = clickedPOI.landmark;
           const lmX = ('x' in lm) ? lm.x : lm.position.x;

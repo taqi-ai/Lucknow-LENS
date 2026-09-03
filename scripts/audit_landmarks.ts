@@ -46,10 +46,11 @@ const PATTERNS: Record<string, RegExp> = {
   ekana: /\bekana\b[^,]*stadium|stadium[^,]*\bekana\b/i,
   kdsingh: /k\.?\s?d\.?\s?singh/i,
   'chowk-stadium': /chowk stadium/i,
+  'rumi-darwaza': /rumi\s*gate|rumi\s*darwaza|roomee\s*gate/i,
   'clock-tower': /ghanta ghar|hussainabad clock|clock tower/i,
   charbagh: /charbagh railway/i,
   'vidhan-sabha': /vidhan\s?sabha|vidhan\s?bhawan|vidhansabha|legislative assembly/i,
-  'ambedkar-memorial': /ambedkar memorial/i,
+  'ambedkar-memorial': /samajik p[ar]+ivartan sthal/i,
   airport: /chaudhary charan singh international/i,
   'phoenix-palassio': /phoenix palassio/i,
   // lucknow-university: the sole Overture "Lucknow University" record is 6 km

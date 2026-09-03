@@ -55,6 +55,34 @@ export const CINEMATIC_PRESETS: Record<string, CinematicPreset> = {
     azimuth: 2.4, pitch: 0.34, distance: 900,
   },
 
+  /** Rumi Darwaza close architectural framing. */
+  rumi: {
+    label: 'Rumi Darwaza',
+    landmarkId: 'rumi-darwaza',
+    azimuth: 1.57, pitch: 0.25, distance: 320,
+  },
+
+  /** Hussainabad Clock Tower hero perspective. */
+  clocktower: {
+    label: 'Clock Tower',
+    landmarkId: 'clock-tower',
+    azimuth: 0.8, pitch: 0.28, distance: 380,
+  },
+
+  /** Vidhan Sabha (Legislative Assembly). */
+  vidhansabha: {
+    label: 'Vidhan Sabha',
+    landmarkId: 'vidhan-sabha',
+    azimuth: 0.1, pitch: 0.32, distance: 680,
+  },
+
+  /** Ambedkar Memorial Park complex, Gomti Nagar. */
+  ambedkar: {
+    label: 'Ambedkar Memorial',
+    landmarkId: 'ambedkar-memorial',
+    azimuth: 1.75, pitch: 0.36, distance: 950,
+  },
+
   /** Railway district. */
   charbagh: {
     label: 'Charbagh',

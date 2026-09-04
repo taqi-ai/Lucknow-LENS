@@ -92,20 +92,17 @@ src/components/3d/CityViewport.tsx   — mounts one CityRenderer + one
         │                              zoom, rails ≤12,000m, sleepers
         │                              ≤1,800m), Gomti, parks, bridges
         │
-        ├─ src/city/landmarks.ts,
-        │  src/city/namedStructures.ts,
+        ├─ src/city/namedStructures.ts,
         │  src/city/bridges.ts,
-        │  src/city/metroStations.ts — dedicated geometry for the ~14
-        │                              recognisable landmarks and Lucknow's
+        │  src/city/metroStations.ts — dedicated geometry for Lucknow's
         │                              named flyovers/bridges (Gol Market,
         │                              Polytechnic, Lohia Path, Butler,
         │                              Chandganj, Faizabad Road, Matiyari,
         │                              Purania, Ring Road, Lalabagh/Daliganj/
         │                              Nirala Nagar ROBs, Ahimamau, Aishbagh,
-        │                              Mohan Road, Vibhuti Khand…). Bulk
-        │                              Overture extrusions inside these
-        │                              footprints are suppressed upstream so
-        │                              there's no duplicate geometry.
+        │                              Mohan Road, Vibhuti Khand…). All buildings
+        │                              and monuments are rendered directly from
+        │                              authentic Overture data.
         │
         ├─ src/city/labelManager.ts  — one label source of truth: screen-
         │                              space NDC occupancy grid for collision

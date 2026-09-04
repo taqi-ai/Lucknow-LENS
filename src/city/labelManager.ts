@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { loadJSON } from '../data/resourceCache';
 import { LODLevel } from '../types';
-import { LANDMARKS } from './landmarkRegistry';
 
 // ─── Data shapes ──────────────────────────────────────────────────────────────
 
@@ -61,9 +60,6 @@ const LOD_CONFIG: Record<LODLevel, LODConfig> = {
   // STREET — what is actually within walking distance
   3: { placeMinImp: 5, placeMax: 12, roadMinImp: 6,  roadMax: 8,  visRadius: 900,   baseScale: 1.0, labelHeight: 30  },
 };
-
-/** Curated landmarks always outrank generic place records of the same importance. */
-const LANDMARK_NAMES = new Set(LANDMARKS.map((l) => l.name.toLowerCase()));
 
 // ─── Canvas sprite factory ────────────────────────────────────────────────────
 
@@ -202,26 +198,7 @@ export class LabelManager {
         loadJSON<RoadLabel[]>('/overture_tiles_full/road_labels.json'),
       ]);
 
-      // The registry is the authority on where a landmark actually sits — the
-      // raw Overture record it started from can be stale (Clock Tower's
-      // "Ghanta Ghar" record is 90 m from the curated position) or simply
-      // absent (Bara/Chota Imambara, University of Lucknow have none at all,
-      // so without this they'd render with no label whatsoever). Drop any
-      // raw place that shares a landmark's name and replace it with a label
-      // pinned to the registry's own x/z, so the label always sits on the
-      // building that's actually drawn there.
-      const landmarkNameSet = new Set(LANDMARKS.map((l) => l.name.toLowerCase()));
-      const landmarkLabels: PlaceLabel[] = LANDMARKS.map((l) => ({
-        id: `landmark:${l.id}`,
-        name: l.name,
-        x: l.x,
-        z: l.z,
-        type: 'landmark',
-        importance: l.importance,
-      }));
-      const filteredPlaces = places.filter((p) => !landmarkNameSet.has(p.name.toLowerCase()));
-
-      this.allPlaces = [...landmarkLabels, ...filteredPlaces].sort((a, b) => b.importance - a.importance);
+      this.allPlaces = places.slice().sort((a, b) => b.importance - a.importance);
       this.allRoads = roads;
       this.loaded = true;
       console.log(`[LabelManager] ${this.allPlaces.length} places, ${this.allRoads.length} roads loaded.`);
@@ -322,11 +299,11 @@ export class LabelManager {
       candidates.push({ ...r, kind: 'road' });
     }
 
-    // Rank: curated landmarks first, then importance, then proximity. Without the
+    // Rank: landmark place types first, then importance, then proximity. Without the
     // proximity tiebreak the same distant label wins every frame and nearby context
     // never gets a slot.
     const rank = (c: Candidate): number => {
-      const isLandmark = LANDMARK_NAMES.has(c.name.toLowerCase()) ? 40 : 0;
+      const isLandmark = (c.kind === 'place' && (c as PlaceLabel).type === 'landmark') ? 20 : 0;
       const dist = Math.hypot(c.x - camX, c.z - camZ);
       return isLandmark + c.importance * 3 - (dist / cfg.visRadius) * 4;
     };
@@ -403,7 +380,10 @@ export class LabelManager {
   }
 
   private makePlaceSprite(p: Candidate, cfg: LODConfig): THREE.Sprite {
-    const isLandmark = LANDMARK_NAMES.has(p.name.toLowerCase());
+    const isLandmark = (p as PlaceLabel).type === 'landmark' || 
+                       (p as PlaceLabel).type === 'monument' || 
+                       (p as PlaceLabel).type === 'landmark_and_historical_building' ||
+                       p.importance >= 9;
     const highImp = isLandmark || p.importance >= 8;
     const midImp  = p.importance >= 6;
 

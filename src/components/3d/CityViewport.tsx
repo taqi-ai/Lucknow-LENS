@@ -7,8 +7,6 @@ import { LabelManager } from '../../city/labelManager';
 import { CameraController } from '../../city/cameraController';
 import { AtmosphericSky } from '../../city/atmosphericSky';
 import { BuildingMaterialSystem, type SkylineStyle } from '../../city/buildingMaterial';
-import { LandmarkSystem } from '../../city/landmarks';
-import { LANDMARKS, getLandmarkAt } from '../../city/landmarkRegistry';
 import { CINEMATIC_PRESETS } from '../../city/cameraPresets';
 import { LayerState } from '../features/LayerControl';
 import { findClickedPOI, findClickedBuilding } from '../../interactions/picking';
@@ -81,7 +79,6 @@ export const CityViewport: React.FC<CityViewportProps> = ({
   const labelManagerRef = useRef<LabelManager | null>(null);
   const skyRef = useRef<AtmosphericSky | null>(null);
   const materialsRef = useRef<BuildingMaterialSystem | null>(null);
-  const landmarksRef = useRef<LandmarkSystem | null>(null);
   
   const flightsGroupRef = useRef<THREE.Group | null>(null);
   const highlightRingRef = useRef<THREE.Mesh | null>(null);
@@ -117,11 +114,6 @@ export const CityViewport: React.FC<CityViewportProps> = ({
 
     const streamer = new TileStreamer(cityRenderer.scene, materials);
     streamerRef.current = streamer;
-
-    // Dedicated geometry for ~14 recognisable Lucknow landmarks. Bulk Overture
-    // extrusions inside their footprints are suppressed in the worker and baker.
-    const landmarks = new LandmarkSystem(cityRenderer.scene);
-    landmarksRef.current = landmarks;
 
     // Initialize label manager and load label data
     const labelManager = new LabelManager(cityRenderer.scene);
@@ -213,7 +205,6 @@ export const CityViewport: React.FC<CityViewportProps> = ({
 
       // Update TileStreamer with current camera position
       streamer.update(cityRenderer.camera);
-      landmarks.update(cityRenderer.camera);
 
       // Update label manager — pass current LOD from streamer stats
       const streamingStats = streamer.getStats();
@@ -312,7 +303,6 @@ export const CityViewport: React.FC<CityViewportProps> = ({
         setShot(s: { t: [number, number]; az: number; pi: number; d: number; night: boolean }) {
           cityRenderer.setNightMode(s.night);
           streamer.setNightMode(s.night);
-          landmarks.setNightMode(s.night);
           sky.setNightMode(s.night);
           labelManager.setNightMode(s.night);
           controls.transitionTo(new THREE.Vector3(s.t[0], 0, s.t[1]), s.az, s.pi, s.d, 10);
@@ -536,65 +526,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       if (raycaster.ray.intersectPlane(groundPlane, groundIntersect)) {
         const { x, z } = groundIntersect;
 
-        // 0. Exact Footprint Check for Registered 3D Landmarks
-        const registeredLm = getLandmarkAt(x, z);
-        if (registeredLm) {
-          const latLon = unproject(registeredLm.x, registeredLm.z);
-          onSelectEntityRef.current({
-            type: 'poi',
-            id: registeredLm.id,
-            name: registeredLm.name,
-            details: registeredLm,
-            latitude: latLon.lat,
-            longitude: latLon.lon,
-            x: registeredLm.x,
-            z: registeredLm.z
-          });
-          controls.flyTo(latLon.lat, latLon.lon, Math.max(320, registeredLm.radius * 3.6));
-          return;
-        }
-
-        // Custom Registry of Key Landmarks & Districts
-        const customRegistry = [
-          { id: 'custom-hazratganj', name: 'Hazratganj', category: 'Area', x: -382, z: 372, latitude: 26.8467, longitude: 80.9461, importance: 10 },
-          { id: 'custom-gomti', name: 'Gomti Riverfront Promenade', category: 'Gomti', x: 0, z: 0, latitude: 26.8525, longitude: 80.9545, importance: 9 },
-          ...LANDMARKS.map(lm => {
-            const ll = unproject(lm.x, lm.z);
-            return {
-              id: lm.id,
-              name: lm.name,
-              category: lm.archetype,
-              x: lm.x,
-              z: lm.z,
-              latitude: ll.lat,
-              longitude: ll.lon,
-              importance: lm.importance
-            };
-          })
-        ];
-
-        // 1. Proximity POI Click Check (45m radius)
-        const clickedPOI = findClickedPOI(x, z, mapDataRef.current, customRegistry, 45);
-        if (clickedPOI) {
-          const lm = clickedPOI.landmark;
-          const lmX = ('x' in lm) ? lm.x : lm.position.x;
-          const lmZ = ('z' in lm) ? lm.z : lm.position.z;
-          const latLon = unproject(lmX, lmZ);
-          onSelectEntityRef.current({
-            type: 'poi',
-            id: lm.id,
-            name: lm.name,
-            details: lm,
-            latitude: latLon.lat,
-            longitude: latLon.lon,
-            x: lmX,
-            z: lmZ
-          });
-          controls.flyTo(latLon.lat, latLon.lon, 400);
-          return;
-        }
-
-        // 2. Point-in-polygon building check
+        // 1. Point-in-polygon building check (prioritizes real Overture extruded buildings)
         const clickedBldg = findClickedBuilding(x, z, mapDataRef.current, streamer);
         if (clickedBldg) {
           let sumX = 0, sumZ = 0;
@@ -619,6 +551,27 @@ export const CityViewport: React.FC<CityViewportProps> = ({
             z: cz
           });
           controls.flyTo(latLon.lat, latLon.lon, 300);
+          return;
+        }
+
+        // 2. Proximity POI Click Check (45m radius) from Overture places
+        const clickedPOI = findClickedPOI(x, z, mapDataRef.current, [], 45);
+        if (clickedPOI) {
+          const lm = clickedPOI.landmark;
+          const lmX = ('x' in lm) ? lm.x : lm.position.x;
+          const lmZ = ('z' in lm) ? lm.z : lm.position.z;
+          const latLon = unproject(lmX, lmZ);
+          onSelectEntityRef.current({
+            type: 'poi',
+            id: lm.id,
+            name: lm.name,
+            details: lm,
+            latitude: latLon.lat,
+            longitude: latLon.lon,
+            x: lmX,
+            z: lmZ
+          });
+          controls.flyTo(latLon.lat, latLon.lon, 400);
           return;
         }
       }
@@ -647,7 +600,6 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       labelManager.dispose();
       sky.dispose();
       streamer.dispose();
-      landmarks.dispose();
       materials.dispose();
       cityRenderer.dispose();
       if (container.contains(cityRenderer.renderer.domElement)) {
@@ -663,9 +615,6 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     }
     if (streamerRef.current) {
       streamerRef.current.setNightMode(nightMode);
-    }
-    if (landmarksRef.current) {
-      landmarksRef.current.setNightMode(nightMode);
     }
     if (labelManagerRef.current) {
       labelManagerRef.current.setNightMode(nightMode);
@@ -725,20 +674,12 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       pPitch = 0.2; // very low horizon look
       pDistance = 200;
     } else if (CINEMATIC_PRESETS[cameraSignal as keyof typeof CINEMATIC_PRESETS]) {
-      // Cinematic framings. These are camera setups over the same real city, not
-      // separate scenes — each one is anchored to a real landmark position.
+      // Cinematic framings anchored to real Lucknow locations.
       const preset = CINEMATIC_PRESETS[cameraSignal as keyof typeof CINEMATIC_PRESETS];
-      const anchor = preset.landmarkId
-        ? LANDMARKS.find((l) => l.id === preset.landmarkId)
-        : undefined;
-      const tx = anchor ? anchor.x : (preset.x ?? centerX);
-      const tz = anchor ? anchor.z : (preset.z ?? centerZ);
-      pTarget.set(tx, 0, tz);
+      pTarget.set(preset.x, 0, preset.z);
       pAzimuth = preset.azimuth;
       pPitch = preset.pitch;
-      // Frame landmarks against their own footprint so big and small subjects
-      // both fill a comparable share of the viewport.
-      pDistance = anchor ? Math.max(preset.distance, anchor.radius * 5.2) : preset.distance;
+      pDistance = preset.distance;
     } else if (cameraSignal === 'top') {
       pTarget.set(centerX, 0, centerZ);
       pAzimuth = 0;

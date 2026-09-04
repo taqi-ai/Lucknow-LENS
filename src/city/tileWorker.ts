@@ -14,7 +14,6 @@
 
 import { buildBuildings, triangulate, type BuildingInput } from './buildingGeometry';
 import { appendRibbon, buildElevationProfiles, classifyRoad, ROAD_HALF_WIDTH, type Pt } from './ribbon';
-import { isInsideLandmark } from './landmarkRegistry';
 
 export interface TileWorkerRequest {
   id: string;
@@ -229,9 +228,7 @@ self.onmessage = async (e: MessageEvent<TileWorkerRequest>) => {
     const parkList: AreaIn[] = data.lod2?.greenAreas || data.lod1?.greenAreas || [];
     const treeList: Array<{ x: number; y: number; z: number; scale: number }> = data.lod2?.trees || [];
 
-    // Bulk extrusions inside a landmark footprint are dropped so the dedicated
-    // landmark geometry is not pierced by generic boxes.
-    const built = buildBuildings(bldgList, originX, originZ, isInsideLandmark);
+    const built = buildBuildings(bldgList, originX, originZ);
     const ids = bldgList.map((b) => b.id);
 
     const roads = buildRoadRibbons(roadList, originX, originZ);

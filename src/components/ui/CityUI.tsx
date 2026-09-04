@@ -239,10 +239,10 @@ export const CityUI: React.FC<CityUIProps> = ({
             <span>MAP ONLY</span>
           </button>
 
-          {/* Landmark Camera Fly-To Selector */}
+          {/* Camera Fly-To Location Selector */}
           <div className="relative flex items-center">
             <select
-              aria-label="Fly to Landmark"
+              aria-label="Fly to Location"
               onChange={(e) => {
                 if (e.target.value) {
                   onCameraSignal(e.target.value as CameraPreset);
@@ -251,9 +251,9 @@ export const CityUI: React.FC<CityUIProps> = ({
               }}
               defaultValue=""
               className="px-2.5 py-1.5 bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-300 hover:text-amber-200 text-xs font-bold rounded-xl transition-all border border-amber-500/40 focus:outline-none focus:ring-1 focus:ring-amber-400 cursor-pointer shadow-lg shadow-amber-500/10"
-              title="Fly camera to iconic Lucknow landmark"
+              title="Fly camera to key Lucknow location or perspective"
             >
-              <option value="" disabled className="bg-slate-900 text-slate-400">FLY TO MONUMENT ▾</option>
+              <option value="" disabled className="bg-slate-900 text-slate-400">FLY TO LOCATION ▾</option>
               <option value="rumi" className="bg-slate-900 text-amber-300">🏛️ Rumi Darwaza</option>
               <option value="oldlucknow" className="bg-slate-900 text-amber-300">🕌 Bara Imambara & Asafi</option>
               <option value="clocktower" className="bg-slate-900 text-amber-300">🕰️ Hussainabad Clock Tower</option>

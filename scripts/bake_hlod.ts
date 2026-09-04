@@ -42,7 +42,6 @@
 import fs from 'fs';
 import path from 'path';
 import * as THREE from 'three';
-import { isInsideLandmark } from '../src/city/landmarkRegistry';
 import { buildOverlay, ROAD_CLASS_ORDER } from '../src/city/overlayGeometry';
 
 const TILES_DIR = path.join(process.cwd(), 'public/overture_tiles_full');
@@ -211,10 +210,6 @@ function emitBuilding(b: Bldg): void {
 
   const area = Math.abs(signedArea(ring));
   if (area < 8) return; // sub-shed noise, invisible at every scale we render
-
-  // Landmarks get dedicated geometry (src/city/landmarks.ts); drop the generic
-  // extrusions that would otherwise poke through them.
-  if (isInsideLandmark(cx, cz)) return;
 
   const st = getSuperTile(cx, cz);
   st.buildings++;

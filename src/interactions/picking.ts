@@ -15,12 +15,11 @@ export function isPointInPolygon(x: number, z: number, polygon: { x: number; z: 
   return inside;
 }
 
-// Find a landmark POI near clicked x, z
 export function findClickedPOI(
   x: number, 
   z: number, 
   mapData: OSMMapData, 
-  customLandmarks: SearchResult[],
+  customLandmarks: SearchResult[] = [],
   threshold = 30
 ): { landmark: LandmarkOSM | SearchResult; dist: number } | null {
   let closest: LandmarkOSM | SearchResult | null = null;

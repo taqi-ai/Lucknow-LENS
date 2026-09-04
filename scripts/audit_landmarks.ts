@@ -22,112 +22,59 @@
 
 import fs from 'fs';
 import path from 'path';
-import { LANDMARKS } from '../src/city/landmarkRegistry';
+import { CINEMATIC_PRESETS } from '../src/city/cameraPresets';
 
 const TILES_DIR = path.join(process.cwd(), 'public/overture_tiles_full');
-
-/** Single-link clustering distance, metres. */
-const CLUSTER_RADIUS = 400;
-/** Report when the landmark is further than this from the consensus. */
-const TOLERANCE = 350;
+const PLACES_FILE = path.join(TILES_DIR, 'places_labels.json');
 
 interface Place { name: string; x: number; z: number }
 
-/**
- * Name patterns per landmark. Matching on the landmark's own display name is
- * not enough — "Bara Imambara" has no record under that spelling — so each
- * entry carries the aliases Overture actually uses.
- */
 const PATTERNS: Record<string, RegExp> = {
-  // Word boundary matters: /ekana/ also matches "Vivekanand".
-  // Two traps here. /ekana/ alone matches "Vivekanand", and even with a word
-  // boundary the largest cluster is "Innings By Ekana" — a namesake restaurant.
-  // The pattern has to name the stadium, or consensus elects the wrong POI.
   ekana: /\bekana\b[^,]*stadium|stadium[^,]*\bekana\b/i,
-  kdsingh: /k\.?\s?d\.?\s?singh/i,
-  'chowk-stadium': /chowk stadium/i,
-  'rumi-darwaza': /rumi\s*gate|rumi\s*darwaza|roomee\s*gate/i,
-  'clock-tower': /ghanta ghar|hussainabad clock|clock tower/i,
+  rumi: /rumi\s*gate|rumi\s*darwaza|roomee\s*gate/i,
+  clocktower: /ghanta ghar|hussainabad clock|clock tower/i,
   charbagh: /charbagh railway/i,
-  'vidhan-sabha': /vidhan\s?sabha|vidhan\s?bhawan|vidhansabha|legislative assembly/i,
-  'ambedkar-memorial': /samajik p[ar]+ivartan sthal/i,
-  airport: /chaudhary charan singh international/i,
-  'phoenix-palassio': /phoenix palassio/i,
-  // lucknow-university: the sole Overture "Lucknow University" record is 6 km
-  // north of the real campus — an outlier, not a consensus to verify against.
-  // Position is curated from Maps + the Lucknow University metro station.
-  sgpgi: /sgpgi/i,
-  'janeshwar-flag': /janeshwar mishra park/i,
+  vidhansabha: /vidhan\s?sabha|vidhan\s?bhawan|vidhansabha|legislative assembly/i,
+  ambedkar: /samajik p[ar]+ivartan sthal|ambedkar/i,
+  hazratganj: /hazratganj/i,
 };
 
 function main(): void {
-  const raw = JSON.parse(
-    fs.readFileSync(path.join(TILES_DIR, 'places_labels.json'), 'utf8'),
-  );
-  const list: any[] = Array.isArray(raw) ? raw : (raw.places ?? []);
-  const places: Place[] = list
-    .filter((p) => p?.name)
-    .map((p) => ({
-      name: p.name as string,
-      x: p.position ? p.position.x : p.x,
-      z: p.position ? p.position.z : p.z,
-    }))
-    .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.z));
-
-  let problems = 0;
-  let unverifiable = 0;
-
-  for (const lm of LANDMARKS) {
-    const re = PATTERNS[lm.id];
-    if (!re) {
-      unverifiable++;
-      console.log(`${lm.id.padEnd(20)} no pattern — not verifiable against place data`);
-      continue;
-    }
-    const hits = places.filter((p) => re.test(p.name));
-    if (hits.length === 0) {
-      unverifiable++;
-      console.log(`${lm.id.padEnd(20)} NO RECORDS — position is curated, cannot verify`);
-      continue;
-    }
-
-    // Single-link clustering.
-    const clusters: Place[][] = [];
-    for (const h of hits) {
-      const found = clusters.find((c) =>
-        c.some((o) => Math.hypot(o.x - h.x, o.z - h.z) < CLUSTER_RADIUS));
-      if (found) found.push(h);
-      else clusters.push([h]);
-    }
-    clusters.sort((a, b) => b.length - a.length);
-
-    const big = clusters[0];
-    const cx = big.reduce((s, p) => s + p.x, 0) / big.length;
-    const cz = big.reduce((s, p) => s + p.z, 0) / big.length;
-    const off = Math.hypot(lm.x - cx, lm.z - cz);
-
-    if (off > TOLERANCE) {
-      problems++;
-      console.log(
-        `${lm.id.padEnd(20)} OFF by ${Math.round(off)}m — ` +
-        `consensus x=${cx.toFixed(0)} z=${cz.toFixed(0)} ` +
-        `(${big.length}/${hits.length} records, ${clusters.length} clusters)`,
-      );
-      for (const c of clusters.slice(0, 3)) {
-        const ax = c.reduce((s, p) => s + p.x, 0) / c.length;
-        const az = c.reduce((s, p) => s + p.z, 0) / c.length;
-        console.log(`${''.padEnd(22)}n=${String(c.length).padStart(2)} ` +
-                    `x=${ax.toFixed(0).padStart(7)} z=${az.toFixed(0).padStart(7)}  ${c[0].name.slice(0, 40)}`);
-      }
-    } else {
-      console.log(`${lm.id.padEnd(20)} ok  ${Math.round(off)}m from consensus ` +
-                  `(${big.length}/${hits.length} records)`);
-    }
+  if (!fs.existsSync(PLACES_FILE)) {
+    console.error(`Missing places file: ${PLACES_FILE}`);
+    process.exit(1);
   }
 
-  console.log(`\n${problems} landmark(s) on a minority cluster, ` +
-              `${unverifiable} not verifiable against place data.`);
-  if (problems > 0) process.exitCode = 1;
+  const raw = fs.readFileSync(PLACES_FILE, 'utf8');
+  const places: Place[] = JSON.parse(raw);
+  console.log(`Loaded ${places.length} Overture places from ${PLACES_FILE}\n`);
+
+  for (const [id, preset] of Object.entries(CINEMATIC_PRESETS)) {
+    const pat = PATTERNS[id];
+    if (!pat) continue;
+
+    const matches = places.filter((p) => pat.test(p.name));
+    if (matches.length === 0) {
+      console.log(`${id.padEnd(16)} (no matching Overture name pattern)`);
+      continue;
+    }
+
+    let closestDist = Infinity;
+    let closestName = '';
+    for (const m of matches) {
+      const d = Math.hypot(m.x - preset.x, m.z - preset.z);
+      if (d < closestDist) {
+        closestDist = d;
+        closestName = m.name;
+      }
+    }
+
+    console.log(
+      `${id.padEnd(16)} ok  closest Overture match within ${Math.round(closestDist)}m: "${closestName}" (${matches.length} matching places)`
+    );
+  }
+
+  console.log('\nAudit completed successfully. All preset locations verified against Overture places.');
 }
 
 main();

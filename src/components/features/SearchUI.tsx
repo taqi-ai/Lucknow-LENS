@@ -6,6 +6,7 @@ import { Search, MapPin, Hospital, Utensils, Hotel, ShoppingBag, Landmark, Navig
 interface SearchUIProps {
   mapData: OSMMapData;
   onSelectResult: (result: SearchResult) => void;
+  onSetDestinationWaypoint?: (dest: { x: number; z: number; name: string }) => void;
 }
 
 const getCategoryIcon = (category: string) => {
@@ -15,14 +16,14 @@ const getCategoryIcon = (category: string) => {
   if (cat.includes('hotel') || cat.includes('lodging') || cat.includes('resort')) return <Hotel className="w-4 h-4 text-indigo-400" />;
   if (cat.includes('shopping') || cat.includes('mall') || cat.includes('store') || cat.includes('retail')) return <ShoppingBag className="w-4 h-4 text-amber-400" />;
   if (cat.includes('landmark') || cat.includes('historic') || cat.includes('monument') || cat.includes('museum')) return <Landmark className="w-4 h-4 text-yellow-400" />;
-  if (cat.includes('station') || cat.includes('bus') || cat.includes('railway') || cat.includes('train')) return <Navigation className="w-4 h-4 text-sky-400" rotate={45} />;
+  if (cat.includes('station') || cat.includes('bus') || cat.includes('railway') || cat.includes('train')) return <Navigation className="w-4 h-4 text-sky-400" />;
   if (cat.includes('airport') || cat.includes('flight')) return <Plane className="w-4 h-4 text-cyan-400" />;
   if (cat.includes('park') || cat.includes('green') || cat.includes('garden') || cat.includes('forest')) return <TreePine className="w-4 h-4 text-green-400" />;
   if (cat.includes('government') || cat.includes('political') || cat.includes('office') || cat.includes('university') || cat.includes('school')) return <Building2 className="w-4 h-4 text-rose-400" />;
   return <MapPin className="w-4 h-4 text-slate-400" />;
 };
 
-export const SearchUI: React.FC<SearchUIProps> = ({ mapData, onSelectResult }) => {
+export const SearchUI: React.FC<SearchUIProps> = ({ mapData, onSelectResult, onSetDestinationWaypoint }) => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -76,7 +77,7 @@ export const SearchUI: React.FC<SearchUIProps> = ({ mapData, onSelectResult }) =
         <Search className="w-4 h-4 text-slate-400 ml-1 flex-shrink-0" />
         <input
           type="text"
-          placeholder="Search Lucknow..."
+          placeholder="Search Lucknow landmarks, roads, places..."
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -100,28 +101,48 @@ export const SearchUI: React.FC<SearchUIProps> = ({ mapData, onSelectResult }) =
         <div className="absolute top-[105%] left-0 w-full bg-slate-900/95 border border-slate-700/60 backdrop-blur-2xl rounded-2xl shadow-3xl overflow-hidden mt-1 max-h-[300px] overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
           <div className="p-1.5 space-y-0.5">
             {results.map((result) => (
-              <button
+              <div
                 key={result.id}
-                onClick={() => handleSelect(result)}
-                className="w-full text-left flex items-start gap-3 p-2.5 rounded-xl hover:bg-slate-800/80 transition-all duration-200 group"
+                className="w-full flex items-center justify-between p-2 rounded-xl hover:bg-slate-800/80 transition-all duration-200 group"
               >
-                <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0 group-hover:bg-slate-700 transition-colors">
-                  {getCategoryIcon(result.category)}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h4 className="text-xs font-bold text-white group-hover:text-amber-300 transition-colors truncate">
-                    {result.name}
-                  </h4>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider bg-slate-800/50 px-1.5 py-0.5 rounded border border-slate-700/30">
-                      {result.category}
-                    </span>
-                    <span className="text-[10px] text-slate-400 truncate">
-                      Lat {result.latitude.toFixed(4)}° • Lon {result.longitude.toFixed(4)}°
-                    </span>
+                <button
+                  onClick={() => handleSelect(result)}
+                  className="flex items-start gap-3 min-w-0 flex-1 text-left"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0 group-hover:bg-slate-700 transition-colors">
+                    {getCategoryIcon(result.category)}
                   </div>
-                </div>
-              </button>
+                  <div className="min-w-0 flex-1">
+                    <h4 className="text-xs font-bold text-white group-hover:text-amber-300 transition-colors truncate">
+                      {result.name}
+                    </h4>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider bg-slate-800/50 px-1.5 py-0.5 rounded border border-slate-700/30">
+                        {result.category}
+                      </span>
+                      <span className="text-[10px] text-slate-400 truncate">
+                        Lat {result.latitude.toFixed(4)}° • Lon {result.longitude.toFixed(4)}°
+                      </span>
+                    </div>
+                  </div>
+                </button>
+
+                {onSetDestinationWaypoint && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSetDestinationWaypoint({ x: result.x, z: result.z, name: result.name });
+                      setShowDropdown(false);
+                    }}
+                    title="Set as GTA GPS Waypoint"
+                    className="p-2 ml-1.5 hover:bg-cyan-500/20 text-slate-400 hover:text-cyan-400 rounded-xl transition-all flex items-center gap-1 text-[10px] font-bold"
+                  >
+                    <Navigation className="w-3.5 h-3.5 fill-current" />
+                    <span className="hidden sm:inline">GPS</span>
+                  </button>
+                )}
+              </div>
             ))}
           </div>
         </div>

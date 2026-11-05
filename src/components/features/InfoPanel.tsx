@@ -1,13 +1,14 @@
 import React from 'react';
 import { SelectedEntity } from '../../types';
-import { Building2, MapPin, Plane, X, Shield, Landmark, Ruler, Layers, Eye } from 'lucide-react';
+import { Building2, MapPin, Plane, X, Shield, Landmark, Ruler, Layers, Navigation } from 'lucide-react';
 
 interface InfoPanelProps {
   entity: SelectedEntity | null;
   onClose: () => void;
+  onSetDestinationWaypoint?: (dest: { x: number; z: number; name: string }) => void;
 }
 
-export const InfoPanel: React.FC<InfoPanelProps> = ({ entity, onClose }) => {
+export const InfoPanel: React.FC<InfoPanelProps> = ({ entity, onClose, onSetDestinationWaypoint }) => {
   if (!entity) return null;
 
   return (
@@ -179,6 +180,17 @@ export const InfoPanel: React.FC<InfoPanelProps> = ({ entity, onClose }) => {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Action Button: Set GTA GPS Waypoint */}
+        {onSetDestinationWaypoint && entity.type !== 'aircraft' && (
+          <button
+            onClick={() => onSetDestinationWaypoint({ x: entity.x, z: entity.z, name: entity.name })}
+            className="w-full mt-2.5 py-2.5 px-3 bg-gradient-to-r from-cyan-500 via-sky-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-cyan-500/25 flex items-center justify-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98]"
+          >
+            <Navigation className="w-3.5 h-3.5 fill-current" />
+            <span>SET GTA GPS WAYPOINT</span>
+          </button>
         )}
 
         {/* Global Coordinates */}

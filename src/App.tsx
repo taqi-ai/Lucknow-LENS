@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { CameraPreset, OSMMapData, RenderStats, CityStreamingStats, SelectedEntity, SimulatedFlight, AIAction } from './types';
 import { CityViewport } from './components/3d/CityViewport';
 import { CityUI } from './components/ui/CityUI';
-import { MapPin, RefreshCw, AlertCircle } from 'lucide-react';
+import { RefreshCw, AlertCircle } from 'lucide-react';
 import { parseOvertureGeoJSON } from './osm/overtureParser';
 import { CameraController } from './city/cameraController';
 import { LayerState } from './components/features/LayerControl';
@@ -13,6 +13,9 @@ import {
   type LiveTrainDTO, type LiveTrafficDTO, type LiveNewsDTO,
 } from './interactions/liveFeed';
 import type { SkylineStyle } from './city/buildingMaterial';
+import { Pathfinder } from './navigation/pathfinder';
+import { RouteDriver } from './navigation/routeDriver';
+import type { NavigationRoute, NavigatorState, RouteWaypoint, GPSTheme } from './navigation/types';
 
 const INITIAL_MAP_DATA: OSMMapData = {
   bounds: {
@@ -54,16 +57,31 @@ export default function App() {
   const [presentationMode, setPresentationMode] = useState<boolean>(false);
   const [mapOnly, setMapOnly] = useState<boolean>(false);
 
+  // GTA GPS Navigation State
+  const pathfinderRef = useRef<Pathfinder>(new Pathfinder());
+  const routeDriverRef = useRef<RouteDriver | null>(null);
+
+  const [navigationRoute, setNavigationRoute] = useState<NavigationRoute | null>(null);
+  const [navigatorState, setNavigatorState] = useState<NavigatorState | null>(null);
+  const [destinationWaypoint, setDestinationWaypoint] = useState<RouteWaypoint | null>(null);
+  const [gpsTheme, setGpsTheme] = useState<GPSTheme>('cyan');
+  const [followCamera, setFollowCamera] = useState<boolean>(true);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Never steal a key from a text field — search is a plain input.
+      // Never steal a key from a text field
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
 
       if (e.key === 'Escape') {
-        // Map-only is the deeper state, so Escape peels it back first.
         if (mapOnly) setMapOnly(false);
         else if (presentationMode) setPresentationMode(false);
+        else if (navigationRoute) {
+          setNavigationRoute(null);
+          setDestinationWaypoint(null);
+          setNavigatorState(null);
+          routeDriverRef.current?.stopDriving();
+        }
         return;
       }
       if ((e.key === 'm' || e.key === 'M') && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -72,7 +90,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [presentationMode, mapOnly]);
+  }, [presentationMode, mapOnly, navigationRoute]);
 
   // Layer toggler state
   const [layers, setLayers] = useState<LayerState>({
@@ -98,20 +116,12 @@ export default function App() {
   // Selection states
   const [selectedEntity, setSelectedEntity] = useState<SelectedEntity | null>(null);
 
-  // Live flight feed — real ADS-B via the server proxy, only polled while the
-  // layer is switched on so we never spend API quota on a hidden layer.
+  // Live feeds
   const flightFeed = useLiveFlights(layers.live.flights);
   const flights = flightFeed.flights;
 
-  // Weather and air quality: real observations from Open-Meteo via the server
-  // proxy. Polled only while their layer is on. Upstream updates every 15 min
-  // and hourly respectively, so there is nothing to gain from polling faster.
   const weatherFeed = useLiveFeed<LiveWeatherDTO>('/api/live/weather', layers.live.weather, 300_000);
   const airFeed = useLiveFeed<LiveAirQualityDTO>('/api/live/air', layers.live.aqi, 600_000);
-
-  // Trains, traffic and news: real backends (RailRadar, TomTom, GDELT), each
-  // honestly reporting 'unavailable' rather than inventing data when a paid key
-  // is missing (trains, traffic) or a query returns nothing (news).
   const trainFeed = useLiveList<LiveTrainDTO>('/api/live/trains', layers.live.railways, 20_000);
   const trafficFeed = useLiveList<LiveTrafficDTO>('/api/live/traffic', layers.live.traffic, 60_000);
   const newsFeed = useLiveList<LiveNewsDTO>('/api/live/news', layers.live.news, 900_000);
@@ -138,10 +148,6 @@ export default function App() {
     }
   }, []);
 
-  // The 3D city streams from tiles/HLOD and does not depend on this dataset — it
-  // only backs picking, search and the report. Parsing 7 MB of GeoJSON on the
-  // critical path delayed first paint and made the tab look unresponsive, so it
-  // is deferred until the browser is idle.
   useEffect(() => {
     const idle = (window as any).requestIdleCallback as
       | ((cb: () => void, opts?: { timeout: number }) => number)
@@ -164,7 +170,6 @@ export default function App() {
     if (sStats) setStreamingStats(sStats);
   }, []);
 
-  // Layer toggling handles labels sync
   const handleToggleLayer = (category: 'base' | 'live', layer: string) => {
     setLayers(prev => {
       const nextCategory = { ...prev[category] };
@@ -185,12 +190,69 @@ export default function App() {
   const handleToggleLabels = () => {
     setShowLabels(prev => {
       const newVal = !prev;
-      setLayers(l => ({ ...l, base: { ...l.base, labels: newVal } }));
+      setLayers(l => ({ ...l.base, labels: newVal }));
       return newVal;
     });
   };
 
-  // View on Map actions execution (camera glide + layer enable + marker select)
+  // GTA GPS Waypoint & Navigation Handlers
+  const handleSetDestinationWaypoint = useCallback(async (dest: RouteWaypoint) => {
+    setDestinationWaypoint(dest);
+
+    let startX = -382;
+    let startZ = 372;
+    if (cameraController) {
+      startX = cameraController.target.x;
+      startZ = cameraController.target.z;
+    }
+
+    const startPoint: RouteWaypoint = {
+      x: startX,
+      z: startZ,
+      name: 'Current Camera View',
+    };
+
+    const calculated = await pathfinderRef.current.calculateRoute(startPoint, dest);
+    if (calculated) {
+      setNavigationRoute(calculated);
+    }
+  }, [cameraController]);
+
+  const handleClearRoute = useCallback(() => {
+    setNavigationRoute(null);
+    setDestinationWaypoint(null);
+    setNavigatorState(null);
+    routeDriverRef.current?.stopDriving();
+  }, []);
+
+  const handleToggleDrive = useCallback(() => {
+    if (!routeDriverRef.current) return;
+    if (navigatorState?.isDriving) {
+      routeDriverRef.current.pauseDriving();
+    } else {
+      routeDriverRef.current.startDriving();
+    }
+  }, [navigatorState]);
+
+  const handleToggleFollowCamera = useCallback(() => {
+    setFollowCamera((prev) => !prev);
+  }, []);
+
+  const handleChangeSpeed = useCallback((kmH: number) => {
+    routeDriverRef.current?.setSpeed(kmH);
+  }, []);
+
+  const handleChangeTheme = useCallback((theme: GPSTheme) => {
+    setGpsTheme(theme);
+  }, []);
+
+  const handleRouteDriverReady = useCallback((driver: RouteDriver) => {
+    routeDriverRef.current = driver;
+    driver.onUpdate((state) => {
+      setNavigatorState(state);
+    });
+  }, []);
+
   const handleExecuteAIAction = (action: AIAction) => {
     if (!cameraController) return;
 
@@ -207,7 +269,6 @@ export default function App() {
         }));
       }
 
-      // Generate context highlighted area to show in inspector
       const nameMap: Record<string, string> = {
         'traffic': 'Hazratganj Traffic Area',
         'aqi': 'Gomti Nagar AQI Zone',
@@ -284,9 +345,15 @@ export default function App() {
         layers={layers}
         flights={flights}
         selectedEntity={selectedEntity}
+        navigationRoute={navigationRoute}
+        destinationWaypoint={destinationWaypoint}
+        gpsTheme={gpsTheme}
+        followCamera={followCamera}
         onUpdateStats={handleUpdateStats}
         onCameraControllerReady={setCameraController}
         onSelectEntity={setSelectedEntity}
+        onSetDestinationWaypoint={handleSetDestinationWaypoint}
+        onRouteDriverReady={handleRouteDriverReady}
       />
 
       {/* UI Overlay */}
@@ -319,6 +386,16 @@ export default function App() {
         onToggleLayer={handleToggleLayer}
         onSelectEntity={setSelectedEntity}
         onExecuteAction={handleExecuteAIAction}
+        navigationRoute={navigationRoute}
+        navigatorState={navigatorState}
+        gpsTheme={gpsTheme}
+        followCamera={followCamera}
+        onToggleDrive={handleToggleDrive}
+        onToggleFollowCamera={handleToggleFollowCamera}
+        onChangeSpeed={handleChangeSpeed}
+        onChangeTheme={handleChangeTheme}
+        onClearRoute={handleClearRoute}
+        onSetDestinationWaypoint={handleSetDestinationWaypoint}
       />
     </div>
   );

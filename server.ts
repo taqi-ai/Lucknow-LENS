@@ -458,7 +458,7 @@ async function startServer() {
   }
 
   const server = app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Miniature City server running on http://0.0.0.0:${PORT}`);
+    console.log(`Miniature City server running on http://localhost:${PORT}`);
   });
   // Container orchestrators send SIGTERM and then kill after a grace period.
   // Without this the process dies mid-response and in-flight clients see a

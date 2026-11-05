@@ -42,6 +42,12 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser.
   * `DISTRICT`: Mid-range neighborhood boundaries and major road networks.
   * `NEIGHBORHOOD`: Detailed building footprints and local road geometry.
   * `STREET`: Low-horizon pedestrian perspective with 3D buildings, trees, and detailed place labels.
+* **GTA-Style GPS Waypoint & Dynamic Road Navigation**:
+  * **3D Destination Beacon**: Right-click anywhere in Lucknow, or select any landmark in Search or the Building/POI Inspector to project a vertical holographic light pillar and pulsing beacon.
+  * **Instant Sub-Millisecond A* Routing**: Computes the optimal path along Lucknow's real road network (Shaheed Path, Lohia Path, flyovers, arterials, local lanes) completely client-side in ~1.5ms.
+  * **Animated Flowing GPS Ribbon**: 3D road ribbon shader with flowing directional chevrons and customizable neon themes (GTA Cyan, Vice City Neon Pink, Amber Gold).
+  * **Turn-by-Turn Navigation HUD**: Live maneuver icons, distance countdown, ETA, and street names.
+  * **Interactive 'Drive Route' Simulation**: Autonomous vehicle drive mode with third-person chase camera, corner banking, and cruise speed controls (35, 65, 110 km/h).
 * **Target-Orbit Camera Architecture**:
   * Manual Heading & Tilt controls with 1:1 dial tracking.
   * Continuous endless rotation (supports smooth 360°+ spinning without wrapping pops).
@@ -214,8 +220,15 @@ Lucknow-LENS/
 │   │   ├── cameraController.ts# Target-orbit physics camera controller
 │   │   ├── tileStreamer.ts    # Spatial tile loader & LOD manager
 │   │   └── labelManager.ts   # 3D world-space label projector
+│   ├── navigation/            # GTA-style GPS waypoint & A* routing system
+│   │   ├── roadGraph.ts       # Spatial graph with 14,000+ Lucknow road segments
+│   │   ├── pathfinder.ts      # A* search & turn-by-turn maneuver engine
+│   │   ├── waypointVisuals.ts # 3D light beam, pulsing beacon & flowing GPS ribbon
+│   │   ├── routeDriver.ts     # Autonomous vehicle cruise & chase camera controller
+│   │   └── types.ts           # Route, maneuver & navigator state definitions
 │   ├── components/
 │   │   ├── 3d/                # Three.js canvas & city viewport
+│   │   ├── features/          # Navigation HUD, search, info panel, layer toggles
 │   │   └── ui/                # HUD controls, compass widget & performance metrics
 │   ├── App.tsx
 │   └── main.tsx

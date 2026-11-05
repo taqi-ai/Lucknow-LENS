@@ -11,6 +11,9 @@ import { CINEMATIC_PRESETS } from '../../city/cameraPresets';
 import { LayerState } from '../features/LayerControl';
 import { findClickedPOI, findClickedBuilding } from '../../interactions/picking';
 import { unproject } from '../../search/SearchIndex';
+import { WaypointVisuals } from '../../navigation/waypointVisuals';
+import { RouteDriver } from '../../navigation/routeDriver';
+import { NavigationRoute, RouteWaypoint, GPSTheme } from '../../navigation/types';
 
 /**
  * Aircraft geometry and materials are created once at module scope and shared by
@@ -54,9 +57,15 @@ interface CityViewportProps {
   layers: LayerState;
   flights: SimulatedFlight[];
   selectedEntity: SelectedEntity | null;
+  navigationRoute?: NavigationRoute | null;
+  destinationWaypoint?: RouteWaypoint | null;
+  gpsTheme?: GPSTheme;
+  followCamera?: boolean;
   onUpdateStats: (stats: RenderStats, streamingStats?: CityStreamingStats) => void;
   onCameraControllerReady?: (controller: CameraController) => void;
   onSelectEntity: (entity: SelectedEntity | null) => void;
+  onSetDestinationWaypoint?: (dest: RouteWaypoint) => void;
+  onRouteDriverReady?: (driver: RouteDriver) => void;
 }
 
 export const CityViewport: React.FC<CityViewportProps> = ({
@@ -68,9 +77,15 @@ export const CityViewport: React.FC<CityViewportProps> = ({
   layers,
   flights,
   selectedEntity,
+  navigationRoute = null,
+  destinationWaypoint = null,
+  gpsTheme = 'cyan',
+  followCamera = true,
   onUpdateStats,
   onCameraControllerReady,
   onSelectEntity,
+  onSetDestinationWaypoint,
+  onRouteDriverReady,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<CityRenderer | null>(null);
@@ -79,6 +94,10 @@ export const CityViewport: React.FC<CityViewportProps> = ({
   const labelManagerRef = useRef<LabelManager | null>(null);
   const skyRef = useRef<AtmosphericSky | null>(null);
   const materialsRef = useRef<BuildingMaterialSystem | null>(null);
+
+  // Navigation system refs
+  const waypointVisualsRef = useRef<WaypointVisuals | null>(null);
+  const routeDriverRef = useRef<RouteDriver | null>(null);
   
   const flightsGroupRef = useRef<THREE.Group | null>(null);
   const highlightRingRef = useRef<THREE.Mesh | null>(null);
@@ -98,6 +117,8 @@ export const CityViewport: React.FC<CityViewportProps> = ({
   onSelectEntityRef.current = onSelectEntity;
   const onCameraControllerReadyRef = useRef(onCameraControllerReady);
   onCameraControllerReadyRef.current = onCameraControllerReady;
+  const onSetDestinationWaypointRef = useRef(onSetDestinationWaypoint);
+  onSetDestinationWaypointRef.current = onSetDestinationWaypoint;
 
   // Initialize Three.js Renderer, TileStreamer, LabelManager, HorizonCity & AtmosphericSky
   useEffect(() => {
@@ -107,8 +128,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     const cityRenderer = new CityRenderer(container, mapDataRef.current);
     rendererRef.current = cityRenderer;
 
-    // One shared material system drives every building — bulk streamed tiles and
-    // baked HLOD alike — so variation is a shader concern, not a material count.
+    // One shared material system drives every building
     const materials = new BuildingMaterialSystem();
     materialsRef.current = materials;
 
@@ -120,7 +140,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     labelManagerRef.current = labelManager;
     labelManager.setCamera(cityRenderer.camera);
     labelManager.setViewport(container.clientWidth, container.clientHeight);
-    labelManager.loadData(); // async, non-blocking
+    labelManager.loadData();
 
     const sky = new AtmosphericSky();
     skyRef.current = sky;
@@ -132,8 +152,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       onCameraControllerReadyRef.current(controls);
     }
 
-    // Build atmospheric sky dome IMMEDIATELY — before async init so there's
-    // never a frame showing raw background color
+    // Build atmospheric sky dome immediately
     sky.build(cityRenderer.scene);
 
     // Group for flight visualizations
@@ -143,10 +162,10 @@ export const CityViewport: React.FC<CityViewportProps> = ({
 
     // Dynamic selected highlight ring
     const highlightMat = new THREE.MeshBasicMaterial({
-      color: 0xf59e0b, // Amber 500
+      color: 0xf59e0b,
       side: THREE.DoubleSide,
       transparent: true,
-      opacity: 0.7
+      opacity: 0.7,
     });
     const highlightGeo = new THREE.RingGeometry(2, 22, 32);
     highlightGeo.rotateX(-Math.PI / 2);
@@ -155,13 +174,21 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     highlightRingRef.current = highlightRing;
     cityRenderer.scene.add(highlightRing);
 
-    // TileStreamer init — then set camera bounds from the true data extent.
-    // The old procedural HorizonCity is gone; the baked HLOD carries real
-    // building geometry all the way out to the data boundary.
+    // GTA GPS Navigation 3D Visuals & Route Driver
+    const waypointVisuals = new WaypointVisuals();
+    waypointVisualsRef.current = waypointVisuals;
+    cityRenderer.scene.add(waypointVisuals.group);
+
+    const routeDriver = new RouteDriver();
+    routeDriverRef.current = routeDriver;
+    routeDriver.setCameraController(controls);
+    if (onRouteDriverReady) {
+      onRouteDriverReady(routeDriver);
+    }
+
+    // TileStreamer init
     streamer.init().then(() => {
       const extent = streamer.getSpatialExtent();
-
-      // Set camera boundary — inset by 1500m from the data extent edges
       const boundaryBuffer = 1500;
       controls.setBounds(
         extent.minX + boundaryBuffer,
@@ -176,10 +203,14 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     let lastStatsTime = 0;
     let lastShadowUpdateTime = 0;
     let lastLayerKey = '';
+    let lastFrameTime = performance.now();
     const aircraftPool: THREE.Group[] = [];
 
     const animate = (time: number) => {
       animId = requestAnimationFrame(animate);
+
+      const deltaSec = Math.min(0.1, (time - lastFrameTime) * 0.001 || 0.016);
+      lastFrameTime = time;
 
       controls.update(time);
 
@@ -188,14 +219,11 @@ export const CityViewport: React.FC<CityViewportProps> = ({
 
       const altitude = cityRenderer.camera.position.y;
 
-      // Aerial perspective needs the camera position every frame; it is a uniform
-      // write, not a matrix rebuild.
       materials.updateCamera(cityRenderer.camera.position);
 
-      // Adaptive shadows — disable at high altitude for massive iGPU perf gain
+      // Adaptive shadows
       cityRenderer.setAdaptiveShadows(altitude);
 
-      // Throttled shadow target update — only every 500ms, not every frame
       if (time - lastShadowUpdateTime > 500) {
         cityRenderer.updateSunShadowTarget(controls.target, altitude);
         const atmos = cityRenderer.getAtmosphere();
@@ -203,14 +231,14 @@ export const CityViewport: React.FC<CityViewportProps> = ({
         lastShadowUpdateTime = time;
       }
 
-      // Update TileStreamer with current camera position
+      // Update TileStreamer
       streamer.update(cityRenderer.camera);
 
-      // Update label manager — pass current LOD from streamer stats
+      // Update label manager
       const streamingStats = streamer.getStats();
       labelManager.update(cityRenderer.camera.position, streamingStats.currentLOD);
 
-      // Inject boundary debug info when debug mode is active
+      // Boundary debug info
       const boundaryInfo = controls.getBoundaryDebug();
       if (boundaryInfo && streamerRef.current) {
         streamingStats.boundaryDebug = {
@@ -219,12 +247,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
         };
       }
 
-      // -------------------------------------------------------------
-      // FLIGHTS RENDERING / MOVEMENT UPDATE
-      // -------------------------------------------------------------
-      // Aircraft are pooled. The previous implementation called flightsGroup.clear()
-      // and rebuilt six geometries plus three materials per aircraft on every frame,
-      // orphaning all of them for the GC 60 times a second.
+      // Flights rendering
       const currentLayers = layersRef.current;
       const currentFlights = flightsRef.current;
       const showFlights = currentLayers.live.flights;
@@ -241,7 +264,6 @@ export const CityViewport: React.FC<CityViewportProps> = ({
           node.visible = true;
           node.position.set(flight.x, flight.altitude, flight.z);
           node.rotation.y = -(flight.heading * Math.PI / 180);
-          // Keep aircraft legible from altitude without turning them into UI pins.
           const s = THREE.MathUtils.clamp(altitude / 900, 1, 14);
           node.scale.setScalar(s);
           node.userData.data = flight;
@@ -254,9 +276,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
         for (const node of aircraftPool) if (node) node.visible = false;
       }
 
-      // -------------------------------------------------------------
-      // SELECTION HIGHLIGHT ANIMATION
-      // -------------------------------------------------------------
+      // Selection Highlight Animation
       const curSelected = selectedEntityRef.current;
       if (curSelected) {
         highlightRing.position.set(curSelected.x, 0.35, curSelected.z);
@@ -267,11 +287,16 @@ export const CityViewport: React.FC<CityViewportProps> = ({
         highlightRing.visible = false;
       }
 
-      // -------------------------------------------------------------
-      // LAYER VISIBILITY
-      // Only walk the scene when a toggle actually changed. This used to be a full
-      // scene.traverse() every frame across every streamed tile mesh.
-      // -------------------------------------------------------------
+      // Navigation visuals & driver update
+      waypointVisuals.update(time);
+      const navState = routeDriver.update(deltaSec);
+      if (navState && navState.isActive) {
+        waypointVisuals.updateNavigator(navState.currentPosition, navState.currentHeading, true);
+      } else {
+        waypointVisuals.updateNavigator(null, 0, false);
+      }
+
+      // Layer Visibility Check
       const layerKey = `${currentLayers.base.buildings}|${currentLayers.base.roads}|${currentLayers.base.parks}|${currentLayers.base.gomti}`;
       if (layerKey !== lastLayerKey) {
         lastLayerKey = layerKey;
@@ -293,196 +318,9 @@ export const CityViewport: React.FC<CityViewportProps> = ({
 
     animId = requestAnimationFrame(animate);
 
-    // -------------------------------------------------------------
-    // DEV INSTRUMENTATION HOOK (window.__LENS)
-    // Lets an automated harness drive the camera, wait for tile streaming
-    // to settle, and sample real render statistics. Dev builds only.
-    // -------------------------------------------------------------
-    if (import.meta.env.DEV) {
-      (window as any).__LENS = {
-        setShot(s: { t: [number, number]; az: number; pi: number; d: number; night: boolean }) {
-          cityRenderer.setNightMode(s.night);
-          streamer.setNightMode(s.night);
-          sky.setNightMode(s.night);
-          labelManager.setNightMode(s.night);
-          controls.transitionTo(new THREE.Vector3(s.t[0], 0, s.t[1]), s.az, s.pi, s.d, 10);
-        },
-        /** Switch visual profile without going through React state. */
-        setStyle(s: SkylineStyle) {
-          materials.setSkylineStyle(s);
-          cityRenderer.setSkylineStyle(s);
-          streamer.setSkylineStyle(s);
-        },
-        /** Resolve once the streamer has no pending loads for 4 consecutive checks. */
-        waitSettled(timeoutMs = 20000) {
-          return new Promise<void>((resolve) => {
-            const start = performance.now();
-            let quiet = 0;
-            const poll = () => {
-              const st = streamer.getStats();
-              quiet = st.pendingLoads === 0 ? quiet + 1 : 0;
-              if (quiet >= 4 || performance.now() - start > timeoutMs) resolve();
-              else setTimeout(poll, 250);
-            };
-            setTimeout(poll, 500);
-          });
-        },
-        /** Sample frame timings over a window and return render + streaming stats. */
-        measure(durationMs = 2000) {
-          return new Promise<any>((resolve) => {
-            const frames: number[] = [];
-            let last = performance.now();
-            const start = last;
-            const tick = () => {
-              const now = performance.now();
-              frames.push(now - last);
-              last = now;
-              if (now - start < durationMs) requestAnimationFrame(tick);
-              else {
-                frames.sort((a, b) => a - b);
-                const r = cityRenderer.getRenderStats();
-                const st = streamer.getStats();
-                resolve({
-                  fps: Math.round(1000 / (frames.reduce((a, b) => a + b, 0) / frames.length)),
-                  frameMsP50: +frames[Math.floor(frames.length * 0.5)].toFixed(2),
-                  frameMsP95: +frames[Math.floor(frames.length * 0.95)].toFixed(2),
-                  drawCalls: r.drawCalls,
-                  triangles: r.triangles,
-                  geometries: r.geometries,
-                  textures: r.textures,
-                  programs: cityRenderer.renderer.info.programs?.length ?? 0,
-                  tiles: st.loadedTiles,
-                  buildings: st.totalBuildings,
-                  lod: st.currentLOD,
-                  scale: st.zoomScaleName,
-                });
-              }
-            };
-            requestAnimationFrame(tick);
-          });
-        },
-        /** Raw scene handle for ad-hoc inspection from a harness console. */
-        scene: cityRenderer.scene,
-        /**
-         * Scene composition by layer. Answers "which representation is actually
-         * drawing this?" — the question that separates a streamed tile not
-         * loading from a streamed tile loading and then not being rendered.
-         */
-        probe() {
-          const acc: Record<string, { meshes: number; visible: number; tris: number }> = {};
-          cityRenderer.scene.traverse((o) => {
-            const m = o as THREE.Mesh;
-            if (!m.isMesh) return;
-            // Walk up to find which subsystem owns this mesh.
-            let owner = 'other';
-            for (let p: THREE.Object3D | null = m; p; p = p.parent) {
-              if (p.name === 'CityOverlay') { owner = 'overlay'; break; }
-              if (p.name === 'HLODLayer') { owner = `hlod:${m.name}`; break; }
-              if (/^tile_/.test(p.name)) { owner = `tile:${m.name}`; break; }
-            }
-            const e = acc[owner] ?? (acc[owner] = { meshes: 0, visible: 0, tris: 0 });
-            e.meshes++;
-            let vis = m.visible;
-            for (let p: THREE.Object3D | null = m.parent; p && vis; p = p.parent) vis = p.visible;
-            if (vis) {
-              e.visible++;
-              const g = m.geometry as THREE.BufferGeometry;
-              const pos = g.getAttribute('position');
-              if (pos) e.tris += (g.index ? g.index.count : pos.count) / 3;
-            }
-          });
-          const tileGroups: number[] = [];
-          cityRenderer.scene.traverse((o) => {
-            if (/^tile_/.test(o.name)) tileGroups.push(o.children.length);
-          });
-          const s = streamer as any;
-          (acc as any).__tileGroups = {
-            count: tileGroups.length,
-            empty: tileGroups.filter((n) => n === 0).length,
-            childrenTotal: tileGroups.reduce((a, b) => a + b, 0),
-            loadedTilesMap: s.loadedTiles?.size ?? -1,
-            parentChildren: s.tileGroupParent?.children?.length ?? -1,
-            parentInScene: !!s.tileGroupParent?.parent,
-            pending: s.pending?.size ?? -1,
-            queue: s.queue?.length ?? -1,
-            workers: s.workers?.length ?? -1,
-            tileBoxes: s.tileBoxes?.size ?? -1,
-            manifestTiles: s.manifest?.tiles?.length ?? -1,
-            currentLOD: s.currentLOD,
-          };
-          return acc;
-        },
-        /** Debug: dump every landmark's actual world position/rotation from the scene graph. */
-        dumpLandmarks() {
-          const out: any[] = [];
-          cityRenderer.scene.traverse((o) => {
-            if (o.userData?.type === 'landmark') {
-              const box = new THREE.Box3().setFromObject(o);
-              out.push({
-                id: o.userData.id,
-                name: o.userData.name,
-                pos: [o.position.x, o.position.y, o.position.z],
-                rotY: o.rotation.y,
-                visible: o.visible,
-                bbox: [
-                  +(box.max.x - box.min.x).toFixed(1),
-                  +(box.max.y - box.min.y).toFixed(1),
-                  +(box.max.z - box.min.z).toFixed(1),
-                ],
-                currentLOD: (o as THREE.LOD).getCurrentLevel?.(),
-              });
-            }
-          });
-          return out;
-        },
-        /** Debug: dump every currently-visible label sprite's world position. */
-        dumpLabels() {
-          const out: any[] = [];
-          let groupFound = false, total = 0;
-          cityRenderer.scene.traverse((o) => {
-            if (o.name === 'LabelGroup') {
-              groupFound = true;
-              total = o.children.length;
-              o.children.forEach((s: any) => {
-                if (s.visible) out.push({ pos: [s.position.x, s.position.y, s.position.z], opacity: s.material?.opacity });
-              });
-            }
-          });
-          return { groupFound, total, enabled: labelManager.enabled, activeCount: labelManager.getActiveCount(), visible: out };
-        },
-        controlsState() {
-          return {
-            target: controls.target.toArray(),
-            destTarget: controls.destTarget.toArray(),
-            azimuth: controls.azimuth,
-            destAzimuth: controls.destAzimuth,
-            pitch: controls.pitch,
-            distance: controls.distance,
-            camPos: cityRenderer.camera.position.toArray(),
-          };
-        },
-        debugLabelState() {
-          const lm: any = labelManager;
-          return {
-            loaded: lm.loaded,
-            allPlacesLen: lm.allPlaces?.length,
-            allRoadsLen: lm.allRoads?.length,
-            currentLOD: lm.currentLOD,
-            hasCamera: !!lm.camera,
-            camPos: cityRenderer.camera.position.toArray(),
-            firstPlaces: lm.allPlaces?.slice(0, 5),
-          };
-        },
-      };
-    }
-
-    // -------------------------------------------------------------
-    // RAYCAST INTERACTION & INSPECTION
-    // -------------------------------------------------------------
+    // Click raycast interaction
     const handleViewportClick = (e: MouseEvent) => {
       if (!rendererRef.current || !controlsRef.current) return;
-
-      // Ignore clicking if user was actively dragging
       if (controls.destTarget.distanceTo(controls.target) > 10) return;
 
       const rect = container.getBoundingClientRect();
@@ -494,7 +332,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       const raycaster = new THREE.Raycaster();
       raycaster.setFromCamera(mouse, rendererRef.current.camera);
 
-      // A. Intersect with Aircrafts first
+      // Flights click check
       if (layersRef.current.live.flights && flightsGroupRef.current) {
         const intersects = raycaster.intersectObjects(flightsGroupRef.current.children, true);
         if (intersects.length > 0) {
@@ -513,28 +351,28 @@ export const CityViewport: React.FC<CityViewportProps> = ({
               latitude: coords.lat,
               longitude: coords.lon,
               x: flightData.x,
-              z: flightData.z
+              z: flightData.z,
             });
             return;
           }
         }
       }
 
-      // B. Intersect with Ground Plane at y = 0
+      // Ground plane click check
       const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
       const groundIntersect = new THREE.Vector3();
       if (raycaster.ray.intersectPlane(groundPlane, groundIntersect)) {
         const { x, z } = groundIntersect;
 
-        // 1. Point-in-polygon building check (prioritizes real Overture extruded buildings)
+        // Building check
         const clickedBldg = findClickedBuilding(x, z, mapDataRef.current, streamer);
         if (clickedBldg) {
           let sumX = 0, sumZ = 0;
-          clickedBldg.points.forEach(p => { sumX += p.x; sumZ += p.z; });
+          clickedBldg.points.forEach((p) => { sumX += p.x; sumZ += p.z; });
           const cx = sumX / clickedBldg.points.length;
           const cz = sumZ / clickedBldg.points.length;
           const latLon = unproject(cx, cz);
-          
+
           onSelectEntityRef.current({
             type: 'building',
             id: clickedBldg.id,
@@ -542,24 +380,24 @@ export const CityViewport: React.FC<CityViewportProps> = ({
             details: {
               height: clickedBldg.height,
               stories: clickedBldg.stories,
-              area: clickedBldg.height > 0 ? (clickedBldg.height * 20) : 150, // estimated footprint area
-              type: clickedBldg.height > 15 ? 'Commercial' : 'Residential'
+              area: clickedBldg.height > 0 ? clickedBldg.height * 20 : 150,
+              type: clickedBldg.height > 15 ? 'Commercial' : 'Residential',
             },
             latitude: latLon.lat,
             longitude: latLon.lon,
             x: cx,
-            z: cz
+            z: cz,
           });
           controls.flyTo(latLon.lat, latLon.lon, 300);
           return;
         }
 
-        // 2. Proximity POI Click Check (45m radius) from Overture places
+        // POI check
         const clickedPOI = findClickedPOI(x, z, mapDataRef.current, [], 45);
         if (clickedPOI) {
           const lm = clickedPOI.landmark;
-          const lmX = ('x' in lm) ? lm.x : lm.position.x;
-          const lmZ = ('z' in lm) ? lm.z : lm.position.z;
+          const lmX = 'x' in lm ? lm.x : lm.position.x;
+          const lmZ = 'z' in lm ? lm.z : lm.position.z;
           const latLon = unproject(lmX, lmZ);
           onSelectEntityRef.current({
             type: 'poi',
@@ -569,18 +407,54 @@ export const CityViewport: React.FC<CityViewportProps> = ({
             latitude: latLon.lat,
             longitude: latLon.lon,
             x: lmX,
-            z: lmZ
+            z: lmZ,
           });
           controls.flyTo(latLon.lat, latLon.lon, 400);
           return;
         }
       }
 
-      // C. Clicked empty space -> Clear selection
+      // Clear selection
       onSelectEntityRef.current(null);
     };
 
+    // Right-Click (ContextMenu): Set GTA GPS Waypoint
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      if (!rendererRef.current) return;
+
+      const rect = container.getBoundingClientRect();
+      const mouse = new THREE.Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1
+      );
+
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(mouse, rendererRef.current.camera);
+
+      const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      const groundIntersect = new THREE.Vector3();
+      if (raycaster.ray.intersectPlane(groundPlane, groundIntersect)) {
+        const { x, z } = groundIntersect;
+
+        const clickedPOI = findClickedPOI(x, z, mapDataRef.current, [], 60);
+        const clickedBldg = findClickedBuilding(x, z, mapDataRef.current, streamer);
+        let name = 'Marked Waypoint';
+        if (clickedPOI && clickedPOI.landmark.name) {
+          name = clickedPOI.landmark.name;
+        } else if (clickedBldg && clickedBldg.name) {
+          name = clickedBldg.name;
+        }
+
+        if (onSetDestinationWaypointRef.current) {
+          onSetDestinationWaypointRef.current({ x, z, name });
+        }
+      }
+    };
+
     container.addEventListener('click', handleViewportClick);
+    container.addEventListener('contextmenu', handleContextMenu);
+
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         if (!rendererRef.current) continue;
@@ -595,44 +469,62 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     return () => {
       resizeObserver.disconnect();
       container.removeEventListener('click', handleViewportClick);
+      container.removeEventListener('contextmenu', handleContextMenu);
       cancelAnimationFrame(animId);
       controls.dispose();
       labelManager.dispose();
       sky.dispose();
       streamer.dispose();
       materials.dispose();
+      waypointVisuals.dispose();
       cityRenderer.dispose();
       if (container.contains(cityRenderer.renderer.domElement)) {
         container.removeChild(cityRenderer.renderer.domElement);
       }
     };
-  }, []); // Remove mapData dependency to prevent WebGL teardown
+  }, []);
 
-  // Update Debug, Stable Mode, Night Mode & Label visibility
+  // Sync Waypoint & Route to Visuals
   useEffect(() => {
-    if (rendererRef.current) {
-      rendererRef.current.setNightMode(nightMode);
+    waypointVisualsRef.current?.setWaypoint(destinationWaypoint);
+  }, [destinationWaypoint]);
+
+  useEffect(() => {
+    waypointVisualsRef.current?.setRoute(navigationRoute);
+    routeDriverRef.current?.setRoute(navigationRoute);
+  }, [navigationRoute]);
+
+  useEffect(() => {
+    if (gpsTheme) {
+      waypointVisualsRef.current?.setTheme(gpsTheme);
     }
-    if (streamerRef.current) {
-      streamerRef.current.setNightMode(nightMode);
+  }, [gpsTheme]);
+
+  useEffect(() => {
+    if (routeDriverRef.current) {
+      routeDriverRef.current.followCamera = followCamera;
     }
+  }, [followCamera]);
+
+  // Update Night Mode & Labels
+  useEffect(() => {
+    if (rendererRef.current) rendererRef.current.setNightMode(nightMode);
+    if (streamerRef.current) streamerRef.current.setNightMode(nightMode);
     if (labelManagerRef.current) {
       labelManagerRef.current.setNightMode(nightMode);
       labelManagerRef.current.enabled = showLabels;
     }
-    if (skyRef.current) {
-      skyRef.current.setNightMode(nightMode);
-    }
+    if (skyRef.current) skyRef.current.setNightMode(nightMode);
   }, [nightMode, showLabels]);
 
-  // Skyline look — warm white / clear white / cyberpunk. Palette & lighting swap.
+  // Skyline look
   useEffect(() => {
     materialsRef.current?.setSkylineStyle(skylineStyle);
     rendererRef.current?.setSkylineStyle(skylineStyle);
     streamerRef.current?.setSkylineStyle(skylineStyle);
   }, [skylineStyle]);
 
-  // Handle Camera Presets
+  // Camera presets
   useEffect(() => {
     if (!cameraSignal || !controlsRef.current || !streamerRef.current) return;
 
@@ -655,26 +547,25 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     if (cameraSignal === 'fullcity' || cameraSignal === 'frame' || cameraSignal === 'reset') {
       pTarget.set(centerX, 0, centerZ);
       pAzimuth = Math.PI / 4;
-      pPitch = Math.PI / 3.2; // Slightly lower for better sky/ground ratio
+      pPitch = Math.PI / 3.2;
       pDistance = maxDim * 0.9;
     } else if (cameraSignal === 'overview') {
       pTarget.set(centerX, 0, centerZ);
       pAzimuth = Math.PI / 8;
       pPitch = Math.PI / 3.8;
-      pDistance = maxDim * 0.35; // Closer
+      pDistance = maxDim * 0.35;
     } else if (cameraSignal === 'neighborhood') {
       pTarget.set(centerX, 0, centerZ);
       pAzimuth = 0;
-      pPitch = Math.PI / 3.5; // Lower angle to show building depth
+      pPitch = Math.PI / 3.5;
       pDistance = 1400;
     } else if (cameraSignal === 'street') {
       const firstLm = mapData.landmarks[0]?.position || { x: centerX, z: centerZ };
       pTarget.set(firstLm.x, 0, firstLm.z);
       pAzimuth = 0;
-      pPitch = 0.2; // very low horizon look
+      pPitch = 0.2;
       pDistance = 200;
     } else if (CINEMATIC_PRESETS[cameraSignal as keyof typeof CINEMATIC_PRESETS]) {
-      // Cinematic framings anchored to real Lucknow locations.
       const preset = CINEMATIC_PRESETS[cameraSignal as keyof typeof CINEMATIC_PRESETS];
       pTarget.set(preset.x, 0, preset.z);
       pAzimuth = preset.azimuth;
@@ -683,12 +574,10 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     } else if (cameraSignal === 'top') {
       pTarget.set(centerX, 0, centerZ);
       pAzimuth = 0;
-      pPitch = Math.PI / 2 - 0.05; // straight down
+      pPitch = Math.PI / 2 - 0.05;
       pDistance = maxDim;
     }
 
-    // Longer, eased transitions for the cinematic presets so arrivals feel flown
-    // rather than cut.
     const isCinematic = Boolean(CINEMATIC_PRESETS[cameraSignal as keyof typeof CINEMATIC_PRESETS]);
     controls.transitionTo(pTarget, pAzimuth, pPitch, pDistance, isCinematic ? 2600 : 1400);
   }, [cameraSignal, mapData]);

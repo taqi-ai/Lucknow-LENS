@@ -205,8 +205,15 @@ const FRAG_COLOR = /* glsl */ `
   // at city scale where it would alias, and never applied to roofs.
   float bandPhase = storeyY / 3.2 + lensHash(packHash * 13.7);
   float band = smoothstep(0.02, 0.10, abs(fract(bandPhase) - 0.5));
-  float bandAmt = (1.0 - isRoof) * uDetail * 0.10;
-  baseCol *= mix(1.0, 0.78 + 0.22 * band, bandAmt);
+  float bandAmt = (1.0 - isRoof) * uDetail * 0.20;
+  baseCol *= mix(1.0, 0.75 + 0.25 * band, bandAmt);
+
+  // --- Roof surface texture & edge definition -------------------------------
+  // Gives rooftops subtle variation and gravel grain instead of completely flat fills
+  if (isRoof > 0.5) {
+    float roofGrain = (lensHash2(vWorldPos.xz * 0.15) - 0.5) * 0.08 * uDetail;
+    baseCol *= (1.0 + roofGrain);
+  }
 
   // --- Baked ambient occlusion ----------------------------------------------
   // Ground contact and street-canyon darkening. Kept gentle so the city never
@@ -326,6 +333,37 @@ const FRAG_OUTPUT = /* glsl */ `
     float spillSurf = mix(0.35, 1.0, nIsRoof);
     gl_FragColor.rgb += lampWarm * litBldg * commercial * spill * spillSurf
                       * uNight * lightHaze * 1.3;
+  }
+
+  // --- Daytime Architectural Glazing & Window Specular ----------------------
+  // In daylight, windows reflect sky and sunlight rather than emitting yellow sodium.
+  // We compute crisp window apertures that glint with cool sky and sun specular,
+  // matching SimCity BuildIt and modern digital twin visuals.
+  if (uNight < 0.98 && nIsRoof < 0.5) {
+    float dayAng = nOrient * 6.2831853;
+    vec2 dayDir = vec2(cos(dayAng), sin(dayAng));
+    float dayU = dot(vWorldPos.xz, dayDir) / 3.4;
+    float dayV = vWorldPos.y / 3.0;
+
+    // Filter sub-pixel window grid smoothly at distance to prevent aliasing moire
+    float dayFoot = max(fwidth(dayU), fwidth(dayV));
+    float dayBlur = smoothstep(0.35, 1.20, dayFoot);
+
+    // Window pane geometry
+    vec2 dayF = fract(vec2(dayU, dayV));
+    float dayPane = smoothstep(0.24, 0.34, dayF.x) * (1.0 - smoothstep(0.66, 0.76, dayF.x))
+                  * smoothstep(0.28, 0.38, dayF.y) * (1.0 - smoothstep(0.62, 0.72, dayF.y));
+    float paneEffect = mix(dayPane, PANE_MEAN * 1.8, dayBlur);
+
+    // Storey mask: avoid ground-floor and roof line overflow
+    float dayStoreyMask = step(0.8, dayV) * (1.0 - step(vPack.y * 80.0 / 3.0 - 0.5, dayV));
+
+    // Commercial / high-rise buildings have cooler blue reflective glass; residential has tinted glass
+    vec3 glassSkyColor = mix(vec3(0.55, 0.72, 0.88), vec3(0.42, 0.58, 0.76), lensHash(nHash * 23.1));
+    float glassReflectivity = (nCls > 0.5 ? 0.38 : 0.22) * uDetail * (1.0 - uNight) * dayStoreyMask;
+
+    // Apply specular window glint to fragment color
+    gl_FragColor.rgb = mix(gl_FragColor.rgb, glassSkyColor * 1.15, paneEffect * glassReflectivity);
   }
 `;
 

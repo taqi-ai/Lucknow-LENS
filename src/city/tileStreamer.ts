@@ -72,43 +72,43 @@ const LAMP_GLOW_NIGHT = 0.85;
 const LAMP_POOL_NIGHT = 0.5;
 
 const ROAD_COLORS_DAY: Record<RoadClass, number> = {
-  motorway: 0x5e5c5a,
-  trunk: 0x646260,
-  primary: 0x6b6966,
-  secondary: 0x74716d,
-  tertiary: 0x7d7a75,
-  residential: 0x86837e,
-  service: 0x8d8a85,
-  footway: 0x99958f,
-  railway: 0x47494d,
-  flyover: 0x525459,
+  motorway: 0x16181d, // deep black highway asphalt
+  trunk: 0x1a1c22, // dark trunk asphalt
+  primary: 0x1e2128, // dark primary arterial
+  secondary: 0x242830, // dark secondary road
+  tertiary: 0x2a2e37, // dark tertiary street
+  residential: 0x30353f, // dark neighborhood lane
+  service: 0x363b46, // service lane
+  footway: 0x484e5a, // paved pedestrian walkway
+  railway: 0x222429, // dark rail trackbed
+  flyover: 0x181a20, // dark elevated flyover asphalt
 };
 
 const ROAD_COLORS_NIGHT: Record<RoadClass, number> = {
-  motorway: 0x3d3f46,
-  trunk: 0x393b42,
-  primary: 0x34363c,
-  secondary: 0x2e3036,
-  tertiary: 0x282a30,
-  residential: 0x232529,
-  service: 0x1f2124,
-  footway: 0x1b1d20,
-  railway: 0x2b2c30,
-  flyover: 0x3a3c42,
+  motorway: 0x0f1115,
+  trunk: 0x121418,
+  primary: 0x14161b,
+  secondary: 0x16181e,
+  tertiary: 0x181b22,
+  residential: 0x1b1e26,
+  service: 0x1e212a,
+  footway: 0x20242e,
+  railway: 0x15161b,
+  flyover: 0x111317,
 };
 
-/** Night lighting hierarchy: bigger corridors are lit more consistently. */
+/** Night lighting hierarchy: warm golden sodium streetlight wash along corridors. */
 const ROAD_EMISSIVE_NIGHT: Record<RoadClass, number> = {
-  motorway: 0x3e352a,
-  trunk: 0x372f25,
-  primary: 0x2f2921,
-  secondary: 0x24201a,
-  tertiary: 0x1a1713,
-  residential: 0x100e0b,
-  service: 0x080706,
-  footway: 0x000000,
-  railway: 0x121418,
-  flyover: 0x483a24,
+  motorway: 0x7a5b32, // bright sodium luminaire wash
+  trunk: 0x6e522c,
+  primary: 0x624826,
+  secondary: 0x543c1f,
+  tertiary: 0x443018,
+  residential: 0x322210,
+  service: 0x1e140a,
+  footway: 0x0f0b05,
+  railway: 0x1a1d24,
+  flyover: 0x856236,
 };
 
 export class TileStreamer {
@@ -465,7 +465,8 @@ export class TileStreamer {
     const altitude = camera.position.y;
     const { lod, scaleName } = this.resolveLOD(altitude);
     this.currentLOD = lod;
-    this.setLampsVisible(lod >= 3);
+    // Lamps show at street scale during day, and extend to neighborhood scale at night for glowing road networks
+    this.setLampsVisible(lod >= 3 || (this.isNight && lod >= 2));
 
     // Detail ramp feeds the building shader: facade banding and AO strength fade in
     // as you descend, so nothing aliases at city scale.

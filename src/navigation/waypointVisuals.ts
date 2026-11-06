@@ -2,6 +2,11 @@ import * as THREE from 'three';
 import { GPSTheme, NavigationRoute, RouteWaypoint } from './types';
 
 const THEME_COLORS: Record<GPSTheme, { primary: number; secondary: number; beam: number }> = {
+  purple: {
+    primary: 0xc084fc, // vibrant glowing GTA purple
+    secondary: 0x9333ea, // deep royal purple
+    beam: 0xd946ef, // bright purple-magenta laser
+  },
   cyan: {
     primary: 0x00f0ff,
     secondary: 0x0284c7,
@@ -56,23 +61,24 @@ function createRibbonShaderMaterial(theme: GPSTheme): THREE.ShaderMaterial {
         #include <logdepthbuf_fragment>
 
         // Forward flowing animated arrows (chevrons)
-        float speed = 3.5;
-        float repeatV = 0.5; // chevron density along road length
+        float speed = 2.8;
+        float repeatV = 0.40; // chevron density along road length
         float v = fract(vUv.y * repeatV - uTime * speed);
 
         // Chevron V-shape logic
         float uCentered = abs(vUv.x - 0.5) * 2.0; // 0 in center, 1 at edges
         float chevron = 1.0 - smoothstep(0.0, 0.45, abs(v - uCentered * 0.45));
 
-        // Lateral edge fade
+        // Lateral edge fade and crisp highlighted track borders
         float edgeFade = 1.0 - pow(uCentered, 4.0);
+        float edgeBorder = smoothstep(0.70, 0.95, uCentered) * 0.6;
 
         // Center spine glow
         float centerGlow = 1.0 - smoothstep(0.0, 0.35, uCentered);
 
         // Blend gradient
-        vec3 finalColor = mix(uColor2, uColor1, chevron * 0.7 + centerGlow * 0.4);
-        float alpha = (chevron * 0.75 + centerGlow * 0.35 + 0.25) * edgeFade * uOpacity;
+        vec3 finalColor = mix(uColor2, uColor1, chevron * 0.65 + centerGlow * 0.45);
+        float alpha = (chevron * 0.65 + centerGlow * 0.45 + edgeBorder + 0.35) * edgeFade * uOpacity;
 
         gl_FragColor = vec4(finalColor, alpha);
       }
@@ -153,7 +159,7 @@ export class WaypointVisuals {
 
   // Navigator Vehicle / Indicator Arrow
   private navigatorMesh: THREE.Group;
-  private currentTheme: GPSTheme = 'cyan';
+  private currentTheme: GPSTheme = 'purple';
 
   constructor() {
     this.group = new THREE.Group();
@@ -287,7 +293,8 @@ export class WaypointVisuals {
 
     if (!route || route.points.length < 2) return;
 
-    const geometry = this.buildRibbonGeometry(route.points, 4.0);
+    // Bold 6.8m highlighted roadmap track pinned along the carriageway
+    const geometry = this.buildRibbonGeometry(route.points, 6.8);
     this.ribbonMesh = new THREE.Mesh(geometry, this.ribbonMaterial);
     this.ribbonMesh.frustumCulled = false;
     this.group.add(this.ribbonMesh);
@@ -370,18 +377,12 @@ export class WaypointVisuals {
    * Position and orient the 3D Navigator arrow
    */
   public updateNavigator(
-    pos: { x: number; y: number; z: number } | null,
-    heading = 0,
-    visible = true
+    _pos: { x: number; y: number; z: number } | null,
+    _heading = 0,
+    _visible = true
   ): void {
-    if (!pos || !visible) {
-      this.navigatorMesh.visible = false;
-      return;
-    }
-
-    this.navigatorMesh.visible = true;
-    this.navigatorMesh.position.set(pos.x, pos.y + 1.2, pos.z);
-    this.navigatorMesh.rotation.y = heading;
+    // Hidden per user feedback: route is a clean highlighted roadmap track without distracting moving dots
+    this.navigatorMesh.visible = false;
   }
 
   /**

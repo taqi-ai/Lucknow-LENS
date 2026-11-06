@@ -51,4 +51,4 @@ export interface NavigatorState {
   timeRemainingSeconds: number;
 }
 
-export type GPSTheme = 'cyan' | 'neon' | 'amber';
+export type GPSTheme = 'purple' | 'cyan' | 'neon' | 'amber';

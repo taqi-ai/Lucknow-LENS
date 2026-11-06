@@ -43,10 +43,10 @@ const ALT_DISTRICT = 4000;
 const ALT_NEIGHBOURHOOD = 1800;
 const ALT_STREET = 600;
 
-/** Streaming radius per LOD. Deliberately small — HLOD covers everything beyond. */
+/** Streaming radius per LOD. HLOD covers the macro city; detail tiles stream in closer. */
 const STREAM_RADIUS: Record<number, number> = {
   0: 0,
-  1: 0,
+  1: 3200,
   2: 2600,
   3: 2600,
 };
@@ -472,15 +472,15 @@ export class TileStreamer {
     // as you descend, so nothing aliases at city scale.
     this.materials.setDetail(1 - THREE.MathUtils.clamp((altitude - 300) / 3000, 0, 1));
 
-    const streamRadius = STREAM_RADIUS[lod] ?? 0;
+    const hasHlod = this.hlod.hasManifest();
+    const streamRadius = hasHlod ? (STREAM_RADIUS[lod] ?? 0) : Math.max(STREAM_RADIUS[lod] ?? 0, 3200);
 
     // Minor road classes drop out with altitude; major corridors never do.
     this.overlay.update(altitude);
     this.overlay.updateTime(now / 1000);
 
-    // HLOD carries district and above; below that it fills in beyond the streamed
-    // radius so the horizon stays continuous.
-    this.hlod.update(camera, lod >= 1 || altitude < ALT_DISTRICT, streamRadius * 0.85);
+    // HLOD carries district and full city scale; relief stream gives 3D massing to skyline landmarks.
+    this.hlod.update(camera, true, streamRadius * 0.85);
 
     if (streamRadius > 0 && this.manifest) {
       this.updateStreamedTiles(camera, lod, streamRadius);

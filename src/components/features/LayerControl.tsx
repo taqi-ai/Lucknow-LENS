@@ -1,5 +1,5 @@
 import React from 'react';
-import { Building2, Navigation, TreePine, Droplets, MapPin, Tag, Wind, CloudSun, Plane, Train, Video, Newspaper, Eye, EyeOff } from 'lucide-react';
+import { Building2, Navigation, TreePine, Droplets, MapPin, Tag, Wind, CloudSun, Plane, Train, Video, Newspaper, Eye, EyeOff, ShieldAlert } from 'lucide-react';
 
 export interface LayerState {
   base: {
@@ -18,6 +18,7 @@ export interface LayerState {
     railways: boolean;
     cameras: boolean;
     news: boolean;
+    emergency: boolean;
   };
 }
 
@@ -101,6 +102,7 @@ export const LayerControl: React.FC<LayerControlProps> = ({ layers, onToggleLaye
                     {key === 'railways' && <Train className="w-3.5 h-3.5 flex-shrink-0 text-indigo-400" />}
                     {key === 'cameras' && <Video className="w-3.5 h-3.5 flex-shrink-0 text-teal-400" />}
                     {key === 'news' && <Newspaper className="w-3.5 h-3.5 flex-shrink-0 text-purple-400" />}
+                    {key === 'emergency' && <ShieldAlert className="w-3.5 h-3.5 flex-shrink-0 text-rose-400" />}
                     <span className="text-[11px] font-semibold truncate capitalize">{key}</span>
                   </div>
                   {active ? (

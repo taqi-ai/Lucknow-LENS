@@ -110,6 +110,7 @@ export default function App() {
       railways: false,
       cameras: false,
       news: false,
+      emergency: true,
     }
   });
 

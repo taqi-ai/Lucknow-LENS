@@ -186,7 +186,7 @@ export interface SearchResult {
   importance: number;
 }
 
-export type SelectedEntityType = 'building' | 'poi' | 'aircraft';
+export type SelectedEntityType = 'building' | 'poi' | 'aircraft' | 'emergency';
 
 export interface SelectedEntity {
   type: SelectedEntityType;

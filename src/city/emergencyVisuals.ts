@@ -369,25 +369,36 @@ export class EmergencyVisualManager {
     // Adaptive scale: as camera zooms higher, badges scale up slightly to remain legible
     // and don't shrink into invisible dots, but remain proportional at street level
     const altitude = cameraPosition.y;
+    const isMacroScale = altitude > 2400;
     const baseScale = Math.max(38, Math.min(190, altitude * 0.075));
 
     for (const sprite of this.badgeSprites.values()) {
       const data = sprite.userData;
       if (!data) continue;
 
+      const fac = data.facility;
+      const isSelected = this.selectedFacility && this.selectedFacility.id === fac.id;
+      const isCuratedHub = !fac.id.startsWith('emg-');
+
+      // Density culling: at high altitude (Full City / District macro), display premier
+      // regional emergency hubs and selected facility to prevent screen clutter.
+      // At neighborhood and street scale, reveal all community facilities and clinics.
+      const shouldShow = !isMacroScale || isCuratedHub || isSelected;
+      sprite.visible = shouldShow;
+      if (!shouldShow) continue;
+
       // Gentle floating bob
       const bob = Math.sin(time * 2.2 + data.phase) * 3.5;
       sprite.position.y = data.baseY + bob;
 
       // Highlight selected facility
-      const isSelected = this.selectedFacility && this.selectedFacility.id === data.facility.id;
       const targetScale = isSelected ? baseScale * 1.35 : baseScale;
       sprite.scale.set(targetScale * 1.5, targetScale, 1);
     }
   }
 
   public getInteractiveObjects(): THREE.Object3D[] {
-    return Array.from(this.badgeSprites.values());
+    return Array.from(this.badgeSprites.values()).filter((s) => s.visible);
   }
 
   public dispose(): void {

@@ -14,6 +14,8 @@ import { unproject } from '../../search/SearchIndex';
 import { WaypointVisuals } from '../../navigation/waypointVisuals';
 import { RouteDriver } from '../../navigation/routeDriver';
 import { NavigationRoute, RouteWaypoint, GPSTheme } from '../../navigation/types';
+import { EmergencyVisualManager } from '../../city/emergencyVisuals';
+import { loadEmergencyFacilities, EmergencyFacility } from '../../city/emergencyServices';
 
 /**
  * Aircraft geometry and materials are created once at module scope and shared by
@@ -186,6 +188,12 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       onRouteDriverReady(routeDriver);
     }
 
+    // Emergency Services Visuals & Coverage Overlay
+    const emergencyVisuals = new EmergencyVisualManager(cityRenderer.scene);
+    loadEmergencyFacilities().then((facs) => {
+      emergencyVisuals.setFacilities(facs);
+    });
+
     // TileStreamer init
     streamer.init().then(() => {
       const extent = streamer.getSpatialExtent();
@@ -296,6 +304,15 @@ export const CityViewport: React.FC<CityViewportProps> = ({
         waypointVisuals.updateNavigator(null, 0, false);
       }
 
+      // Emergency services visuals & coverage update
+      emergencyVisuals.setVisible(Boolean(currentLayers.live.emergency));
+      if (curSelected && curSelected.type === 'emergency') {
+        emergencyVisuals.setSelectedFacility(curSelected.details as EmergencyFacility);
+      } else {
+        emergencyVisuals.setSelectedFacility(null);
+      }
+      emergencyVisuals.update(time * 0.001, cityRenderer.camera.position);
+
       // Layer Visibility Check
       const layerKey = `${currentLayers.base.buildings}|${currentLayers.base.roads}|${currentLayers.base.parks}|${currentLayers.base.gomti}`;
       if (layerKey !== lastLayerKey) {
@@ -353,6 +370,31 @@ export const CityViewport: React.FC<CityViewportProps> = ({
               x: flightData.x,
               z: flightData.z,
             });
+            return;
+          }
+        }
+      }
+
+      // Emergency badges click check
+      if (layersRef.current.live.emergency) {
+        const emgIntersects = raycaster.intersectObjects(emergencyVisuals.getInteractiveObjects(), false);
+        if (emgIntersects.length > 0) {
+          const hitObj = emgIntersects[0].object as THREE.Sprite;
+          const fac = hitObj.userData.facility as EmergencyFacility;
+          if (fac) {
+            const latLon = unproject(fac.x, fac.z);
+            emergencyVisuals.setSelectedFacility(fac);
+            onSelectEntityRef.current({
+              type: 'emergency',
+              id: fac.id,
+              name: fac.name,
+              details: fac,
+              latitude: latLon.lat,
+              longitude: latLon.lon,
+              x: fac.x,
+              z: fac.z,
+            });
+            controls.flyTo(latLon.lat, latLon.lon, 450);
             return;
           }
         }
@@ -477,6 +519,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       streamer.dispose();
       materials.dispose();
       waypointVisuals.dispose();
+      emergencyVisuals.dispose();
       cityRenderer.dispose();
       if (container.contains(cityRenderer.renderer.domElement)) {
         container.removeChild(cityRenderer.renderer.domElement);

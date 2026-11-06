@@ -12,8 +12,8 @@
 import * as THREE from 'three';
 import { EmergencyFacility, EmergencyFacilityType } from './emergencyServices';
 
-/** Generates high-DPI procedural canvas texture for emergency badges */
-function createBadgeTexture(type: EmergencyFacilityType, level: number): THREE.CanvasTexture {
+/** Generates high-DPI procedural canvas texture for emergency badges (pure sign, no level text) */
+function createBadgeTexture(type: EmergencyFacilityType): THREE.CanvasTexture {
   const size = 256;
   const canvas = document.createElement('canvas');
   canvas.width = size;
@@ -27,15 +27,15 @@ function createBadgeTexture(type: EmergencyFacilityType, level: number): THREE.C
   ctx.clearRect(0, 0, size, size);
 
   // Background glow
-  const glowGrad = ctx.createRadialGradient(128, 128, 40, 128, 128, 120);
+  const glowGrad = ctx.createRadialGradient(128, 128, 30, 128, 128, 122);
   if (type === 'hospital') {
-    glowGrad.addColorStop(0, 'rgba(239, 68, 68, 0.35)');
+    glowGrad.addColorStop(0, 'rgba(239, 68, 68, 0.40)');
     glowGrad.addColorStop(1, 'rgba(239, 68, 68, 0.0)');
   } else if (type === 'police') {
-    glowGrad.addColorStop(0, 'rgba(59, 130, 246, 0.35)');
+    glowGrad.addColorStop(0, 'rgba(59, 130, 246, 0.40)');
     glowGrad.addColorStop(1, 'rgba(59, 130, 246, 0.0)');
   } else {
-    glowGrad.addColorStop(0, 'rgba(249, 115, 22, 0.40)');
+    glowGrad.addColorStop(0, 'rgba(249, 115, 22, 0.45)');
     glowGrad.addColorStop(1, 'rgba(249, 115, 22, 0.0)');
   }
   ctx.fillStyle = glowGrad;
@@ -44,10 +44,10 @@ function createBadgeTexture(type: EmergencyFacilityType, level: number): THREE.C
   // Outer circle container with dark glass
   ctx.save();
   ctx.beginPath();
-  ctx.arc(128, 118, 82, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+  ctx.arc(128, 128, 96, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.90)';
   ctx.fill();
-  ctx.lineWidth = 6;
+  ctx.lineWidth = 7;
   if (type === 'hospital') {
     ctx.strokeStyle = '#ef4444';
   } else if (type === 'police') {
@@ -62,29 +62,29 @@ function createBadgeTexture(type: EmergencyFacilityType, level: number): THREE.C
     // Red Medical Cross (+)
     ctx.fillStyle = '#ef4444';
     ctx.beginPath();
-    ctx.roundRect(114, 68, 28, 100, 6);
+    ctx.roundRect(112, 56, 32, 144, 8);
     ctx.fill();
     ctx.beginPath();
-    ctx.roundRect(78, 104, 100, 28, 6);
+    ctx.roundRect(56, 112, 144, 32, 8);
     ctx.fill();
 
     // White inner core cross for pop
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.roundRect(119, 75, 18, 86, 4);
+    ctx.roundRect(118, 64, 20, 128, 5);
     ctx.fill();
     ctx.beginPath();
-    ctx.roundRect(85, 109, 86, 18, 4);
+    ctx.roundRect(64, 118, 128, 20, 5);
     ctx.fill();
   } else if (type === 'police') {
     // Blue Police Shield
     ctx.beginPath();
-    ctx.moveTo(128, 66);
-    ctx.lineTo(176, 84);
-    ctx.lineTo(176, 126);
-    ctx.bezierCurveTo(176, 158, 128, 178, 128, 178);
-    ctx.bezierCurveTo(128, 178, 80, 158, 80, 126);
-    ctx.lineTo(80, 84);
+    ctx.moveTo(128, 68);
+    ctx.lineTo(182, 88);
+    ctx.lineTo(182, 138);
+    ctx.bezierCurveTo(182, 174, 128, 196, 128, 196);
+    ctx.bezierCurveTo(128, 196, 74, 174, 74, 138);
+    ctx.lineTo(74, 88);
     ctx.closePath();
     ctx.fillStyle = '#1d4ed8';
     ctx.fill();
@@ -95,7 +95,7 @@ function createBadgeTexture(type: EmergencyFacilityType, level: number): THREE.C
     // Gold 5-point Star
     ctx.fillStyle = '#fef08a';
     ctx.beginPath();
-    const cx = 128, cy = 118, spikes = 5, outerRadius = 26, innerRadius = 12;
+    const cx = 128, cy = 128, spikes = 5, outerRadius = 30, innerRadius = 14;
     let rot = (Math.PI / 2) * 3;
     let step = Math.PI / spikes;
     ctx.moveTo(cx, cy - outerRadius);
@@ -115,45 +115,30 @@ function createBadgeTexture(type: EmergencyFacilityType, level: number): THREE.C
   } else {
     // Fire Flame Symbol
     ctx.beginPath();
-    ctx.moveTo(128, 62);
-    ctx.bezierCurveTo(145, 90, 172, 108, 172, 138);
-    ctx.bezierCurveTo(172, 166, 150, 178, 128, 178);
-    ctx.bezierCurveTo(106, 178, 84, 166, 84, 138);
-    ctx.bezierCurveTo(84, 114, 104, 94, 128, 62);
+    ctx.moveTo(128, 64);
+    ctx.bezierCurveTo(150, 96, 180, 118, 180, 150);
+    ctx.bezierCurveTo(180, 182, 154, 196, 128, 196);
+    ctx.bezierCurveTo(102, 196, 76, 182, 76, 150);
+    ctx.bezierCurveTo(76, 122, 102, 100, 128, 64);
     ctx.closePath();
     ctx.fillStyle = '#ea580c';
     ctx.fill();
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 4;
     ctx.strokeStyle = '#fdba74';
     ctx.stroke();
 
     // Inner bright yellow flame
     ctx.beginPath();
-    ctx.moveTo(128, 105);
-    ctx.bezierCurveTo(138, 120, 152, 132, 152, 148);
-    ctx.bezierCurveTo(152, 166, 140, 174, 128, 174);
-    ctx.bezierCurveTo(116, 174, 104, 166, 104, 148);
-    ctx.bezierCurveTo(104, 134, 116, 122, 128, 105);
+    ctx.moveTo(128, 112);
+    ctx.bezierCurveTo(140, 128, 156, 142, 156, 160);
+    ctx.bezierCurveTo(156, 180, 142, 190, 128, 190);
+    ctx.bezierCurveTo(114, 190, 100, 180, 100, 160);
+    ctx.bezierCurveTo(100, 145, 114, 131, 128, 112);
     ctx.closePath();
     ctx.fillStyle = '#fde047';
     ctx.fill();
   }
   ctx.restore();
-
-  // Bottom Level / Tier Pill (SimCity BuildIt style: "LVL X")
-  ctx.beginPath();
-  ctx.roundRect(78, 206, 100, 36, 18);
-  ctx.fillStyle = '#0f172a';
-  ctx.fill();
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = type === 'hospital' ? '#ef4444' : type === 'police' ? '#3b82f6' : '#f97316';
-  ctx.stroke();
-
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 20px "Segoe UI", system-ui, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(`LVL ${level}`, 128, 224);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearMipmapLinearFilter;
@@ -246,12 +231,11 @@ export class EmergencyVisualManager {
     this.scene.add(this.badgeGroup);
   }
 
-  private getTexture(type: EmergencyFacilityType, level: number): THREE.CanvasTexture {
-    const key = `${type}-${level}`;
-    let tex = this.textureCache.get(key);
+  private getTexture(type: EmergencyFacilityType): THREE.CanvasTexture {
+    let tex = this.textureCache.get(type);
     if (!tex) {
-      tex = createBadgeTexture(type, level);
-      this.textureCache.set(key, tex);
+      tex = createBadgeTexture(type);
+      this.textureCache.set(type, tex);
     }
     return tex;
   }
@@ -270,7 +254,7 @@ export class EmergencyVisualManager {
     this.badgeSprites.clear();
 
     for (const fac of this.facilities) {
-      const tex = this.getTexture(fac.type, fac.level);
+      const tex = this.getTexture(fac.type);
       const mat = new THREE.SpriteMaterial({
         map: tex,
         transparent: true,

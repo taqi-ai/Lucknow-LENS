@@ -920,8 +920,8 @@ export class TileStreamer {
     this.overlay.setNightMode(night);
 
     if (night) {
-      this.groundMaterial.color.setHex(0x1e2430);
-      this.parkMaterial.color.setHex(0x1a2a1e);
+      this.groundMaterial.color.setHex(0x161c24);
+      this.parkMaterial.color.setHex(0x132a17);
       this.waterMaterial.color.setHex(0x14293d);
       this.lampHeadMat.emissiveIntensity = LAMP_EMISSIVE_NIGHT;
       this.setLampGlow(LAMP_GLOW_NIGHT, LAMP_POOL_NIGHT);
@@ -940,17 +940,16 @@ export class TileStreamer {
       this.treeMaterials[1].color.setHex(0x244440);
       this.treeMaterials[2].color.setHex(0x18322e);
     } else {
-      // Warm neutral earth. The old pale mint-grey dominated every aerial frame and
-      // pushed the whole image green.
-      this.groundMaterial.color.setHex(0x8d9080);
-      this.parkMaterial.color.setHex(0x6f8a5c);
+      // Warm neutral earth and vibrant landscaped emerald parkland and campus lawns
+      this.groundMaterial.color.setHex(0x7c8276);
+      this.parkMaterial.color.setHex(0x3ea844);
       this.waterMaterial.color.setHex(0x5c7d86);
       // Lamps are off in daylight — the head reads as a dark fitting.
       this.lampHeadMat.emissiveIntensity = 0.0;
       this.setLampGlow(0, 0);
-      this.treeMaterials[0].color.setHex(0x3f6136);
-      this.treeMaterials[1].color.setHex(0x4a6b3d);
-      this.treeMaterials[2].color.setHex(0x374f30);
+      this.treeMaterials[0].color.setHex(0x286324);
+      this.treeMaterials[1].color.setHex(0x32752c);
+      this.treeMaterials[2].color.setHex(0x21521d);
     }
   }
 

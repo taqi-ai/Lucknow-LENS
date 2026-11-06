@@ -187,7 +187,7 @@ export const InfoPanel: React.FC<InfoPanelProps> = ({ entity, onClose, onSetDest
 
         {entity.type === 'emergency' && (
           <div className="space-y-2.5 text-xs">
-            {/* Municipal Tier Banner */}
+            {/* Municipal Facility Banner */}
             <div className={`p-2.5 rounded-xl border flex items-center justify-between ${
               entity.details.type === 'hospital'
                 ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
@@ -197,14 +197,15 @@ export const InfoPanel: React.FC<InfoPanelProps> = ({ entity, onClose, onSetDest
             }`}>
               <div>
                 <span className="text-[9px] uppercase tracking-wider font-extrabold opacity-75 block">
-                  MUNICIPAL FACILITY TIER
+                  EMERGENCY FACILITY
                 </span>
                 <strong className="text-xs font-bold text-white">
                   {entity.details.tierName}
                 </strong>
               </div>
-              <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-900/80 border border-current">
-                LVL {entity.details.level}/{entity.details.maxLevel}
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-900/80 border border-current flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                24/7 ACTIVE
               </span>
             </div>
 

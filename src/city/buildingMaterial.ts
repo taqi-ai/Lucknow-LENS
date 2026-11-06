@@ -21,36 +21,33 @@ import * as THREE from 'three';
  */
 
 /**
- * Restrained Lucknow wall palette — warm whites through sandstone to weathered
- * grey. Deliberately low-saturation: the spread between entries is small enough
- * that the city reads as one material family, not a colour wheel.
+ * Restrained Lucknow wall palette — enhanced with crisp modern facades,
+ * warm sandstone, and municipal brick accents for distinct building silhouettes.
  */
 const WALL_PALETTE_DAY = [
-  0xf1ece3, // warm ivory
-  0xe8e1d6, // cream
-  0xded7c9, // pale sandstone
-  0xd8d2c8, // weathered plaster
-  0xd2cbbe, // beige
-  0xcbc7c0, // muted concrete
-  0xc0b8ab, // dusty sandstone
-  0xb5a998, // restrained brick-tinted render
+  0xfafbfd, // modern bright white facade / crisp glass-tower frame
+  0xeae2d5, // warm lucknow sandstone
+  0xdcd3c4, // pale limestone / civic plaster
+  0xcfd4dc, // modern blue-grey architectural concrete / commercial
+  0xe6ded0, // elegant cream residential
+  0xb87b64, // traditional red-brick / municipal render (like Charbagh / police / civic)
+  0xcac3b7, // weathered pale sandstone
+  0xa89988, // darker stone base / masonry
 ];
 
 /**
- * Roofs read darker than walls from the air, but only moderately so. An earlier
- * pass used values around 0x5c-0x6b, which is ~6x darker than the walls in linear
- * space and turned every rooftop into a black cap. Sun-bleached concrete and tar
- * felt sit closer to a 2-3x ratio.
+ * High-contrast roofs inspired by aerial urban photography and SimCity:
+ * dark charcoal slate, deep membrane, gravel decks, and rich terracotta tile.
  */
 const ROOF_PALETTE_DAY = [
-  0xa39a8e,
-  0x968d82,
-  0xab9f8f,
-  0x8d857b,
-  0xb08d71, // occasional terracotta-leaning concrete
-  0x9c948a,
-  0x8f877d,
-  0xb2a695,
+  0x323842, // dark slate / charcoal asphalt membrane (modern high-rise)
+  0x8a462b, // vibrant heritage terracotta / red clay tile
+  0x3d4550, // deep blue-grey gravel roof deck
+  0x995337, // warm brick/terracotta tile (Lucknow vernacular)
+  0x4a5360, // industrial weathered zinc / dark sheet metal
+  0x2a2f38, // deep charcoal tar & gravel roof
+  0x616a75, // mid-grey mechanical service roof
+  0x7c4936, // deep terracotta clay / municipal red roof
 ];
 
 /**
@@ -77,14 +74,14 @@ const ROOF_PALETTE_NIGHT = [
 /** User-selectable skyline looks. Day palette + night palette + light colour. */
 export type SkylineStyle = 'warm' | 'clear' | 'cyberpunk';
 
-/** Neutral, cooler daytime stone — the "clear white Lucknow" look. */
+/** Neutral, cooler daytime stone — the "clear white Lucknow" look with crisp contrasting roofs. */
 const WALL_PALETTE_CLEAR = [
-  0xf4f5f6, 0xeceef0, 0xe3e6e9, 0xdcdfe3,
-  0xd5d9dd, 0xcdd2d7, 0xc4cad0, 0xb9c0c7,
+  0xfbfcfd, 0xf0f3f6, 0xe4e9ee, 0xd8e0e6,
+  0xcfd7de, 0xc2cbd3, 0xb4bec8, 0xa6b2bc,
 ];
 const ROOF_PALETTE_CLEAR = [
-  0xa8adb2, 0x9ba0a6, 0xb0b5ba, 0x91969c,
-  0x9fa4aa, 0x969ba1, 0x8d9298, 0xb4b9bf,
+  0x2c333d, 0x363f4b, 0x414b59, 0x242a32,
+  0x3a4452, 0x485363, 0x303844, 0x505d6e,
 ];
 
 /** Neon night city. Deep indigo stock, saturated cyan/magenta light. */

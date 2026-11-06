@@ -42,12 +42,18 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser.
   * `DISTRICT`: Mid-range neighborhood boundaries and major road networks.
   * `NEIGHBORHOOD`: Detailed building footprints and local road geometry.
   * `STREET`: Low-horizon pedestrian perspective with 3D buildings, trees, and detailed place labels.
-* **GTA-Style GPS Waypoint & Dynamic Road Navigation**:
+* **GTA-Style GPS Waypoint & Highlighted Roadmap**:
   * **3D Destination Beacon**: Right-click anywhere in Lucknow, or select any landmark in Search or the Building/POI Inspector to project a vertical holographic light pillar and pulsing beacon.
   * **Instant Sub-Millisecond A* Routing**: Computes the optimal path along Lucknow's real road network (Shaheed Path, Lohia Path, flyovers, arterials, local lanes) completely client-side in ~1.5ms.
-  * **Animated Flowing GPS Ribbon**: 3D road ribbon shader with flowing directional chevrons and customizable neon themes (GTA Cyan, Vice City Neon Pink, Amber Gold).
-  * **Turn-by-Turn Navigation HUD**: Live maneuver icons, distance countdown, ETA, and street names.
-  * **Interactive 'Drive Route' Simulation**: Autonomous vehicle drive mode with third-person chase camera, corner banking, and cruise speed controls (35, 65, 110 km/h).
+  * **Highlighted Purple Roadmap Track**: Bold GTA-style purple highlighted road track pinned along the carriageway with forward flowing illuminated chevrons and glowing borders, dynamically re-routing whenever a new destination is pinned (without artificial moving vehicle dots).
+  * **Turn-by-Turn Navigation HUD**: Live maneuver icons, distance countdown, ETA, street names, and color theme switcher (GTA Purple, Neon Pink, Cyber Cyan, Amber Gold).
+* **High-Contrast Dark Asphalt Roads & Night Streetlights**:
+  * **Black Asphalt Roadways**: Sleek dark asphalt material palette (`#16181d` to `#30353f`) replacing flat dusty grey, providing high visual separation between roads, terrain, and building basements.
+  * **Nocturnal Streetlight Glow**: Streetlight luminaires, glowing head beads, and warm sodium road illumination remain active from neighborhood to district altitudes, lighting up Lucknow's road network at night.
+* **Collegiate Campus & Green Ambience System**:
+  * **Curated Major Estates**: Dedicated landscaped greenery and quads for Lucknow's renowned academic campuses: KGMU Heritage Quad, Lucknow University Badshah Bagh, La Martiniere 200-Acre Estate, SGPGI Medical Campus, IIM Lucknow, and Colvin Taluqdars' Grounds.
+  * **Landscaped Green Quads & Turf**: Manicured emerald turf lawns (`#3da344`) framed with sandstone borders and decorative garden pathways that give expansive institutional campuses polite, decorative ambience.
+  * **Interactive Campus Badges**: Hoverable 3D academic badges with acreage, founded year, architectural highlights, and campus flora breakdown.
 * **Target-Orbit Camera Architecture**:
   * Manual Heading & Tilt controls with 1:1 dial tracking.
   * Continuous endless rotation (supports smooth 360°+ spinning without wrapping pops).

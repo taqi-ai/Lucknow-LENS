@@ -60,8 +60,16 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser.
   * Spatial place labels (airports, railway terminals, universities, hospitals, historical monuments).
   * Road labels for major expressways and arterial avenues.
   * Automatic distance and LOD-aware importance filtering.
-* **Dynamic Day / Night Atmosphere**:
-  * Toggleable lighting preset switching between daylight and nocturnal city illumination with window light glow effects.
+* **Dynamic Day / Night Atmosphere & Architectural Shading**:
+  * **Day Mode Visual Overhaul**: High-contrast roof typology palettes (charcoal slate, dark membrane, gravel decks, vibrant heritage terracotta) that eliminate flat-monolith artifacts.
+  * **Natural Daylight Balance**: Warm sunlight key light coupled with cool sky-blue ambient fill, restoring natural 3D depth and crisp shadow definition across building facades.
+  * **Daytime Architectural Window Glazing**: Real-time glass specular reflections and enhanced floor banding that glints in sunlight as the camera descends.
+  * **Nocturnal Illumination**: City-wide warm sodium window light glow, street-level bounce, and district-level illumination hierarchy.
+* **Emergency Services Network (Hospitals, Police, Fire Stations)**:
+  * **Real Municipal Facilities**: Backed by real Lucknow geo-coordinates from Overture Places with curated tier-1 hubs (KGMU Trauma Centre, SGPGI, Medanta, Civil Hospital, Lalbagh Fire Station, Chowk Fire Station, Gomti Nagar Fire Station, Hazratganj Kotwali, Chowk Thana, and 160+ precinct posts).
+  * **SimCity-Inspired Floating 3D Badges**: Procedural high-DPI floating status badges (Red Medical Cross, Blue Police Shield, Orange Flame) with municipal tier indicators (e.g. `LVL 1-8`), bobbing animation, and altitude-adaptive scaling.
+  * **Interactive Coverage Radar Overlay**: Custom animated shader projecting a translucent response radius disc (1.5 km to 2.8 km) with concentric radar pulse waves, urban grid lines, and perimeter glow rings when any facility is selected.
+  * **Municipal Facility Inspector & GPS Routing**: Detailed info card displaying emergency fleet, capacity, hotline numbers, and one-click routing via the GTA GPS navigation system.
 * **Real-time Performance Dashboard**:
   * Live monitoring of FPS, Draw Calls, Active Tiles, Rendered Buildings, Rendered Trees, and Pending Tile Downloads.
 

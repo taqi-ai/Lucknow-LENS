@@ -12,22 +12,27 @@
 import * as THREE from 'three';
 import { EmergencyFacility, EmergencyFacilityType } from './emergencyServices';
 
-/** Generates high-DPI procedural canvas texture for emergency badges (pure sign, no level text) */
-function createBadgeTexture(type: EmergencyFacilityType): THREE.CanvasTexture {
-  const size = 256;
+/** Generates high-DPI procedural canvas texture for emergency badges with facility name beneath sign */
+function createBadgeTexture(type: EmergencyFacilityType, name: string): THREE.CanvasTexture {
+  const w = 384;
+  const h = 256;
   const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
+  canvas.width = w;
+  canvas.height = h;
   const ctx = canvas.getContext('2d');
 
   if (!ctx) {
     return new THREE.CanvasTexture(canvas);
   }
 
-  ctx.clearRect(0, 0, size, size);
+  ctx.clearRect(0, 0, w, h);
+
+  const cx = w * 0.5; // 192
+  const iconCy = 78;
+  const iconRadius = 54;
 
   // Background glow
-  const glowGrad = ctx.createRadialGradient(128, 128, 30, 128, 128, 122);
+  const glowGrad = ctx.createRadialGradient(cx, iconCy, 20, cx, iconCy, 75);
   if (type === 'hospital') {
     glowGrad.addColorStop(0, 'rgba(239, 68, 68, 0.40)');
     glowGrad.addColorStop(1, 'rgba(239, 68, 68, 0.0)');
@@ -39,15 +44,15 @@ function createBadgeTexture(type: EmergencyFacilityType): THREE.CanvasTexture {
     glowGrad.addColorStop(1, 'rgba(249, 115, 22, 0.0)');
   }
   ctx.fillStyle = glowGrad;
-  ctx.fillRect(0, 0, size, size);
+  ctx.fillRect(0, 0, w, 150);
 
   // Outer circle container with dark glass
   ctx.save();
   ctx.beginPath();
-  ctx.arc(128, 128, 96, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(15, 23, 42, 0.90)';
+  ctx.arc(cx, iconCy, iconRadius, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
   ctx.fill();
-  ctx.lineWidth = 7;
+  ctx.lineWidth = 5;
   if (type === 'hospital') {
     ctx.strokeStyle = '#ef4444';
   } else if (type === 'police') {
@@ -62,83 +67,114 @@ function createBadgeTexture(type: EmergencyFacilityType): THREE.CanvasTexture {
     // Red Medical Cross (+)
     ctx.fillStyle = '#ef4444';
     ctx.beginPath();
-    ctx.roundRect(112, 56, 32, 144, 8);
+    ctx.roundRect(cx - 10, iconCy - 34, 20, 68, 4);
     ctx.fill();
     ctx.beginPath();
-    ctx.roundRect(56, 112, 144, 32, 8);
+    ctx.roundRect(cx - 34, iconCy - 10, 68, 20, 4);
     ctx.fill();
 
     // White inner core cross for pop
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.roundRect(118, 64, 20, 128, 5);
+    ctx.roundRect(cx - 6, iconCy - 28, 12, 56, 3);
     ctx.fill();
     ctx.beginPath();
-    ctx.roundRect(64, 118, 128, 20, 5);
+    ctx.roundRect(cx - 28, iconCy - 6, 56, 12, 3);
     ctx.fill();
   } else if (type === 'police') {
     // Blue Police Shield
     ctx.beginPath();
-    ctx.moveTo(128, 68);
-    ctx.lineTo(182, 88);
-    ctx.lineTo(182, 138);
-    ctx.bezierCurveTo(182, 174, 128, 196, 128, 196);
-    ctx.bezierCurveTo(128, 196, 74, 174, 74, 138);
-    ctx.lineTo(74, 88);
+    ctx.moveTo(cx, iconCy - 34);
+    ctx.lineTo(cx + 30, iconCy - 22);
+    ctx.lineTo(cx + 30, iconCy + 10);
+    ctx.bezierCurveTo(cx + 30, iconCy + 30, cx, iconCy + 40, cx, iconCy + 40);
+    ctx.bezierCurveTo(cx, iconCy + 40, cx - 30, iconCy + 30, cx - 30, iconCy + 10);
+    ctx.lineTo(cx - 30, iconCy - 22);
     ctx.closePath();
     ctx.fillStyle = '#1d4ed8';
     ctx.fill();
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 3;
     ctx.strokeStyle = '#60a5fa';
     ctx.stroke();
 
     // Gold 5-point Star
     ctx.fillStyle = '#fef08a';
     ctx.beginPath();
-    const cx = 128, cy = 128, spikes = 5, outerRadius = 30, innerRadius = 14;
+    const spikes = 5, outerRadius = 16, innerRadius = 8;
     let rot = (Math.PI / 2) * 3;
     let step = Math.PI / spikes;
-    ctx.moveTo(cx, cy - outerRadius);
+    ctx.moveTo(cx, iconCy - outerRadius);
     for (let i = 0; i < spikes; i++) {
       let x = cx + Math.cos(rot) * outerRadius;
-      let y = cy + Math.sin(rot) * outerRadius;
+      let y = iconCy + Math.sin(rot) * outerRadius;
       ctx.lineTo(x, y);
       rot += step;
       x = cx + Math.cos(rot) * innerRadius;
-      y = cy + Math.sin(rot) * innerRadius;
+      y = iconCy + Math.sin(rot) * innerRadius;
       ctx.lineTo(x, y);
       rot += step;
     }
-    ctx.lineTo(cx, cy - outerRadius);
+    ctx.lineTo(cx, iconCy - outerRadius);
     ctx.closePath();
     ctx.fill();
   } else {
     // Fire Flame Symbol
     ctx.beginPath();
-    ctx.moveTo(128, 64);
-    ctx.bezierCurveTo(150, 96, 180, 118, 180, 150);
-    ctx.bezierCurveTo(180, 182, 154, 196, 128, 196);
-    ctx.bezierCurveTo(102, 196, 76, 182, 76, 150);
-    ctx.bezierCurveTo(76, 122, 102, 100, 128, 64);
+    ctx.moveTo(cx, iconCy - 36);
+    ctx.bezierCurveTo(cx + 14, iconCy - 16, cx + 32, iconCy - 2, cx + 32, iconCy + 18);
+    ctx.bezierCurveTo(cx + 32, iconCy + 36, cx + 16, iconCy + 42, cx, iconCy + 42);
+    ctx.bezierCurveTo(cx - 16, iconCy + 42, cx - 32, iconCy + 36, cx - 32, iconCy + 18);
+    ctx.bezierCurveTo(cx - 32, iconCy - 2, cx - 14, iconCy - 16, cx, iconCy - 36);
     ctx.closePath();
     ctx.fillStyle = '#ea580c';
     ctx.fill();
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 2.5;
     ctx.strokeStyle = '#fdba74';
     ctx.stroke();
 
     // Inner bright yellow flame
     ctx.beginPath();
-    ctx.moveTo(128, 112);
-    ctx.bezierCurveTo(140, 128, 156, 142, 156, 160);
-    ctx.bezierCurveTo(156, 180, 142, 190, 128, 190);
-    ctx.bezierCurveTo(114, 190, 100, 180, 100, 160);
-    ctx.bezierCurveTo(100, 145, 114, 131, 128, 112);
+    ctx.moveTo(cx, iconCy - 6);
+    ctx.bezierCurveTo(cx + 8, iconCy + 4, cx + 16, iconCy + 14, cx + 16, iconCy + 24);
+    ctx.bezierCurveTo(cx + 16, iconCy + 36, cx + 8, iconCy + 38, cx, iconCy + 38);
+    ctx.bezierCurveTo(cx - 8, iconCy + 38, cx - 16, iconCy + 36, cx - 16, iconCy + 24);
+    ctx.bezierCurveTo(cx - 16, iconCy + 14, cx - 8, iconCy + 4, cx, iconCy - 6);
     ctx.closePath();
     ctx.fillStyle = '#fde047';
     ctx.fill();
   }
   ctx.restore();
+
+  // Bottom Facility Name Pill
+  const pillW = 344;
+  const pillH = 76;
+  const pillX = (w - pillW) * 0.5; // 20
+  const pillY = 152;
+
+  ctx.beginPath();
+  ctx.roundRect(pillX, pillY, pillW, pillH, 16);
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = type === 'hospital' ? 'rgba(239, 68, 68, 0.85)' : type === 'police' ? 'rgba(59, 130, 246, 0.85)' : 'rgba(249, 115, 22, 0.85)';
+  ctx.stroke();
+
+  // Facility Category Subtitle
+  ctx.fillStyle = type === 'hospital' ? '#f87171' : type === 'police' ? '#60a5fa' : '#fb923c';
+  ctx.font = '900 13px system-ui, -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const tagText = type === 'hospital' ? 'HOSPITAL / HEALTH CLINIC' : type === 'police' ? 'POLICE STATION' : 'FIRE & RESCUE';
+  ctx.fillText(tagText, cx, pillY + 22);
+
+  // Facility Name
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 18px system-ui, -apple-system, sans-serif';
+  let displayName = name;
+  if (displayName.length > 25) {
+    displayName = displayName.slice(0, 23) + '...';
+  }
+  ctx.fillText(displayName, cx, pillY + 48);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearMipmapLinearFilter;
@@ -231,11 +267,12 @@ export class EmergencyVisualManager {
     this.scene.add(this.badgeGroup);
   }
 
-  private getTexture(type: EmergencyFacilityType): THREE.CanvasTexture {
-    let tex = this.textureCache.get(type);
+  private getTexture(type: EmergencyFacilityType, name: string): THREE.CanvasTexture {
+    const key = `${type}-${name}`;
+    let tex = this.textureCache.get(key);
     if (!tex) {
-      tex = createBadgeTexture(type);
-      this.textureCache.set(type, tex);
+      tex = createBadgeTexture(type, name);
+      this.textureCache.set(key, tex);
     }
     return tex;
   }
@@ -254,7 +291,7 @@ export class EmergencyVisualManager {
     this.badgeSprites.clear();
 
     for (const fac of this.facilities) {
-      const tex = this.getTexture(fac.type);
+      const tex = this.getTexture(fac.type, fac.name);
       const mat = new THREE.SpriteMaterial({
         map: tex,
         transparent: true,
@@ -263,10 +300,10 @@ export class EmergencyVisualManager {
       });
 
       const sprite = new THREE.Sprite(mat);
-      // Elevate sprite above rooftops (~40-65m)
-      const baseHeight = fac.type === 'hospital' ? 65 : 45;
+      // Elevate sprite above rooftops (~50-70m)
+      const baseHeight = fac.type === 'hospital' ? 70 : 50;
       sprite.position.set(fac.x, baseHeight, fac.z);
-      sprite.scale.set(65, 65, 1);
+      sprite.scale.set(84, 56, 1);
 
       sprite.userData = {
         type: 'emergency',
@@ -345,7 +382,7 @@ export class EmergencyVisualManager {
       // Highlight selected facility
       const isSelected = this.selectedFacility && this.selectedFacility.id === data.facility.id;
       const targetScale = isSelected ? baseScale * 1.35 : baseScale;
-      sprite.scale.set(targetScale, targetScale, 1);
+      sprite.scale.set(targetScale * 1.5, targetScale, 1);
     }
   }
 

@@ -217,22 +217,18 @@ export class CityRenderer {
         this.hemiLight.intensity = 0.50;
         this.renderer.toneMappingExposure = 1.02;
       } else {
-        // WARM WHITE — late golden afternoon.
-        //
-        // The ambient used to be 0xc3d8ef, a cool blue, which is what made this
-        // mode nearly indistinguishable from Natural White: a golden key light
-        // cancelled by a cold fill reads as neutral. Every term is warm now —
-        // sun, ambient, sky and ground bounce — and the exposure is lifted, so
-        // the difference is obvious at a glance rather than on close inspection.
-        this.scene.fog = new THREE.FogExp2(0xe8d7bc, 0.000000);
-        this.sunLight.color.setHex(0xffcf8a);
-        this.sunLight.intensity = 4.4;
-        this.ambientLight.color.setHex(0xf2d3a6);
-        this.ambientLight.intensity = 0.32;
-        this.hemiLight.color.setHex(0xffd9a8);
-        this.hemiLight.groundColor.setHex(0x8a6a44);
-        this.hemiLight.intensity = 0.72;
-        this.renderer.toneMappingExposure = 1.04;
+        // WARM WHITE — crisp, natural daylight with warm sunlight and cool sky fill.
+        // Balances warm sunlight with sky-blue ambient fill so shadows create
+        // high 3D contrast across building facades and roofs without amber washout.
+        this.scene.fog = new THREE.FogExp2(0xd6e5f3, 0.000000);
+        this.sunLight.color.setHex(0xfff6ea);
+        this.sunLight.intensity = 3.8;
+        this.ambientLight.color.setHex(0x9bc4e6);
+        this.ambientLight.intensity = 0.35;
+        this.hemiLight.color.setHex(0xb5dbf7);
+        this.hemiLight.groundColor.setHex(0x8a7f72);
+        this.hemiLight.intensity = 0.65;
+        this.renderer.toneMappingExposure = 1.0;
       }
     }
   }

@@ -428,6 +428,7 @@ async function startServer() {
   } else {
     // Hashed asset filenames, so the bundle can be cached hard.
     app.use(express.static(distPath, {
+      index: false,
       setHeaders: (res, filePath) => {
         if (filePath.includes(`${path.sep}assets${path.sep}`)) {
           res.set("Cache-Control", "public, max-age=31536000, immutable");
@@ -450,9 +451,16 @@ async function startServer() {
         }
       },
     }));
-    app.get("*", (_req, res) => {
+    // index.html carries absolute og:/twitter: URLs (LinkedIn and other link
+    // unfurlers reject relative ones). The public origin is PUBLIC_URL if set,
+    // otherwise derived from the forwarded request host, so any domain works.
+    const indexHtml = fs.readFileSync(path.join(distPath, "index.html"), "utf8");
+    app.get("*", (req, res) => {
+      const proto = String(req.headers["x-forwarded-proto"] ?? req.protocol).split(",")[0].trim();
+      const host = String(req.headers["x-forwarded-host"] ?? req.headers.host ?? "localhost").split(",")[0].trim();
+      const origin = (process.env.PUBLIC_URL || `${proto}://${host}`).replace(/\/+$/, "");
       res.set("Cache-Control", "no-cache");
-      res.sendFile(path.join(distPath, "index.html"));
+      res.type("html").send(indexHtml.split("%ORIGIN%").join(origin));
     });
     console.log("Serving prebuilt bundle from dist/");
   }

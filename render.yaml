@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: lucknow-lens
+    name: terralyt
     runtime: docker
     branch: main
     healthCheckPath: /api/health

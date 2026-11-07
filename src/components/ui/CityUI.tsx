@@ -9,6 +9,7 @@ import { InfoPanel } from '../features/InfoPanel';
 import { AnalystPanel } from '../features/AnalystPanel';
 import { LiveDataPanel } from '../features/LiveDataPanel';
 import { NavigationHUD } from '../features/NavigationHUD';
+import { TerralytMark } from './TerralytMark';
 import type { NavigationRoute, NavigatorState, GPSTheme, RouteWaypoint } from '../../navigation/types';
 import { Compass, Building2, FileText, Activity, Map, Navigation, MapPin, Grid, Globe, ShieldCheck, Sun, Moon, Tag, Palette, Maximize2, Eye, SlidersHorizontal, X } from 'lucide-react';
 import { CameraController } from '../../city/cameraController';
@@ -170,13 +171,11 @@ export const CityUI: React.FC<CityUIProps> = ({
         <div className={`absolute top-3 left-3 z-20 overflow-y-auto no-scrollbar pointer-events-none flex flex-col gap-2.5 ${compact ? "right-3 w-auto max-h-[40vh]" : "w-[290px] max-h-[calc(100vh-1.5rem)]"}`}>
           {/* Branding header badge */}
           <div className="pointer-events-auto glass-panel rounded-2xl p-3.5 flex items-center gap-4 transition-all hover:bg-slate-900/80">
-            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 via-orange-500 to-amber-300 flex items-center justify-center text-slate-950 shadow-[0_0_15px_rgba(245,158,11,0.3)]">
-              <Building2 className="w-5 h-5 font-bold" />
-            </div>
+            <TerralytMark className="w-11 h-11 flex-shrink-0 object-contain" />
             <div>
               <div className="flex items-center gap-2 mb-0.5">
                 <h1 className="text-sm font-display font-extrabold text-white tracking-wide">
-                  LUCKNOW LENS
+                  TERRALYT LUCKNOW
                 </h1>
                 <span className="bg-emerald-500/10 text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-500/20 uppercase tracking-wider">
                   DYNAMIC LOD

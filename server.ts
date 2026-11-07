@@ -343,7 +343,7 @@ app.post("/api/analyst", async (req, res) => {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     
     const promptText = `
-      You are the AI City Analyst for LUCKNOW LENS, a 3D digital twin system. 
+      You are the AI City Analyst for TERRALYT LUCKNOW, an urban spatial intelligence platform. 
       Analyze the user's question and provide a realistic, factual response using the local Lucknow database context.
       
       CRITICAL INSTRUCTION:

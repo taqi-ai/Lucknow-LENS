@@ -59,7 +59,7 @@ export const AnalystPanel: React.FC<AnalystPanelProps> = ({ onExecuteAction }) =
       {/* Title */}
       <h3 className="text-xs font-extrabold uppercase tracking-widest text-amber-400 mb-3.5 flex items-center gap-1.5 border-b border-slate-800 pb-2">
         <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-        <span>ASK LUCKNOW LENS (AI CITY ANALYST)</span>
+        <span>ASK TERRALYT (AI CITY ANALYST)</span>
       </h3>
 
       {/* Preset Questions list */}

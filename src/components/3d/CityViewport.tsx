@@ -14,6 +14,9 @@ import { unproject } from '../../search/SearchIndex';
 import { WaypointVisuals } from '../../navigation/waypointVisuals';
 import { RouteDriver } from '../../navigation/routeDriver';
 import { NavigationRoute, RouteWaypoint, GPSTheme } from '../../navigation/types';
+import { EmergencyVisualManager } from '../../city/emergencyVisuals';
+import { loadEmergencyFacilities, EmergencyFacility } from '../../city/emergencyServices';
+import { CampusAmbienceManager } from '../../city/campusAmbience';
 
 /**
  * Aircraft geometry and materials are created once at module scope and shared by
@@ -98,6 +101,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
   // Navigation system refs
   const waypointVisualsRef = useRef<WaypointVisuals | null>(null);
   const routeDriverRef = useRef<RouteDriver | null>(null);
+  const campusAmbienceRef = useRef<CampusAmbienceManager | null>(null);
   
   const flightsGroupRef = useRef<THREE.Group | null>(null);
   const highlightRingRef = useRef<THREE.Mesh | null>(null);
@@ -185,6 +189,17 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     if (onRouteDriverReady) {
       onRouteDriverReady(routeDriver);
     }
+
+    // Emergency Services Visuals & Coverage Overlay
+    const emergencyVisuals = new EmergencyVisualManager(cityRenderer.scene);
+    loadEmergencyFacilities().then((facs) => {
+      emergencyVisuals.setFacilities(facs);
+    });
+
+    // Collegiate Campus Grounds & Landscaped Ambience
+    const campusAmbience = new CampusAmbienceManager();
+    campusAmbienceRef.current = campusAmbience;
+    cityRenderer.scene.add(campusAmbience.group);
 
     // TileStreamer init
     streamer.init().then(() => {
@@ -296,6 +311,19 @@ export const CityViewport: React.FC<CityViewportProps> = ({
         waypointVisuals.updateNavigator(null, 0, false);
       }
 
+      // Emergency services visuals & coverage update
+      emergencyVisuals.setVisible(Boolean(currentLayers.live.emergency));
+      if (curSelected && curSelected.type === 'emergency') {
+        emergencyVisuals.setSelectedFacility(curSelected.details as EmergencyFacility);
+      } else {
+        emergencyVisuals.setSelectedFacility(null);
+      }
+      emergencyVisuals.update(time * 0.001, cityRenderer.camera.position);
+
+      // Collegiate campus grounds and landscaped ambience
+      campusAmbience.setVisible(Boolean(currentLayers.base.parks));
+      campusAmbience.update(time * 0.001, cityRenderer.camera.position);
+
       // Layer Visibility Check
       const layerKey = `${currentLayers.base.buildings}|${currentLayers.base.roads}|${currentLayers.base.parks}|${currentLayers.base.gomti}`;
       if (layerKey !== lastLayerKey) {
@@ -353,6 +381,64 @@ export const CityViewport: React.FC<CityViewportProps> = ({
               x: flightData.x,
               z: flightData.z,
             });
+            return;
+          }
+        }
+      }
+
+      // Emergency badges click check
+      if (layersRef.current.live.emergency) {
+        const emgIntersects = raycaster.intersectObjects(emergencyVisuals.getInteractiveObjects(), false);
+        if (emgIntersects.length > 0) {
+          const hitObj = emgIntersects[0].object as THREE.Sprite;
+          const fac = hitObj.userData.facility as EmergencyFacility;
+          if (fac) {
+            const latLon = unproject(fac.x, fac.z);
+            emergencyVisuals.setSelectedFacility(fac);
+            onSelectEntityRef.current({
+              type: 'emergency',
+              id: fac.id,
+              name: fac.name,
+              details: fac,
+              latitude: latLon.lat,
+              longitude: latLon.lon,
+              x: fac.x,
+              z: fac.z,
+            });
+            controls.flyTo(latLon.lat, latLon.lon, 450);
+            return;
+          }
+        }
+      }
+
+      // Campus badges click check
+      if (layersRef.current.base.parks) {
+        const campusIntersects = raycaster.intersectObjects(
+          campusAmbience.group.children.filter((c) => c instanceof THREE.Sprite),
+          false
+        );
+        if (campusIntersects.length > 0) {
+          const hitSprite = campusIntersects[0].object as THREE.Sprite;
+          const campus = hitSprite.userData.campus;
+          if (campus) {
+            const latLon = unproject(campus.x, campus.z);
+            onSelectEntityRef.current({
+              type: 'poi',
+              id: campus.id,
+              name: campus.name,
+              details: {
+                category: 'Collegiate Campus & Green Grounds',
+                acreage: campus.acreage,
+                founded: campus.founded,
+                highlights: campus.highlights,
+                flora: campus.flora,
+              },
+              latitude: latLon.lat,
+              longitude: latLon.lon,
+              x: campus.x,
+              z: campus.z,
+            });
+            controls.flyTo(latLon.lat, latLon.lon, 600);
             return;
           }
         }
@@ -477,6 +563,8 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       streamer.dispose();
       materials.dispose();
       waypointVisuals.dispose();
+      emergencyVisuals.dispose();
+      campusAmbience.dispose();
       cityRenderer.dispose();
       if (container.contains(cityRenderer.renderer.domElement)) {
         container.removeChild(cityRenderer.renderer.domElement);
@@ -515,6 +603,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       labelManagerRef.current.enabled = showLabels;
     }
     if (skyRef.current) skyRef.current.setNightMode(nightMode);
+    campusAmbienceRef.current?.setNightMode(nightMode);
   }, [nightMode, showLabels]);
 
   // Skyline look

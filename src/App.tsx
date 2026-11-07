@@ -64,7 +64,7 @@ export default function App() {
   const [navigationRoute, setNavigationRoute] = useState<NavigationRoute | null>(null);
   const [navigatorState, setNavigatorState] = useState<NavigatorState | null>(null);
   const [destinationWaypoint, setDestinationWaypoint] = useState<RouteWaypoint | null>(null);
-  const [gpsTheme, setGpsTheme] = useState<GPSTheme>('cyan');
+  const [gpsTheme, setGpsTheme] = useState<GPSTheme>('purple');
   const [followCamera, setFollowCamera] = useState<boolean>(true);
 
   useEffect(() => {
@@ -110,6 +110,7 @@ export default function App() {
       railways: false,
       cameras: false,
       news: false,
+      emergency: true,
     }
   });
 

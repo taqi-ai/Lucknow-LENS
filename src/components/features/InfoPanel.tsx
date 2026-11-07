@@ -1,6 +1,6 @@
 import React from 'react';
 import { SelectedEntity } from '../../types';
-import { Building2, MapPin, Plane, X, Shield, Landmark, Ruler, Layers, Navigation } from 'lucide-react';
+import { Building2, MapPin, Plane, X, Shield, Landmark, Ruler, Layers, Navigation, ShieldAlert, HeartPulse, Flame, Radio, PhoneCall } from 'lucide-react';
 
 interface InfoPanelProps {
   entity: SelectedEntity | null;
@@ -20,6 +20,9 @@ export const InfoPanel: React.FC<InfoPanelProps> = ({ entity, onClose, onSetDest
             {entity.type === 'building' && <Building2 className="w-4 h-4 text-emerald-400" />}
             {entity.type === 'poi' && <Landmark className="w-4 h-4 text-amber-400" />}
             {entity.type === 'aircraft' && <Plane className="w-4 h-4 text-cyan-400" />}
+            {entity.type === 'emergency' && entity.details.type === 'hospital' && <HeartPulse className="w-4 h-4 text-rose-400" />}
+            {entity.type === 'emergency' && entity.details.type === 'police' && <ShieldAlert className="w-4 h-4 text-blue-400" />}
+            {entity.type === 'emergency' && entity.details.type === 'fire' && <Flame className="w-4 h-4 text-orange-400" />}
           </div>
           <div className="min-w-0">
             <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-500 block">
@@ -179,6 +182,83 @@ export const InfoPanel: React.FC<InfoPanelProps> = ({ entity, onClose, onSetDest
                 </strong>
               </div>
             </div>
+          </div>
+        )}
+
+        {entity.type === 'emergency' && (
+          <div className="space-y-2.5 text-xs">
+            {/* Municipal Facility Banner */}
+            <div className={`p-2.5 rounded-xl border flex items-center justify-between ${
+              entity.details.type === 'hospital'
+                ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                : entity.details.type === 'police'
+                ? 'bg-blue-500/10 border-blue-500/30 text-blue-300'
+                : 'bg-orange-500/10 border-orange-500/30 text-orange-300'
+            }`}>
+              <div>
+                <span className="text-[9px] uppercase tracking-wider font-extrabold opacity-75 block">
+                  EMERGENCY FACILITY
+                </span>
+                <strong className="text-xs font-bold text-white">
+                  {entity.details.tierName}
+                </strong>
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-900/80 border border-current flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                24/7 ACTIVE
+              </span>
+            </div>
+
+            {/* Coverage Radius Indicator */}
+            <div className="flex justify-between items-center py-1.5 border-b border-slate-800/40">
+              <span className="text-slate-400 flex items-center gap-1.5">
+                <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                Response Radius:
+              </span>
+              <strong className="text-emerald-400 font-mono text-[11px] flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block shadow-[0_0_6px_#10b981]" />
+                {entity.details.coverageRadiusMeters.toLocaleString()} m ({((entity.details.coverageRadiusMeters) / 1000).toFixed(1)} km)
+              </strong>
+            </div>
+
+            {/* Fleet / Equipment */}
+            <div className="py-1.5 border-b border-slate-800/40">
+              <span className="text-[10px] text-slate-400 block mb-0.5 font-medium">DISPATCH FLEET & SQUAD:</span>
+              <strong className="text-slate-200 text-[11px]">
+                {entity.details.vehicles}
+              </strong>
+            </div>
+
+            {/* Capacity / Role */}
+            <div className="py-1.5 border-b border-slate-800/40">
+              <span className="text-[10px] text-slate-400 block mb-0.5 font-medium">OPERATIONAL CAPACITY:</span>
+              <strong className="text-slate-200 text-[11px]">
+                {entity.details.capacity}
+              </strong>
+            </div>
+
+            {/* Sector / District */}
+            {entity.details.district && (
+              <div className="flex justify-between items-center py-1.5 border-b border-slate-800/40">
+                <span className="text-slate-400">Jurisdiction:</span>
+                <strong className="text-slate-300 font-mono text-[11px]">
+                  {entity.details.district}
+                </strong>
+              </div>
+            )}
+
+            {/* Helpline Hotline */}
+            {entity.details.phone && (
+              <div className="flex justify-between items-center py-1.5 border-b border-slate-800/40">
+                <span className="text-slate-400 flex items-center gap-1">
+                  <PhoneCall className="w-3.5 h-3.5 text-amber-400" />
+                  Direct Hotline:
+                </span>
+                <strong className="text-amber-400 font-bold font-mono text-xs">
+                  {entity.details.phone}
+                </strong>
+              </div>
+            )}
           </div>
         )}
 

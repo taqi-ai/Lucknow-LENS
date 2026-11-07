@@ -90,21 +90,31 @@ export const NavigationHUD: React.FC<NavigationHUDProps> = ({
   const currentSpeed = state?.driveSpeedKmH ?? 65;
 
   const themeBorder =
-    theme === 'cyan'
+    theme === 'purple'
+      ? 'border-purple-500/50 shadow-purple-500/20'
+      : theme === 'cyan'
       ? 'border-cyan-500/50 shadow-cyan-500/20'
       : theme === 'neon'
       ? 'border-pink-500/50 shadow-pink-500/20'
       : 'border-amber-500/50 shadow-amber-500/20';
 
   const themeBgBadge =
-    theme === 'cyan'
+    theme === 'purple'
+      ? 'bg-purple-500 text-slate-950 font-black'
+      : theme === 'cyan'
       ? 'bg-cyan-500 text-slate-950'
       : theme === 'neon'
       ? 'bg-pink-500 text-white'
       : 'bg-amber-500 text-slate-950';
 
   const themeText =
-    theme === 'cyan' ? 'text-cyan-400' : theme === 'neon' ? 'text-pink-400' : 'text-amber-400';
+    theme === 'purple'
+      ? 'text-purple-400'
+      : theme === 'cyan'
+      ? 'text-cyan-400'
+      : theme === 'neon'
+      ? 'text-pink-400'
+      : 'text-amber-400';
 
   return (
     <div className="fixed top-5 left-1/2 -translate-x-1/2 z-40 max-w-xl w-[92vw] sm:w-[540px] pointer-events-auto animate-in fade-in slide-in-from-top-4 duration-300">
@@ -130,7 +140,7 @@ export const NavigationHUD: React.FC<NavigationHUDProps> = ({
             {/* Theme switcher */}
             <button
               onClick={() => {
-                const next: GPSTheme = theme === 'cyan' ? 'neon' : theme === 'neon' ? 'amber' : 'cyan';
+                const next: GPSTheme = theme === 'purple' ? 'cyan' : theme === 'cyan' ? 'neon' : theme === 'neon' ? 'amber' : 'purple';
                 onChangeTheme(next);
               }}
               title="Cycle GPS Theme Color"

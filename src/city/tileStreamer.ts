@@ -43,10 +43,10 @@ const ALT_DISTRICT = 4000;
 const ALT_NEIGHBOURHOOD = 1800;
 const ALT_STREET = 600;
 
-/** Streaming radius per LOD. Deliberately small — HLOD covers everything beyond. */
+/** Streaming radius per LOD. HLOD covers the macro city; detail tiles stream in closer. */
 const STREAM_RADIUS: Record<number, number> = {
   0: 0,
-  1: 0,
+  1: 3200,
   2: 2600,
   3: 2600,
 };
@@ -72,43 +72,43 @@ const LAMP_GLOW_NIGHT = 0.85;
 const LAMP_POOL_NIGHT = 0.5;
 
 const ROAD_COLORS_DAY: Record<RoadClass, number> = {
-  motorway: 0x5e5c5a,
-  trunk: 0x646260,
-  primary: 0x6b6966,
-  secondary: 0x74716d,
-  tertiary: 0x7d7a75,
-  residential: 0x86837e,
-  service: 0x8d8a85,
-  footway: 0x99958f,
-  railway: 0x47494d,
-  flyover: 0x525459,
+  motorway: 0x16181d, // deep black highway asphalt
+  trunk: 0x1a1c22, // dark trunk asphalt
+  primary: 0x1e2128, // dark primary arterial
+  secondary: 0x242830, // dark secondary road
+  tertiary: 0x2a2e37, // dark tertiary street
+  residential: 0x30353f, // dark neighborhood lane
+  service: 0x363b46, // service lane
+  footway: 0x484e5a, // paved pedestrian walkway
+  railway: 0x222429, // dark rail trackbed
+  flyover: 0x181a20, // dark elevated flyover asphalt
 };
 
 const ROAD_COLORS_NIGHT: Record<RoadClass, number> = {
-  motorway: 0x3d3f46,
-  trunk: 0x393b42,
-  primary: 0x34363c,
-  secondary: 0x2e3036,
-  tertiary: 0x282a30,
-  residential: 0x232529,
-  service: 0x1f2124,
-  footway: 0x1b1d20,
-  railway: 0x2b2c30,
-  flyover: 0x3a3c42,
+  motorway: 0x0f1115,
+  trunk: 0x121418,
+  primary: 0x14161b,
+  secondary: 0x16181e,
+  tertiary: 0x181b22,
+  residential: 0x1b1e26,
+  service: 0x1e212a,
+  footway: 0x20242e,
+  railway: 0x15161b,
+  flyover: 0x111317,
 };
 
-/** Night lighting hierarchy: bigger corridors are lit more consistently. */
+/** Night lighting hierarchy: warm golden sodium streetlight wash along corridors. */
 const ROAD_EMISSIVE_NIGHT: Record<RoadClass, number> = {
-  motorway: 0x3e352a,
-  trunk: 0x372f25,
-  primary: 0x2f2921,
-  secondary: 0x24201a,
-  tertiary: 0x1a1713,
-  residential: 0x100e0b,
-  service: 0x080706,
-  footway: 0x000000,
-  railway: 0x121418,
-  flyover: 0x483a24,
+  motorway: 0x7a5b32, // bright sodium luminaire wash
+  trunk: 0x6e522c,
+  primary: 0x624826,
+  secondary: 0x543c1f,
+  tertiary: 0x443018,
+  residential: 0x322210,
+  service: 0x1e140a,
+  footway: 0x0f0b05,
+  railway: 0x1a1d24,
+  flyover: 0x856236,
 };
 
 export class TileStreamer {
@@ -465,21 +465,22 @@ export class TileStreamer {
     const altitude = camera.position.y;
     const { lod, scaleName } = this.resolveLOD(altitude);
     this.currentLOD = lod;
-    this.setLampsVisible(lod >= 3);
+    // Lamps show at street scale during day, and extend to neighborhood scale at night for glowing road networks
+    this.setLampsVisible(lod >= 3 || (this.isNight && lod >= 2));
 
     // Detail ramp feeds the building shader: facade banding and AO strength fade in
     // as you descend, so nothing aliases at city scale.
     this.materials.setDetail(1 - THREE.MathUtils.clamp((altitude - 300) / 3000, 0, 1));
 
-    const streamRadius = STREAM_RADIUS[lod] ?? 0;
+    const hasHlod = this.hlod.hasManifest();
+    const streamRadius = hasHlod ? (STREAM_RADIUS[lod] ?? 0) : Math.max(STREAM_RADIUS[lod] ?? 0, 3200);
 
     // Minor road classes drop out with altitude; major corridors never do.
     this.overlay.update(altitude);
     this.overlay.updateTime(now / 1000);
 
-    // HLOD carries district and above; below that it fills in beyond the streamed
-    // radius so the horizon stays continuous.
-    this.hlod.update(camera, lod >= 1 || altitude < ALT_DISTRICT, streamRadius * 0.85);
+    // HLOD carries district and full city scale; relief stream gives 3D massing to skyline landmarks.
+    this.hlod.update(camera, true, streamRadius * 0.85);
 
     if (streamRadius > 0 && this.manifest) {
       this.updateStreamedTiles(camera, lod, streamRadius);
@@ -919,8 +920,8 @@ export class TileStreamer {
     this.overlay.setNightMode(night);
 
     if (night) {
-      this.groundMaterial.color.setHex(0x1e2430);
-      this.parkMaterial.color.setHex(0x1a2a1e);
+      this.groundMaterial.color.setHex(0x161c24);
+      this.parkMaterial.color.setHex(0x132a17);
       this.waterMaterial.color.setHex(0x14293d);
       this.lampHeadMat.emissiveIntensity = LAMP_EMISSIVE_NIGHT;
       this.setLampGlow(LAMP_GLOW_NIGHT, LAMP_POOL_NIGHT);
@@ -939,17 +940,16 @@ export class TileStreamer {
       this.treeMaterials[1].color.setHex(0x244440);
       this.treeMaterials[2].color.setHex(0x18322e);
     } else {
-      // Warm neutral earth. The old pale mint-grey dominated every aerial frame and
-      // pushed the whole image green.
-      this.groundMaterial.color.setHex(0x8d9080);
-      this.parkMaterial.color.setHex(0x6f8a5c);
+      // Warm neutral earth and vibrant landscaped emerald parkland and campus lawns
+      this.groundMaterial.color.setHex(0x7c8276);
+      this.parkMaterial.color.setHex(0x3ea844);
       this.waterMaterial.color.setHex(0x5c7d86);
       // Lamps are off in daylight — the head reads as a dark fitting.
       this.lampHeadMat.emissiveIntensity = 0.0;
       this.setLampGlow(0, 0);
-      this.treeMaterials[0].color.setHex(0x3f6136);
-      this.treeMaterials[1].color.setHex(0x4a6b3d);
-      this.treeMaterials[2].color.setHex(0x374f30);
+      this.treeMaterials[0].color.setHex(0x286324);
+      this.treeMaterials[1].color.setHex(0x32752c);
+      this.treeMaterials[2].color.setHex(0x21521d);
     }
   }
 

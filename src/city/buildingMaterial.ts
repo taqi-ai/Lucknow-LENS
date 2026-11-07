@@ -21,36 +21,33 @@ import * as THREE from 'three';
  */
 
 /**
- * Restrained Lucknow wall palette — warm whites through sandstone to weathered
- * grey. Deliberately low-saturation: the spread between entries is small enough
- * that the city reads as one material family, not a colour wheel.
+ * Restrained Lucknow wall palette — enhanced with crisp modern facades,
+ * warm sandstone, and municipal brick accents for distinct building silhouettes.
  */
 const WALL_PALETTE_DAY = [
-  0xf1ece3, // warm ivory
-  0xe8e1d6, // cream
-  0xded7c9, // pale sandstone
-  0xd8d2c8, // weathered plaster
-  0xd2cbbe, // beige
-  0xcbc7c0, // muted concrete
-  0xc0b8ab, // dusty sandstone
-  0xb5a998, // restrained brick-tinted render
+  0xfafbfd, // modern bright white facade / crisp glass-tower frame
+  0xeae2d5, // warm lucknow sandstone
+  0xdcd3c4, // pale limestone / civic plaster
+  0xcfd4dc, // modern blue-grey architectural concrete / commercial
+  0xe6ded0, // elegant cream residential
+  0xb87b64, // traditional red-brick / municipal render (like Charbagh / police / civic)
+  0xcac3b7, // weathered pale sandstone
+  0xa89988, // darker stone base / masonry
 ];
 
 /**
- * Roofs read darker than walls from the air, but only moderately so. An earlier
- * pass used values around 0x5c-0x6b, which is ~6x darker than the walls in linear
- * space and turned every rooftop into a black cap. Sun-bleached concrete and tar
- * felt sit closer to a 2-3x ratio.
+ * High-contrast roofs inspired by aerial urban photography and SimCity:
+ * dark charcoal slate, deep membrane, gravel decks, and rich terracotta tile.
  */
 const ROOF_PALETTE_DAY = [
-  0xa39a8e,
-  0x968d82,
-  0xab9f8f,
-  0x8d857b,
-  0xb08d71, // occasional terracotta-leaning concrete
-  0x9c948a,
-  0x8f877d,
-  0xb2a695,
+  0x323842, // dark slate / charcoal asphalt membrane (modern high-rise)
+  0x8a462b, // vibrant heritage terracotta / red clay tile
+  0x3d4550, // deep blue-grey gravel roof deck
+  0x995337, // warm brick/terracotta tile (Lucknow vernacular)
+  0x4a5360, // industrial weathered zinc / dark sheet metal
+  0x2a2f38, // deep charcoal tar & gravel roof
+  0x616a75, // mid-grey mechanical service roof
+  0x7c4936, // deep terracotta clay / municipal red roof
 ];
 
 /**
@@ -77,14 +74,14 @@ const ROOF_PALETTE_NIGHT = [
 /** User-selectable skyline looks. Day palette + night palette + light colour. */
 export type SkylineStyle = 'warm' | 'clear' | 'cyberpunk';
 
-/** Neutral, cooler daytime stone — the "clear white Lucknow" look. */
+/** Neutral, cooler daytime stone — the "clear white Lucknow" look with crisp contrasting roofs. */
 const WALL_PALETTE_CLEAR = [
-  0xf4f5f6, 0xeceef0, 0xe3e6e9, 0xdcdfe3,
-  0xd5d9dd, 0xcdd2d7, 0xc4cad0, 0xb9c0c7,
+  0xfbfcfd, 0xf0f3f6, 0xe4e9ee, 0xd8e0e6,
+  0xcfd7de, 0xc2cbd3, 0xb4bec8, 0xa6b2bc,
 ];
 const ROOF_PALETTE_CLEAR = [
-  0xa8adb2, 0x9ba0a6, 0xb0b5ba, 0x91969c,
-  0x9fa4aa, 0x969ba1, 0x8d9298, 0xb4b9bf,
+  0x2c333d, 0x363f4b, 0x414b59, 0x242a32,
+  0x3a4452, 0x485363, 0x303844, 0x505d6e,
 ];
 
 /** Neon night city. Deep indigo stock, saturated cyan/magenta light. */
@@ -208,8 +205,15 @@ const FRAG_COLOR = /* glsl */ `
   // at city scale where it would alias, and never applied to roofs.
   float bandPhase = storeyY / 3.2 + lensHash(packHash * 13.7);
   float band = smoothstep(0.02, 0.10, abs(fract(bandPhase) - 0.5));
-  float bandAmt = (1.0 - isRoof) * uDetail * 0.10;
-  baseCol *= mix(1.0, 0.78 + 0.22 * band, bandAmt);
+  float bandAmt = (1.0 - isRoof) * uDetail * 0.20;
+  baseCol *= mix(1.0, 0.75 + 0.25 * band, bandAmt);
+
+  // --- Roof surface texture & edge definition -------------------------------
+  // Gives rooftops subtle variation and gravel grain instead of completely flat fills
+  if (isRoof > 0.5) {
+    float roofGrain = (lensHash2(vWorldPos.xz * 0.15) - 0.5) * 0.08 * uDetail;
+    baseCol *= (1.0 + roofGrain);
+  }
 
   // --- Baked ambient occlusion ----------------------------------------------
   // Ground contact and street-canyon darkening. Kept gentle so the city never
@@ -329,6 +333,37 @@ const FRAG_OUTPUT = /* glsl */ `
     float spillSurf = mix(0.35, 1.0, nIsRoof);
     gl_FragColor.rgb += lampWarm * litBldg * commercial * spill * spillSurf
                       * uNight * lightHaze * 1.3;
+  }
+
+  // --- Daytime Architectural Glazing & Window Specular ----------------------
+  // In daylight, windows reflect sky and sunlight rather than emitting yellow sodium.
+  // We compute crisp window apertures that glint with cool sky and sun specular,
+  // matching SimCity BuildIt and modern digital twin visuals.
+  if (uNight < 0.98 && nIsRoof < 0.5) {
+    float dayAng = nOrient * 6.2831853;
+    vec2 dayDir = vec2(cos(dayAng), sin(dayAng));
+    float dayU = dot(vWorldPos.xz, dayDir) / 3.4;
+    float dayV = vWorldPos.y / 3.0;
+
+    // Filter sub-pixel window grid smoothly at distance to prevent aliasing moire
+    float dayFoot = max(fwidth(dayU), fwidth(dayV));
+    float dayBlur = smoothstep(0.35, 1.20, dayFoot);
+
+    // Window pane geometry
+    vec2 dayF = fract(vec2(dayU, dayV));
+    float dayPane = smoothstep(0.24, 0.34, dayF.x) * (1.0 - smoothstep(0.66, 0.76, dayF.x))
+                  * smoothstep(0.28, 0.38, dayF.y) * (1.0 - smoothstep(0.62, 0.72, dayF.y));
+    float paneEffect = mix(dayPane, PANE_MEAN * 1.8, dayBlur);
+
+    // Storey mask: avoid ground-floor and roof line overflow
+    float dayStoreyMask = step(0.8, dayV) * (1.0 - step(vPack.y * 80.0 / 3.0 - 0.5, dayV));
+
+    // Commercial / high-rise buildings have cooler blue reflective glass; residential has tinted glass
+    vec3 glassSkyColor = mix(vec3(0.55, 0.72, 0.88), vec3(0.42, 0.58, 0.76), lensHash(nHash * 23.1));
+    float glassReflectivity = (nCls > 0.5 ? 0.38 : 0.22) * uDetail * (1.0 - uNight) * dayStoreyMask;
+
+    // Apply specular window glint to fragment color
+    gl_FragColor.rgb = mix(gl_FragColor.rgb, glassSkyColor * 1.15, paneEffect * glassReflectivity);
   }
 `;
 

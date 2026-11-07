@@ -132,6 +132,10 @@ export class HLODLayer {
     }
   }
 
+  public hasManifest(): boolean {
+    return this.manifest !== null && this.tiles.size > 0;
+  }
+
   public getSpatialExtent(): { minX: number; maxX: number; minZ: number; maxZ: number } | null {
     return this.manifest?.spatialExtent ?? null;
   }

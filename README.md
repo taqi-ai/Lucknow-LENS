@@ -42,12 +42,18 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser.
   * `DISTRICT`: Mid-range neighborhood boundaries and major road networks.
   * `NEIGHBORHOOD`: Detailed building footprints and local road geometry.
   * `STREET`: Low-horizon pedestrian perspective with 3D buildings, trees, and detailed place labels.
-* **GTA-Style GPS Waypoint & Dynamic Road Navigation**:
+* **GTA-Style GPS Waypoint & Highlighted Roadmap**:
   * **3D Destination Beacon**: Right-click anywhere in Lucknow, or select any landmark in Search or the Building/POI Inspector to project a vertical holographic light pillar and pulsing beacon.
   * **Instant Sub-Millisecond A* Routing**: Computes the optimal path along Lucknow's real road network (Shaheed Path, Lohia Path, flyovers, arterials, local lanes) completely client-side in ~1.5ms.
-  * **Animated Flowing GPS Ribbon**: 3D road ribbon shader with flowing directional chevrons and customizable neon themes (GTA Cyan, Vice City Neon Pink, Amber Gold).
-  * **Turn-by-Turn Navigation HUD**: Live maneuver icons, distance countdown, ETA, and street names.
-  * **Interactive 'Drive Route' Simulation**: Autonomous vehicle drive mode with third-person chase camera, corner banking, and cruise speed controls (35, 65, 110 km/h).
+  * **Highlighted Purple Roadmap Track**: Bold GTA-style purple highlighted road track pinned along the carriageway with forward flowing illuminated chevrons and glowing borders, dynamically re-routing whenever a new destination is pinned (without artificial moving vehicle dots).
+  * **Turn-by-Turn Navigation HUD**: Live maneuver icons, distance countdown, ETA, street names, and color theme switcher (GTA Purple, Neon Pink, Cyber Cyan, Amber Gold).
+* **High-Contrast Dark Asphalt Roads & Night Streetlights**:
+  * **Black Asphalt Roadways**: Sleek dark asphalt material palette (`#16181d` to `#30353f`) replacing flat dusty grey, providing high visual separation between roads, terrain, and building basements.
+  * **Nocturnal Streetlight Glow**: Streetlight luminaires, glowing head beads, and warm sodium road illumination remain active from neighborhood to district altitudes, lighting up Lucknow's road network at night.
+* **Collegiate Campus & Green Ambience System**:
+  * **Curated Major Estates**: Dedicated landscaped greenery and quads for Lucknow's renowned academic campuses: KGMU Heritage Quad, Lucknow University Badshah Bagh, La Martiniere 200-Acre Estate, SGPGI Medical Campus, IIM Lucknow, and Colvin Taluqdars' Grounds.
+  * **Landscaped Green Quads & Turf**: Manicured emerald turf lawns (`#3da344`) framed with sandstone borders and decorative garden pathways that give expansive institutional campuses polite, decorative ambience.
+  * **Interactive Campus Badges**: Hoverable 3D academic badges with acreage, founded year, architectural highlights, and campus flora breakdown.
 * **Target-Orbit Camera Architecture**:
   * Manual Heading & Tilt controls with 1:1 dial tracking.
   * Continuous endless rotation (supports smooth 360°+ spinning without wrapping pops).
@@ -60,8 +66,21 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser.
   * Spatial place labels (airports, railway terminals, universities, hospitals, historical monuments).
   * Road labels for major expressways and arterial avenues.
   * Automatic distance and LOD-aware importance filtering.
-* **Dynamic Day / Night Atmosphere**:
-  * Toggleable lighting preset switching between daylight and nocturnal city illumination with window light glow effects.
+* **Dynamic Day / Night Atmosphere & Architectural Shading**:
+  * **Day Mode Visual Overhaul**: High-contrast roof typology palettes (charcoal slate, dark membrane, gravel decks, vibrant heritage terracotta) that eliminate flat-monolith artifacts.
+  * **Natural Daylight Balance**: Warm sunlight key light coupled with cool sky-blue ambient fill, restoring natural 3D depth and crisp shadow definition across building facades.
+  * **Daytime Architectural Window Glazing**: Real-time glass specular reflections and enhanced floor banding that glints in sunlight as the camera descends.
+  * **Nocturnal Illumination**: City-wide warm sodium window light glow, street-level bounce, and district-level illumination hierarchy.
+* **Emergency Services Network (Hospitals, Police, Fire Stations)**:
+  * **Real Municipal Facilities**: Backed by real Lucknow geo-coordinates from Overture Places with curated tier-1 hubs (KGMU Trauma Centre, SGPGI, Medanta, Civil Hospital, Lalbagh Fire Station, Chowk Fire Station, Gomti Nagar Fire Station, Hazratganj Kotwali, Chowk Thana, and 160+ precinct posts).
+  * **SimCity-Inspired Floating 3D Badges**: Procedural high-DPI floating status badges (Red Medical Cross, Blue Police Shield, Orange Flame) with readable facility name pills beneath each sign, active `24/7 ACTIVE` municipal status, and floating bob animation.
+  * **Altitude-Based Density Culling**: Regional landmark hubs are displayed at Full City / District macro altitude to keep macro views pristine and uncluttered, with all local neighborhood chowkis, clinics, and fire posts revealing dynamically upon zoom-in.
+  * **Interactive Coverage Radar Overlay**: Custom animated shader projecting a translucent response radius disc (1.5 km to 2.8 km) with concentric radar pulse waves, urban grid lines, and perimeter glow rings when any facility is selected.
+  * **Municipal Facility Inspector & GPS Routing**: Detailed info card displaying emergency fleet, capacity, hotline numbers, and one-click routing via the GTA GPS navigation system.
+* **Macro City-Scale HLOD Building Massing**:
+  * **953,000+ Footprints Resident**: Binary-baked HLOD super-tile system preserving full urban fabric density across all 120 sectors of Lucknow at macro altitude (`[FULL]`).
+  * **Extruded 3D Relief Silhouette**: Prominent skyline buildings within 9 km project true 3D walls and heights even from high aerial altitudes, preventing empty ground voids and ensuring seamless transition down to street-level JSON tiles.
+  * **Automated Dev Build Verification**: `npm run dev` automatically checks and bakes HLOD assets on demand, ensuring zero empty viewports across any developer setup.
 * **Real-time Performance Dashboard**:
   * Live monitoring of FPS, Draw Calls, Active Tiles, Rendered Buildings, Rendered Trees, and Pending Tile Downloads.
 

@@ -71,6 +71,19 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser.
   * **Natural Daylight Balance**: Warm sunlight key light coupled with cool sky-blue ambient fill, restoring natural 3D depth and crisp shadow definition across building facades.
   * **Daytime Architectural Window Glazing**: Real-time glass specular reflections and enhanced floor banding that glints in sunlight as the camera descends.
   * **Nocturnal Illumination**: City-wide warm sodium window light glow, street-level bounce, and district-level illumination hierarchy.
+* **Strategic Transport Gateways & Signature Infrastructure**:
+  * **Chaudhary Charan Singh International Airport (Amausi / T3)**:
+    * **Full 2,740m Runway 09/27**: Built with official ICAO markings including threshold piano keys, touchdown zone markers, dashed centerlines, chevron blast pads, and large painted numbers (**09** / **27**).
+    * **Nocturnal Runway & Taxiway Lighting**: Green threshold approach bars, white runway edge lamps, red stop lines, 4-unit PAPI glideslope boxes, and blue taxiway edge lights.
+    * **Terminal 3 (T3) Blue-Glass Wave Canopy**: Modular curved blue-glass vaulted canopy with interior illumination, space-frame arch trusses, and terminal departures viaduct loop.
+    * **5 Articulated Aerobridges & Parked Jetliners**: Passenger boarding bridges docked to commercial airliners (IndiGo, Air India, Akasa Air) at apron stands, with active taxiing aircraft.
+    * **54m ATC Tower & Apron Helipad**: Cylindrical control tower with a 360° observation cab, rotating radar dome, and a dedicated VIP/rescue helipad with illuminated blue ring and white "H".
+  * **Lucknow Charbagh Railway Grand Terminal & Right-Side Monuments**:
+    * **Chessboard Mughal-Gothic Palatial Facade**: Faithfully models J.H. Horniman's famous 1926 royal chessboard architecture with red-brick arcades, white Rajput cupolas (chhatris), central dome, and historic clock tower.
+    * **Platforms & Foot Overbridges**: 6 passenger boarding platforms sheltered by curved corrugated steel sheds, interconnected by elevated covered foot-overbridges (FOBs).
+    * **Rail Corridor & Level Crossing**: Crushed stone ballast beds with broad-gauge steel tracks, station high-mast floodlights, and road-rail grade level crossing boom gates with red/white hazard stripes and warning strobes.
+    * **Right-Side Historic Monuments**: Incorporates Lucknow Junction (LJN - NER) Cabway & Steam Engine memorial, the monumental Mawaiya Balanced Cantilever Metro Overbridge (flying 21m above rail tracks), Northern Railway DRM Headquarters, and Ravindralaya Cultural Auditorium & Amphitheater.
+  * **Dedicated Transport Inspector & GPS Routing**: Clicking on the Airport or Charbagh Station opens full operational specs with 1-click GTA purple roadmap route calculation.
 * **Emergency Services Network (Hospitals, Police, Fire Stations)**:
   * **Real Municipal Facilities**: Backed by real Lucknow geo-coordinates from Overture Places with curated tier-1 hubs (KGMU Trauma Centre, SGPGI, Medanta, Civil Hospital, Lalbagh Fire Station, Chowk Fire Station, Gomti Nagar Fire Station, Hazratganj Kotwali, Chowk Thana, and 160+ precinct posts).
   * **SimCity-Inspired Floating 3D Badges**: Procedural high-DPI floating status badges (Red Medical Cross, Blue Police Shield, Orange Flame) with readable facility name pills beneath each sign, active `24/7 ACTIVE` municipal status, and floating bob animation.

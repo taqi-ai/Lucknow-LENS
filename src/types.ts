@@ -90,7 +90,7 @@ export type CameraPreset =
   | 'fullcity' | 'overview' | 'neighborhood' | 'street' | 'top' | 'frame'
   /** Cinematic framings over the same real city — see CINEMATIC_PRESETS. */
   | 'hero' | 'gomti' | 'hazratganj' | 'ekana' | 'oldlucknow' | 'charbagh'
-  | 'rumi' | 'clocktower' | 'vidhansabha' | 'ambedkar';
+  | 'rumi' | 'clocktower' | 'vidhansabha' | 'ambedkar' | 'airport';
 
 export type LODLevel = 0 | 1 | 2 | 3;
 
@@ -186,7 +186,7 @@ export interface SearchResult {
   importance: number;
 }
 
-export type SelectedEntityType = 'building' | 'poi' | 'aircraft' | 'emergency';
+export type SelectedEntityType = 'building' | 'poi' | 'aircraft' | 'emergency' | 'transport-hub';
 
 export interface SelectedEntity {
   type: SelectedEntityType;

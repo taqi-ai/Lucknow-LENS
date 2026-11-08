@@ -17,6 +17,7 @@ import { NavigationRoute, RouteWaypoint, GPSTheme } from '../../navigation/types
 import { EmergencyVisualManager } from '../../city/emergencyVisuals';
 import { loadEmergencyFacilities, EmergencyFacility } from '../../city/emergencyServices';
 import { CampusAmbienceManager } from '../../city/campusAmbience';
+import { TransportHubManager, TRANSPORT_HUBS_REGISTRY, TransportHubData } from '../../city/transportHubs';
 
 /**
  * Aircraft geometry and materials are created once at module scope and shared by
@@ -102,6 +103,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
   const waypointVisualsRef = useRef<WaypointVisuals | null>(null);
   const routeDriverRef = useRef<RouteDriver | null>(null);
   const campusAmbienceRef = useRef<CampusAmbienceManager | null>(null);
+  const transportHubsRef = useRef<TransportHubManager | null>(null);
   
   const flightsGroupRef = useRef<THREE.Group | null>(null);
   const highlightRingRef = useRef<THREE.Mesh | null>(null);
@@ -200,6 +202,11 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     const campusAmbience = new CampusAmbienceManager();
     campusAmbienceRef.current = campusAmbience;
     cityRenderer.scene.add(campusAmbience.group);
+
+    // Transport Gateways & Signature Infrastructure (Airport & Charbagh Grand Terminal)
+    const transportHubs = new TransportHubManager(cityRenderer.scene);
+    transportHubsRef.current = transportHubs;
+    transportHubs.setNightMode(nightMode);
 
     // TileStreamer init
     streamer.init().then(() => {
@@ -324,6 +331,9 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       campusAmbience.setVisible(Boolean(currentLayers.base.parks));
       campusAmbience.update(time * 0.001, cityRenderer.camera.position);
 
+      // Transport Gateways (Airport & Charbagh Station)
+      transportHubs.update(time * 0.001, cityRenderer.camera.position);
+
       // Layer Visibility Check
       const layerKey = `${currentLayers.base.buildings}|${currentLayers.base.roads}|${currentLayers.base.parks}|${currentLayers.base.gomti}`;
       if (layerKey !== lastLayerKey) {
@@ -437,6 +447,62 @@ export const CityViewport: React.FC<CityViewportProps> = ({
               longitude: latLon.lon,
               x: campus.x,
               z: campus.z,
+            });
+            controls.flyTo(latLon.lat, latLon.lon, 600);
+            return;
+          }
+        }
+      }
+
+      // Transport Hubs click check (Airport, Charbagh Station, 3D runways, terminals, badges, monuments)
+      const hubIntersects = raycaster.intersectObjects(
+        transportHubs.getInteractiveObjects(),
+        true
+      );
+      if (hubIntersects.length > 0) {
+        let curr: THREE.Object3D | null = hubIntersects[0].object;
+        let hitData: any = null;
+        while (curr) {
+          if (curr.userData?.hub || curr.userData?.type === 'transport-hub' || curr.userData?.name) {
+            hitData = curr.userData;
+            break;
+          }
+          curr = curr.parent;
+        }
+
+        if (hitData) {
+          const hub: TransportHubData | undefined = hitData.hub || (hitData.type === 'transport-hub' ? hitData.hub : TRANSPORT_HUBS_REGISTRY.find(h => hitData.name?.includes(h.name) || h.name.includes(hitData.name)));
+          if (hub) {
+            const latLon = unproject(hub.x, hub.z);
+            onSelectEntityRef.current({
+              type: 'transport-hub',
+              id: hub.id,
+              name: hub.name,
+              details: {
+                category: hub.category,
+                metadata: hub.metadata,
+                badgeLabel: hub.badgeLabel,
+                badgeSub: hub.badgeSub,
+              },
+              latitude: latLon.lat,
+              longitude: latLon.lon,
+              x: hub.x,
+              z: hub.z,
+            });
+            controls.flyTo(latLon.lat, latLon.lon, hub.category === 'airport' ? 1400 : 750);
+            return;
+          } else if (hitData.name) {
+            const hitPoint = hubIntersects[0].point;
+            const latLon = unproject(hitPoint.x, hitPoint.z);
+            onSelectEntityRef.current({
+              type: 'poi',
+              id: `monument-${Math.round(hitPoint.x)}-${Math.round(hitPoint.z)}`,
+              name: hitData.name,
+              details: hitData.details || { category: 'Heritage Rail & Transport Monument' },
+              latitude: latLon.lat,
+              longitude: latLon.lon,
+              x: hitPoint.x,
+              z: hitPoint.z,
             });
             controls.flyTo(latLon.lat, latLon.lon, 600);
             return;
@@ -565,6 +631,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       waypointVisuals.dispose();
       emergencyVisuals.dispose();
       campusAmbience.dispose();
+      transportHubs.dispose();
       cityRenderer.dispose();
       if (container.contains(cityRenderer.renderer.domElement)) {
         container.removeChild(cityRenderer.renderer.domElement);
@@ -604,6 +671,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     }
     if (skyRef.current) skyRef.current.setNightMode(nightMode);
     campusAmbienceRef.current?.setNightMode(nightMode);
+    transportHubsRef.current?.setNightMode(nightMode);
   }, [nightMode, showLabels]);
 
   // Skyline look

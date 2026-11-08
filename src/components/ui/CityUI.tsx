@@ -281,7 +281,8 @@ export const CityUI: React.FC<CityUIProps> = ({
                 <option value="hazratganj" className="bg-slate-900 text-amber-300">🛍️ Hazratganj Boulevard</option>
                 <option value="gomti" className="bg-slate-900 text-amber-300">🌊 Gomti Riverfront</option>
                 <option value="ekana" className="bg-slate-900 text-amber-300">🏟️ Ekana Stadium</option>
-                <option value="charbagh" className="bg-slate-900 text-amber-300">🚆 Charbagh Railway Station</option>
+                <option value="charbagh" className="bg-slate-900 text-amber-300">🚆 Charbagh Railway Grand Terminal</option>
+                <option value="airport" className="bg-slate-900 text-amber-300">✈️ CCS International Airport (T3)</option>
                 <option value="hero" className="bg-slate-900 text-amber-300">🌆 Full City Skyline</option>
               </select>
             </div>

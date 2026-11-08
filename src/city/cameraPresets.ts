@@ -80,10 +80,17 @@ export const CINEMATIC_PRESETS: Record<string, CinematicPreset> = {
     azimuth: 1.75, pitch: 0.36, distance: 950,
   },
 
-  /** Railway district. */
+  /** Railway district & Charbagh Grand Terminal. */
   charbagh: {
-    label: 'Charbagh',
+    label: 'Charbagh Grand Terminal',
     x: -1499, z: 1574,
-    azimuth: 0.35, pitch: 0.36, distance: 1000,
+    azimuth: 0.38, pitch: 0.34, distance: 950,
+  },
+
+  /** Chaudhary Charan Singh International Airport (Amausi / T3). */
+  airport: {
+    label: 'CCS International Airport',
+    x: -9988, z: 9769,
+    azimuth: 0.82, pitch: 0.38, distance: 1600,
   },
 };

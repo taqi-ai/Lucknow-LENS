@@ -23,10 +23,11 @@ export const InfoPanel: React.FC<InfoPanelProps> = ({ entity, onClose, onSetDest
             {entity.type === 'emergency' && entity.details.type === 'hospital' && <HeartPulse className="w-4 h-4 text-rose-400" />}
             {entity.type === 'emergency' && entity.details.type === 'police' && <ShieldAlert className="w-4 h-4 text-blue-400" />}
             {entity.type === 'emergency' && entity.details.type === 'fire' && <Flame className="w-4 h-4 text-orange-400" />}
+            {entity.type === 'transport-hub' && (entity.details.category === 'airport' ? <Plane className="w-4 h-4 text-sky-400" /> : <Navigation className="w-4 h-4 text-amber-400" />)}
           </div>
           <div className="min-w-0">
             <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-500 block">
-              {entity.type} INSPECTOR
+              {entity.type === 'transport-hub' ? 'TRANSPORT GATEWAY' : entity.type} INSPECTOR
             </span>
             <h3 className="text-xs font-bold text-white truncate capitalize">
               {entity.name || `${entity.type} Selection`}
@@ -257,6 +258,68 @@ export const InfoPanel: React.FC<InfoPanelProps> = ({ entity, onClose, onSetDest
                 <strong className="text-amber-400 font-bold font-mono text-xs">
                   {entity.details.phone}
                 </strong>
+              </div>
+            )}
+          </div>
+        )}
+
+        {entity.type === 'transport-hub' && (
+          <div className="space-y-2 text-xs">
+            {/* Status & Category Badge */}
+            <div className="flex justify-between items-center py-2 px-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
+              <div>
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">
+                  STRATEGIC GATEWAY
+                </span>
+                <strong className="text-xs font-bold text-white capitalize">
+                  {entity.details.category === 'airport' ? 'International Airport' : 'Railway Grand Terminal'}
+                </strong>
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-900/80 border border-emerald-500/40 text-emerald-400 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                24/7 ACTIVE
+              </span>
+            </div>
+
+            {/* Operational Status */}
+            {entity.details.metadata?.status && (
+              <div className="flex justify-between items-center py-1.5 border-b border-slate-800/40">
+                <span className="text-slate-400">Operation Status:</span>
+                <strong className="text-sky-400 font-mono text-[11px]">
+                  {entity.details.metadata.status}
+                </strong>
+              </div>
+            )}
+
+            {/* Capacity */}
+            {entity.details.metadata?.capacity && (
+              <div className="flex justify-between items-center py-1.5 border-b border-slate-800/40">
+                <span className="text-slate-400">Passenger Traffic:</span>
+                <strong className="text-amber-400 font-bold text-[11px]">
+                  {entity.details.metadata.capacity}
+                </strong>
+              </div>
+            )}
+
+            {/* Key Features */}
+            {entity.details.metadata?.keyFeatures && (
+              <div className="py-1.5 border-b border-slate-800/40">
+                <span className="text-[10px] text-slate-400 block mb-0.5 font-medium">KEY INFRASTRUCTURE:</span>
+                <p className="text-slate-200 text-[11px] leading-relaxed">
+                  {entity.details.metadata.keyFeatures}
+                </p>
+              </div>
+            )}
+
+            {/* Detailed Key-Value Breakdown */}
+            {entity.details.metadata?.details && (
+              <div className="pt-1 space-y-1.5">
+                {Object.entries(entity.details.metadata.details).map(([k, v]) => (
+                  <div key={k} className="flex justify-between items-start py-1 border-b border-slate-800/30 text-[11px]">
+                    <span className="text-slate-400 pr-2">{k}:</span>
+                    <strong className="text-slate-200 text-right font-medium max-w-[62%]">{String(v)}</strong>
+                  </div>
+                ))}
               </div>
             )}
           </div>

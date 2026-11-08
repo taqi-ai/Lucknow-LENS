@@ -89,15 +89,35 @@ export class Pathfinder {
     this.graph = RoadGraph.getInstance();
   }
 
+  public getRoadGraph(): RoadGraph {
+    return this.graph;
+  }
+
   public async calculateRoute(
     start: RouteWaypoint,
     destination: RouteWaypoint,
-    options: CalculateRouteOptions = {}
+    optionsOrMode?: CalculateRouteOptions | TransportMode,
+    pref?: RoutePreference,
+    extraAvoidIds?: number[]
   ): Promise<NavigationRoute | null> {
     await this.graph.ensureLoaded();
 
-    const mode: TransportMode = options.transportMode ?? 'car';
-    const preference: RoutePreference = options.preference ?? 'fastest';
+    let mode: TransportMode = 'car';
+    let preference: RoutePreference = 'fastest';
+    let penalizedEdges: Set<string> | undefined;
+    let calculateAlternatives = true;
+
+    if (typeof optionsOrMode === 'string') {
+      mode = optionsOrMode;
+      if (pref) preference = pref;
+    } else if (optionsOrMode && typeof optionsOrMode === 'object') {
+      mode = optionsOrMode.transportMode ?? 'car';
+      preference = optionsOrMode.preference ?? 'fastest';
+      penalizedEdges = optionsOrMode.penalizedEdges;
+      if (optionsOrMode.calculateAlternatives !== undefined) {
+        calculateAlternatives = optionsOrMode.calculateAlternatives;
+      }
+    }
 
     const startMatch = this.graph.findNearestNode(start.x, start.z);
     const destMatch = this.graph.findNearestNode(destination.x, destination.z);
@@ -129,6 +149,12 @@ export class Pathfinder {
       }
     }
 
+    if (extraAvoidIds && extraAvoidIds.length > 0) {
+      for (const id of extraAvoidIds) {
+        avoidedNodes.add(id);
+      }
+    }
+
     // Primary route search
     const primaryRoute = this.runAStar(
       startNode,
@@ -138,7 +164,7 @@ export class Pathfinder {
       mode,
       preference,
       avoidedNodes,
-      options.penalizedEdges,
+      penalizedEdges,
       closuresAvoidedCount
     );
 
@@ -147,7 +173,7 @@ export class Pathfinder {
     }
 
     // If alternatives requested, calculate a secondary alternative route
-    if (options.calculateAlternatives !== false) {
+    if (calculateAlternatives) {
       const usedEdges = new Set<string>();
       for (let i = 1; i < primaryRoute.points.length; i++) {
         const p1 = primaryRoute.points[i - 1];

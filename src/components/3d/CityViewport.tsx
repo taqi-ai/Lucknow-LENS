@@ -349,13 +349,11 @@ export const CityViewport: React.FC<CityViewportProps> = ({
 
       // Natural Hazards 3D Layer Update
       if (currentLayers.hazards) {
-        hazardVisuals.updateFilters(currentLayers.hazards);
         hazardVisuals.update(time * 0.001);
       }
 
       // Live Incidents 3D Layer Update
       if (currentLayers.incidents) {
-        incidentVisuals.updateFilters(currentLayers.incidents);
         incidentVisuals.update(time * 0.001, cityRenderer.camera.position);
       }
 
@@ -755,6 +753,19 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     campusAmbienceRef.current?.setNightMode(nightMode);
     transportHubsRef.current?.setNightMode(nightMode);
   }, [nightMode, showLabels]);
+
+  // Sync hazard & incident layers
+  useEffect(() => {
+    if (layers.hazards && hazardVisualsRef.current) {
+      hazardVisualsRef.current.updateFilters(layers.hazards);
+    }
+  }, [layers.hazards]);
+
+  useEffect(() => {
+    if (layers.incidents && incidentVisualsRef.current) {
+      incidentVisualsRef.current.updateFilters(layers.incidents);
+    }
+  }, [layers.incidents]);
 
   // Skyline look
   useEffect(() => {

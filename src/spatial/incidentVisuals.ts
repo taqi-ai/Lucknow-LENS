@@ -150,7 +150,7 @@ export class IncidentVisualManager {
   public updateFilters(filters: Record<string, boolean>): void {
     const active = new Set<IncidentCategory>();
     if (filters.accidents) active.add('accident');
-    if (filters.fire) active.add('fire');
+    if (filters.fire || filters.fires) active.add('fire');
     if (filters.waterlogging) active.add('waterlogging');
     if (filters.closures) active.add('road-closure');
     if (filters.infrastructure) active.add('infrastructure');

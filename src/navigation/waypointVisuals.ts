@@ -28,15 +28,17 @@ const THEME_COLORS: Record<GPSTheme, { primary: number; secondary: number; beam:
  * Creates custom chevron GPS ribbon shader.
  * Includes three.js logarithmic depth buffer chunks for seamless z-rendering.
  */
-function createRibbonShaderMaterial(theme: GPSTheme): THREE.ShaderMaterial {
+function createRibbonShaderMaterial(theme: GPSTheme, isAlternative = false): THREE.ShaderMaterial {
   const colors = THEME_COLORS[theme];
+  const col1 = isAlternative ? 0x38bdf8 : colors.primary;
+  const col2 = isAlternative ? 0x0369a1 : colors.secondary;
 
   return new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 },
-      uColor1: { value: new THREE.Color(colors.primary) },
-      uColor2: { value: new THREE.Color(colors.secondary) },
-      uOpacity: { value: 0.95 },
+      uColor1: { value: new THREE.Color(col1) },
+      uColor2: { value: new THREE.Color(col2) },
+      uOpacity: { value: isAlternative ? 0.55 : 0.95 },
     },
     vertexShader: `
       varying vec2 vUv;
@@ -148,16 +150,24 @@ function createBeamShaderMaterial(theme: GPSTheme): THREE.ShaderMaterial {
 export class WaypointVisuals {
   public group: THREE.Group;
   private ribbonMesh: THREE.Mesh | null = null;
+  private altRibbonMeshes: THREE.Mesh[] = [];
+
   private ribbonMaterial: THREE.ShaderMaterial;
+  private altRibbonMaterial: THREE.ShaderMaterial;
   private beamMaterial: THREE.ShaderMaterial;
 
-  // Waypoint Beacon Objects
+  // Origin Marker Objects (Cyan Highlight per Phase 3 specifications)
+  private originGroup: THREE.Group;
+  private originMarker: THREE.Mesh;
+  private originRings: THREE.Mesh[] = [];
+
+  // Destination Waypoint Beacon Objects (GTA Purple Pillar/Laser Beam)
   private beaconGroup: THREE.Group;
   private beamMesh: THREE.Mesh;
   private markerMesh: THREE.Mesh;
   private pulseRings: THREE.Mesh[] = [];
 
-  // Navigator Vehicle / Indicator Arrow
+  // Navigator Vehicle
   private navigatorMesh: THREE.Group;
   private currentTheme: GPSTheme = 'purple';
 
@@ -165,10 +175,50 @@ export class WaypointVisuals {
     this.group = new THREE.Group();
     this.group.name = 'NavigationWaypointSystem';
 
-    this.ribbonMaterial = createRibbonShaderMaterial(this.currentTheme);
+    this.ribbonMaterial = createRibbonShaderMaterial(this.currentTheme, false);
+    this.altRibbonMaterial = createRibbonShaderMaterial(this.currentTheme, true);
     this.beamMaterial = createBeamShaderMaterial(this.currentTheme);
 
-    // Build Waypoint Beacon
+    // ─────────────────────────────────────────────────────────────────────────
+    // ORIGIN CYAN MARKER
+    // ─────────────────────────────────────────────────────────────────────────
+    this.originGroup = new THREE.Group();
+    this.originGroup.visible = false;
+    this.group.add(this.originGroup);
+
+    const origMat = new THREE.MeshStandardMaterial({
+      color: 0x00f0ff,
+      emissive: 0x00f0ff,
+      emissiveIntensity: 0.9,
+      roughness: 0.2,
+      metalness: 0.8,
+    });
+    const origGeo = new THREE.OctahedronGeometry(5.0, 0);
+    origGeo.scale(1.0, 1.6, 1.0);
+    this.originMarker = new THREE.Mesh(origGeo, origMat);
+    this.originMarker.position.y = 22;
+    this.originGroup.add(this.originMarker);
+
+    for (let i = 0; i < 2; i++) {
+      const ringGeo = new THREE.RingGeometry(1.2, 16, 24);
+      ringGeo.rotateX(-Math.PI / 2);
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: 0x00f0ff,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.75,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.position.y = 0.4 + i * 0.05;
+      this.originRings.push(ring);
+      this.originGroup.add(ring);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // DESTINATION WAYPOINT BEACON (PURPLE GTA LASER & PILLAR)
+    // ─────────────────────────────────────────────────────────────────────────
     this.beaconGroup = new THREE.Group();
     this.beaconGroup.visible = false;
     this.group.add(this.beaconGroup);
@@ -211,45 +261,10 @@ export class WaypointVisuals {
       this.beaconGroup.add(ring);
     }
 
-    // 4. Navigator Vehicle / Directional 3D Arrow
-    this.navigatorMesh = this.buildNavigatorVehicle();
+    // 4. Navigator Indicator
+    this.navigatorMesh = new THREE.Group();
     this.navigatorMesh.visible = false;
     this.group.add(this.navigatorMesh);
-  }
-
-  private buildNavigatorVehicle(): THREE.Group {
-    const nav = new THREE.Group();
-
-    // Arrow / Car Body
-    const bodyGeo = new THREE.ConeGeometry(3.5, 9, 4);
-    bodyGeo.rotateX(Math.PI / 2);
-    bodyGeo.scale(1.0, 0.4, 1.0);
-    const bodyMat = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      emissive: THEME_COLORS[this.currentTheme].primary,
-      emissiveIntensity: 0.6,
-      metalness: 0.9,
-      roughness: 0.2,
-    });
-    const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
-    nav.add(bodyMesh);
-
-    // Headlight cones
-    const lightGeo = new THREE.ConeGeometry(5, 18, 12, 1, true);
-    lightGeo.rotateX(-Math.PI / 2);
-    lightGeo.translate(0, 0, 9);
-    const lightMat = new THREE.MeshBasicMaterial({
-      color: 0xfff3c4,
-      transparent: true,
-      opacity: 0.35,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    });
-    const headlights = new THREE.Mesh(lightGeo, lightMat);
-    nav.add(headlights);
-
-    nav.position.y = 1.0;
-    return nav;
   }
 
   public setTheme(theme: GPSTheme): void {
@@ -282,27 +297,67 @@ export class WaypointVisuals {
   }
 
   /**
-   * Update or clear the 3D GPS route ribbon along path points
+   * Set Origin Cyan Waypoint Marker in world coordinates
+   */
+  public setOriginWaypoint(origin: RouteWaypoint | null): void {
+    if (!origin) {
+      this.originGroup.visible = false;
+      return;
+    }
+    this.originGroup.position.set(origin.x, origin.y ?? 0, origin.z);
+    this.originGroup.visible = true;
+  }
+
+  /**
+   * Update or clear the 3D GPS route ribbons (Primary + Alternative routes)
    */
   public setRoute(route: NavigationRoute | null): void {
+    // Clear existing primary ribbon
     if (this.ribbonMesh) {
       this.group.remove(this.ribbonMesh);
       this.ribbonMesh.geometry.dispose();
       this.ribbonMesh = null;
     }
 
-    if (!route || route.points.length < 2) return;
+    // Clear existing alternative ribbons
+    for (const alt of this.altRibbonMeshes) {
+      this.group.remove(alt);
+      alt.geometry.dispose();
+    }
+    this.altRibbonMeshes = [];
 
-    // Bold 6.8m highlighted roadmap track pinned along the carriageway
+    if (!route || route.points.length < 2) {
+      this.originGroup.visible = false;
+      this.beaconGroup.visible = false;
+      return;
+    }
+
+    // 1. Origin Cyan Marker
+    this.setOriginWaypoint(route.start);
+
+    // 2. Destination Purple Marker
+    this.setWaypoint(route.destination);
+
+    // 3. Render Alternative Routes (Subdued cyan ribbon, 4.8m wide)
+    if (route.alternativeRoutes && route.alternativeRoutes.length > 0) {
+      for (const altRoute of route.alternativeRoutes) {
+        if (altRoute.points.length >= 2) {
+          const altGeo = this.buildRibbonGeometry(altRoute.points, 4.8);
+          const altMesh = new THREE.Mesh(altGeo, this.altRibbonMaterial);
+          altMesh.frustumCulled = false;
+          this.altRibbonMeshes.push(altMesh);
+          this.group.add(altMesh);
+        }
+      }
+    }
+
+    // 4. Primary Route Ribbon (Bold 6.8m highlighted glowing purple GTA track)
     const geometry = this.buildRibbonGeometry(route.points, 6.8);
     this.ribbonMesh = new THREE.Mesh(geometry, this.ribbonMaterial);
     this.ribbonMesh.frustumCulled = false;
     this.group.add(this.ribbonMesh);
   }
 
-  /**
-   * Generates a 3D strip/ribbon along 3D polyline points with UVs for texture flow
-   */
   private buildRibbonGeometry(
     points: Array<{ x: number; y: number; z: number }>,
     width: number
@@ -342,23 +397,18 @@ export class WaypointVisuals {
       dirX /= len;
       dirZ /= len;
 
-      // Normal vector perpendicular to road direction (rotated 90 deg in XZ plane)
       const normX = -dirZ;
       const normZ = dirX;
 
-      // Left vertex
       vertices.push(cur.x - normX * halfW, cur.y, cur.z - normZ * halfW);
-      // Right vertex
       vertices.push(cur.x + normX * halfW, cur.y, cur.z + normZ * halfW);
 
-      // UV coordinates (x: 0..1 across road, y: distance in meters / road width)
       const vCoord = dists[i] / width;
       uvs.push(0, vCoord);
       uvs.push(1, vCoord);
 
       if (i < points.length - 1) {
         const base = i * 2;
-        // Two triangles for quad segment
         indices.push(base, base + 1, base + 2);
         indices.push(base + 1, base + 3, base + 2);
       }
@@ -373,39 +423,43 @@ export class WaypointVisuals {
     return geometry;
   }
 
-  /**
-   * Position and orient the 3D Navigator arrow
-   */
   public updateNavigator(
     _pos: { x: number; y: number; z: number } | null,
     _heading = 0,
     _visible = true
   ): void {
-    // Hidden per user feedback: route is a clean highlighted roadmap track without distracting moving dots
     this.navigatorMesh.visible = false;
   }
 
-  /**
-   * Per-frame animation loop update for shaders and beacon pulsing
-   */
   public update(timeMs: number): void {
     const sec = timeMs * 0.001;
 
-    // 1. Advance GPS ribbon flow uniform
     this.ribbonMaterial.uniforms.uTime.value = sec;
-
-    // 2. Advance beam shimmer
+    this.altRibbonMaterial.uniforms.uTime.value = sec * 0.7;
     this.beamMaterial.uniforms.uTime.value = sec;
 
-    // 3. Hover and spin waypoint marker
+    // Origin Cyan Marker Animation
+    if (this.originGroup.visible) {
+      this.originMarker.rotation.y = -sec * 1.6;
+      this.originMarker.position.y = 20 + Math.sin(sec * 2.8) * 3.5;
+
+      for (let i = 0; i < this.originRings.length; i++) {
+        const ring = this.originRings[i];
+        const ringTime = (sec * 1.0 + i * 0.5) % 1.0;
+        const scale = 0.5 + ringTime * 2.0;
+        ring.scale.set(scale, scale, 1);
+        (ring.material as THREE.MeshBasicMaterial).opacity = Math.max(0, (1.0 - ringTime) * 0.8);
+      }
+    }
+
+    // Destination Purple Waypoint Animation
     if (this.beaconGroup.visible) {
       this.markerMesh.rotation.y = sec * 1.8;
       this.markerMesh.position.y = 28 + Math.sin(sec * 3.0) * 4.5;
 
-      // Pulse ground rings
       for (let i = 0; i < this.pulseRings.length; i++) {
         const ring = this.pulseRings[i];
-        const ringTime = (sec * 1.2 + i * 0.4) % 1.0; // 0..1
+        const ringTime = (sec * 1.2 + i * 0.4) % 1.0;
         const scale = 0.5 + ringTime * 2.2;
         ring.scale.set(scale, scale, 1);
         (ring.material as THREE.MeshBasicMaterial).opacity = Math.max(0, (1.0 - ringTime) * 0.85);
@@ -417,12 +471,20 @@ export class WaypointVisuals {
     if (this.ribbonMesh) {
       this.ribbonMesh.geometry.dispose();
     }
+    for (const alt of this.altRibbonMeshes) {
+      alt.geometry.dispose();
+    }
     this.ribbonMaterial.dispose();
+    this.altRibbonMaterial.dispose();
     this.beamMaterial.dispose();
     (this.markerMesh.material as THREE.Material).dispose();
     this.markerMesh.geometry.dispose();
     this.beamMesh.geometry.dispose();
     this.pulseRings.forEach((r) => {
+      r.geometry.dispose();
+      (r.material as THREE.Material).dispose();
+    });
+    this.originRings.forEach((r) => {
       r.geometry.dispose();
       (r.material as THREE.Material).dispose();
     });

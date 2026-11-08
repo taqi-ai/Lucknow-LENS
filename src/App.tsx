@@ -5,7 +5,7 @@ import { CityUI } from './components/ui/CityUI';
 import { RefreshCw, AlertCircle } from 'lucide-react';
 import { parseOvertureGeoJSON } from './osm/overtureParser';
 import { CameraController } from './city/cameraController';
-import { LayerState } from './components/features/LayerControl';
+import { LayerState, DEFAULT_LAYERS } from './components/features/LayerControl';
 import { useLiveFlights } from './interactions/flights';
 import {
   useLiveFeed, useLiveList,
@@ -15,7 +15,11 @@ import {
 import type { SkylineStyle } from './city/buildingMaterial';
 import { Pathfinder } from './navigation/pathfinder';
 import { RouteDriver } from './navigation/routeDriver';
-import type { NavigationRoute, NavigatorState, RouteWaypoint, GPSTheme } from './navigation/types';
+import type { NavigationRoute, NavigatorState, RouteWaypoint, GPSTheme, TransportMode, RoutePreference } from './navigation/types';
+import { GPSService } from './navigation/gpsService';
+import { SIL } from './spatial/spatialIntelligenceLayer';
+import { SpatialIncident } from './spatial/types';
+import { project, unproject } from './search/SearchIndex';
 
 const INITIAL_MAP_DATA: OSMMapData = {
   bounds: {
@@ -60,12 +64,46 @@ export default function App() {
   // GTA GPS Navigation State
   const pathfinderRef = useRef<Pathfinder>(new Pathfinder());
   const routeDriverRef = useRef<RouteDriver | null>(null);
+  const gpsServiceRef = useRef<GPSService | null>(null);
 
   const [navigationRoute, setNavigationRoute] = useState<NavigationRoute | null>(null);
   const [navigatorState, setNavigatorState] = useState<NavigatorState | null>(null);
   const [destinationWaypoint, setDestinationWaypoint] = useState<RouteWaypoint | null>(null);
   const [gpsTheme, setGpsTheme] = useState<GPSTheme>('purple');
   const [followCamera, setFollowCamera] = useState<boolean>(true);
+
+  // Navigation Panel & Live GPS Tracking
+  const [isNavigationMode, setIsNavigationMode] = useState<boolean>(false);
+  const [isGPSActive, setIsGPSActive] = useState<boolean>(false);
+  const [rerouteNotification, setRerouteNotification] = useState<string | null>(null);
+
+  // Initialize GPSService and listen for off-route deviation triggers
+  useEffect(() => {
+    const graph = pathfinderRef.current.getRoadGraph();
+    const gps = new GPSService(graph);
+    gpsServiceRef.current = gps;
+
+    gps.onRerouteNeeded(async (evt) => {
+      setRerouteNotification(`Dynamic Reroute: Off track (${Math.round(evt.deviationDistance)}m). Recalculating route...`);
+      if (destinationWaypoint) {
+        const newStart: RouteWaypoint = {
+          x: evt.snappedPosition.x,
+          z: evt.snappedPosition.z,
+          name: 'Current Vehicle Position',
+        };
+        const newRoute = await pathfinderRef.current.calculateRoute(newStart, destinationWaypoint);
+        if (newRoute) {
+          setNavigationRoute(newRoute);
+          gps.setActiveRoute(newRoute);
+        }
+      }
+      setTimeout(() => setRerouteNotification(null), 4500);
+    });
+
+    return () => {
+      gps.stopTracking();
+    };
+  }, [destinationWaypoint]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -76,6 +114,7 @@ export default function App() {
       if (e.key === 'Escape') {
         if (mapOnly) setMapOnly(false);
         else if (presentationMode) setPresentationMode(false);
+        else if (isNavigationMode) setIsNavigationMode(false);
         else if (navigationRoute) {
           setNavigationRoute(null);
           setDestinationWaypoint(null);
@@ -90,29 +129,10 @@ export default function App() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [presentationMode, mapOnly, navigationRoute]);
+  }, [presentationMode, mapOnly, navigationRoute, isNavigationMode]);
 
-  // Layer toggler state
-  const [layers, setLayers] = useState<LayerState>({
-    base: {
-      buildings: true,
-      roads: true,
-      parks: true,
-      gomti: true,
-      places: true,
-      labels: true,
-    },
-    live: {
-      traffic: false,
-      aqi: false,
-      weather: false,
-      flights: false,
-      railways: false,
-      cameras: false,
-      news: false,
-      emergency: true,
-    }
-  });
+  // Layer toggler state initialized with 5-pillar DEFAULT_LAYERS
+  const [layers, setLayers] = useState<LayerState>(DEFAULT_LAYERS);
 
   // Selection states
   const [selectedEntity, setSelectedEntity] = useState<SelectedEntity | null>(null);
@@ -171,14 +191,13 @@ export default function App() {
     if (sStats) setStreamingStats(sStats);
   }, []);
 
-  const handleToggleLayer = (category: 'base' | 'live', layer: string) => {
+  const handleToggleLayer = (category: 'base' | 'live' | 'hazards' | 'incidents' | 'navigation' | 'pulse', layer: string) => {
     setLayers(prev => {
-      const nextCategory = { ...prev[category] };
-      const key = layer as keyof typeof nextCategory;
-      nextCategory[key] = !nextCategory[key] as any;
+      const nextCategory = { ...prev[category] } as any;
+      nextCategory[layer] = !nextCategory[layer];
       
       if (layer === 'labels' && category === 'base') {
-        setShowLabels(nextCategory[key] as any);
+        setShowLabels(nextCategory[layer]);
       }
       
       return {
@@ -191,12 +210,30 @@ export default function App() {
   const handleToggleLabels = () => {
     setShowLabels(prev => {
       const newVal = !prev;
-      setLayers(l => ({ ...l.base, labels: newVal }));
+      setLayers(l => ({
+        ...l,
+        base: { ...l.base, labels: newVal }
+      }));
       return newVal;
     });
   };
 
   // GTA GPS Waypoint & Navigation Handlers
+  const handleFindRoute = useCallback(async (
+    start: RouteWaypoint,
+    dest: RouteWaypoint,
+    mode: TransportMode = 'car',
+    preference: RoutePreference = 'fastest'
+  ) => {
+    setDestinationWaypoint(dest);
+    const calculated = await pathfinderRef.current.calculateRoute(start, dest, mode, preference);
+    if (calculated) {
+      setNavigationRoute(calculated);
+      gpsServiceRef.current?.setActiveRoute(calculated);
+      setIsNavigationMode(true);
+    }
+  }, []);
+
   const handleSetDestinationWaypoint = useCallback(async (dest: RouteWaypoint) => {
     setDestinationWaypoint(dest);
 
@@ -213,9 +250,10 @@ export default function App() {
       name: 'Current Camera View',
     };
 
-    const calculated = await pathfinderRef.current.calculateRoute(startPoint, dest);
+    const calculated = await pathfinderRef.current.calculateRoute(startPoint, dest, 'car', 'fastest');
     if (calculated) {
       setNavigationRoute(calculated);
+      gpsServiceRef.current?.setActiveRoute(calculated);
     }
   }, [cameraController]);
 
@@ -253,6 +291,88 @@ export default function App() {
       setNavigatorState(state);
     });
   }, []);
+
+  const handleToggleGPS = useCallback(async () => {
+    if (!gpsServiceRef.current) return;
+    if (isGPSActive) {
+      gpsServiceRef.current.stopTracking();
+      setIsGPSActive(false);
+      setRerouteNotification('GPS tracking paused. Switched to offline view.');
+      setTimeout(() => setRerouteNotification(null), 3000);
+    } else {
+      const granted = await gpsServiceRef.current.startTracking();
+      setIsGPSActive(granted);
+      if (granted) {
+        setRerouteNotification('GPS Live Tracking active. Snapped to Lucknow road network.');
+      } else {
+        setRerouteNotification('Simulation Mode: Real GPS unavailable. Interactive testing enabled.');
+      }
+      setTimeout(() => setRerouteNotification(null), 3500);
+    }
+  }, [isGPSActive]);
+
+  const handleSimulateReroute = useCallback(() => {
+    if (!gpsServiceRef.current) return;
+    setRerouteNotification('Simulating vehicle off-route deviation (>65m)...');
+    gpsServiceRef.current.simulateDeviation();
+  }, []);
+
+  const handleCheckRouteImpact = useCallback((incident: SpatialIncident) => {
+    if (!navigationRoute) {
+      setRerouteNotification(`No active navigation route. Incident is at ${incident.locationName}.`);
+      setTimeout(() => setRerouteNotification(null), 3500);
+      return;
+    }
+    const impacts = SIL.checkRouteIncidents(navigationRoute.coordinates);
+    const isImpacting = impacts.some(i => i.id === incident.id);
+    if (isImpacting) {
+      setRerouteNotification(`CRITICAL: Active route directly intersects ${incident.title}! Detour recommended.`);
+    } else {
+      setRerouteNotification(`Route Clear: Current route path bypasses ${incident.title}.`);
+    }
+    setTimeout(() => setRerouteNotification(null), 4500);
+  }, [navigationRoute]);
+
+  const handleFindAlternativeRoute = useCallback(async (incident: SpatialIncident) => {
+    if (!destinationWaypoint) {
+      setRerouteNotification(`Please set a destination to calculate an incident detour.`);
+      setTimeout(() => setRerouteNotification(null), 3000);
+      return;
+    }
+    setRerouteNotification(`Calculating emergency detour avoiding ${incident.title}...`);
+    let startX = -382;
+    let startZ = 372;
+    if (cameraController) {
+      startX = cameraController.target.x;
+      startZ = cameraController.target.z;
+    }
+    const startPoint: RouteWaypoint = {
+      x: startX,
+      z: startZ,
+      name: 'Current Location',
+    };
+    const nearestNode = pathfinderRef.current.getRoadGraph().findNearestNode(incident.x, incident.z);
+    const avoidIds = nearestNode ? [nearestNode.nodeId] : [];
+    const detour = await pathfinderRef.current.calculateRoute(
+      startPoint,
+      destinationWaypoint,
+      'car',
+      'avoid-closures',
+      avoidIds
+    );
+    if (detour) {
+      setNavigationRoute(detour);
+      gpsServiceRef.current?.setActiveRoute(detour);
+      setRerouteNotification(`Detour confirmed: Avoided ${incident.title} (New distance: ${(detour.totalDistanceMeters / 1000).toFixed(2)} km)`);
+      setTimeout(() => setRerouteNotification(null), 4500);
+    }
+  }, [destinationWaypoint, cameraController]);
+
+  const handleFlyToLocation = useCallback((lat: number, lon: number, distance: number = 400) => {
+    if (cameraController) {
+      cameraController.flyTo(lat, lon, distance);
+    }
+  }, [cameraController]);
 
   const handleExecuteAIAction = (action: AIAction) => {
     if (!cameraController) return;
@@ -310,6 +430,26 @@ export default function App() {
           [action.layer!]: true
         }
       }));
+    } else if (action.type === 'CALCULATE_ROUTE') {
+      const destName = (typeof action.destination === 'string' ? action.destination : action.destination?.name) || 'Target Location';
+      let destX = 3837, destZ = 1677;
+      if (action.latitude && action.longitude) {
+        const p = project(action.latitude, action.longitude);
+        destX = p.x;
+        destZ = p.z;
+      }
+      const dest: RouteWaypoint = { x: destX, z: destZ, name: destName };
+      let startX = -382, startZ = 372;
+      if (cameraController) {
+        startX = cameraController.target.x;
+        startZ = cameraController.target.z;
+      }
+      const start: RouteWaypoint = { x: startX, z: startZ, name: 'Current View' };
+      handleFindRoute(start, dest, 'car', 'avoid-closures');
+      setIsNavigationMode(true);
+      if (action.latitude && action.longitude) {
+        cameraController.flyTo(action.latitude, action.longitude, 700);
+      }
     }
   };
 
@@ -397,6 +537,17 @@ export default function App() {
         onChangeTheme={handleChangeTheme}
         onClearRoute={handleClearRoute}
         onSetDestinationWaypoint={handleSetDestinationWaypoint}
+        isNavigationMode={isNavigationMode}
+        onToggleNavigationMode={setIsNavigationMode}
+        onFindRoute={handleFindRoute}
+        onSimulateReroute={handleSimulateReroute}
+        isGPSActive={isGPSActive}
+        onToggleGPS={handleToggleGPS}
+        rerouteNotification={rerouteNotification}
+        onCheckRouteImpact={handleCheckRouteImpact}
+        onFindAlternativeRoute={handleFindAlternativeRoute}
+        onFlyToLocation={handleFlyToLocation}
+        cameraCoordinates={cameraController ? unproject(cameraController.target.x, cameraController.target.z) : undefined}
       />
     </div>
   );

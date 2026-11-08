@@ -186,7 +186,16 @@ export interface SearchResult {
   importance: number;
 }
 
-export type SelectedEntityType = 'building' | 'poi' | 'aircraft' | 'emergency' | 'transport-hub';
+export type SelectedEntityType =
+  | 'building'
+  | 'poi'
+  | 'aircraft'
+  | 'emergency'
+  | 'transport-hub'
+  | 'hazard'
+  | 'incident'
+  | 'news'
+  | 'route';
 
 export interface SelectedEntity {
   type: SelectedEntityType;
@@ -227,10 +236,11 @@ export interface SimulatedFlight {
 }
 
 export interface AIAction {
-  type: 'FLY_TO' | 'ENABLE_LAYER' | 'DISABLE_LAYER' | 'NONE';
+  type: 'FLY_TO' | 'ENABLE_LAYER' | 'DISABLE_LAYER' | 'CALCULATE_ROUTE' | 'NONE';
   latitude?: number;
   longitude?: number;
   layer?: string;
+  destination?: { name: string; lat: number; lon: number };
 }
 
 export interface AIResponse {

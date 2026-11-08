@@ -234,13 +234,84 @@ app.get("/api/health", async (_req, res) => {
   });
 });
 
-// Deterministic response generator fallback
-function getDeterministicResponse(question: string) {
+// Deterministic response generator fallback with Spatial Intelligence awareness
+function getDeterministicResponse(question: string, context?: any) {
   const q = question.toLowerCase();
   
+  // 1. Waterlogging Queries
+  if (q.includes("waterlog") || q.includes("water stagnation") || q.includes("drainage")) {
+    return {
+      answer: "Waterlogging report: Polytechnic Chauraha underpass on Faizabad Road currently has localized 25cm water stagnation due to drainage silt accumulation. Traffic movement is slow; two-wheelers are advised to take the flyover. In Gomti Nagar Phase-1, the storm basin is operating normally with all 4 municipal pumps active.",
+      sources: ["LMC Urban Drainage Telemetry", "Lucknow Municipal Control Room Incident Feed"],
+      action: {
+        type: "FLY_TO",
+        latitude: 26.8624,
+        longitude: 80.9984,
+        layer: "waterlogging"
+      }
+    };
+  }
+
+  // 2. Flood Susceptibility Queries
+  if (q.includes("flood") || q.includes("inundat") || (q.includes("gomti") && q.includes("risk"))) {
+    return {
+      answer: "According to the UP State Disaster Management Authority (UPSDMA) Flood Atlas, the Gomti River 100-Year Inundation Corridor (from Kudia Ghat past Daliganj to Gomti Barrage) has high historical flood susceptibility when river discharge exceeds 45,000 cusecs. Current water level is safe at 108.4m MSL (Warning level: 109.5m).",
+      sources: ["UPSDMA Flood Mapping Atlas", "Central Water Commission (CWC) Gauge Feed"],
+      action: {
+        type: "FLY_TO",
+        latitude: 26.8580,
+        longitude: 80.9490,
+        layer: "flood"
+      }
+    };
+  }
+
+  // 3. Navigation / Route to Airport Queries
+  if (q.includes("route") && (q.includes("airport") || q.includes("amausi") || q.includes("avoid"))) {
+    return {
+      answer: "Route to CCS International Airport (T3): Kanpur Road between Alambagh and Singar Nagar has an active road closure due to Metro viaduct girder construction. The navigation system has calculated a detour via VIP Road and Amar Shaheed Path, saving approximately 18 minutes compared to the congested arterial corridor.",
+      sources: ["UPMRC Traffic Cell", "Lucknow ITMS Road Network Graph"],
+      action: {
+        type: "CALCULATE_ROUTE",
+        latitude: 26.7606,
+        longitude: 80.8893,
+        destination: { name: "Chaudhary Charan Singh Int'l Airport (T3)", lat: 26.7606, lon: 80.8893 }
+      }
+    };
+  }
+
+  // 4. City Updates Summary
+  if (q.includes("summar") || (q.includes("update") && (q.includes("city") || q.includes("today") || q.includes("verified")))) {
+    return {
+      answer: "Lucknow City Pulse Summary: 1) Charbagh Terminal Platform 1 electrification underway for the second Vande Bharat service; 2) CCS Airport T3 surpassed 35,000 daily passengers; 3) Smart AI traffic signal phasing activated along Mahatma Gandhi Marg; 4) Metro girder launch closure on Kanpur Road with detour in effect.",
+      sources: ["Lucknow City Pulse Multi-Agency Telemetry", "LMC & UPMRC Official Bulletins"],
+      action: {
+        type: "FLY_TO",
+        latitude: 26.8488,
+        longitude: 80.9442,
+        layer: "news"
+      }
+    };
+  }
+
+  // 5. Charbagh Station Queries
+  if (q.includes("charbagh") || q.includes("station") || (q.includes("railway") && !q.includes("flight"))) {
+    return {
+      answer: "Charbagh Railway Grand Terminal is operating smoothly. Platform 1 has a docked Vande Bharat Express rake; the historic Ravindralaya amphitheater campus to the east and the central forecourt Black Beauty steam engine memorial are open. Pedestrian flow is normal, and train movements are on schedule.",
+      sources: ["Northern Railway Station Master Log", "Charbagh Digital Twin Sensors"],
+      action: {
+        type: "FLY_TO",
+        latitude: 26.8322,
+        longitude: 80.9221,
+        layer: "railways"
+      }
+    };
+  }
+
+  // 6. Traffic & Congestion Queries
   if (q.includes("traffic") || q.includes("congest") || q.includes("jam") || q.includes("hazratganj")) {
     return {
-      answer: "Hazratganj is experiencing heavy traffic congestion around Hazratganj Chauraha. Local loops indicate average speeds have dropped to 12 km/h due to peak hour vehicle accumulation and ongoing municipal road maintenance near Mahatma Gandhi Road.",
+      answer: "Hazratganj is experiencing heavy traffic congestion around Hazratganj Chauraha. Local ITMS sensors indicate average vehicle speeds have slowed to 12 km/h due to peak accumulation and a minor collision on MG Marg. Adaptive AI signal phasing is working to clear the backlog.",
       sources: ["Lucknow Traffic Control Division", "MG Road Induction Loops Feed"],
       action: {
         type: "FLY_TO",
@@ -251,6 +322,7 @@ function getDeterministicResponse(question: string) {
     };
   }
   
+  // 7. AQI & Air Quality Queries
   if (q.includes("aqi") || q.includes("pollution") || q.includes("air") || q.includes("smog") || q.includes("gomti nagar")) {
     return {
       answer: "The Air Quality Index (AQI) around Gomti Nagar and Janeshwar Mishra Park is currently at 145 (Moderate). PM2.5 is the primary active pollutant. Ambient weather conditions indicate high relative humidity, which is trapping particulate matter close to the surface.",
@@ -264,10 +336,11 @@ function getDeterministicResponse(question: string) {
     };
   }
 
+  // 8. Flight Queries
   if (q.includes("flight") || q.includes("plane") || q.includes("aircraft") || q.includes("airport") || q.includes("amausi") || q.includes("adsb")) {
     return {
-      answer: "There are currently 4 active flights tracked in the airspace above Lucknow. Indigo Flight 6E-2432 (from Delhi) is on final approach descending to Amausi Airport at 350m, and Air India Flight AI-431 is cruising eastwards at 9,800m.",
-      sources: ["Lucknow ADSB Ground Receiver Hub", "Amausi Airport ATC Radar Output"],
+      answer: "Chaudhary Charan Singh International Airport (Amausi, T3) is operating with CAT-II ILS. Real-time OpenSky ADS-B telemetry tracks active inbound flights including Indigo Flight 6E-2432 descending to Runway 09. The 2,740m runway and 5 aerobridges are in active service.",
+      sources: ["OpenSky Network Live ADS-B Ground Receiver", "Amausi Airport ATC Radar Output"],
       action: {
         type: "FLY_TO",
         latitude: 26.7606,
@@ -277,35 +350,10 @@ function getDeterministicResponse(question: string) {
     };
   }
 
-  if (q.includes("charbagh") || q.includes("station") || q.includes("railway") || q.includes("train")) {
+  // 9. Gomti River Queries
+  if (q.includes("gomti") || q.includes("river") || q.includes("barrage")) {
     return {
-      answer: "Charbagh Railway Station is operating normally. Heavy pedestrian traffic is noted at the main entry gate, and taxi dispatch queues are experiencing slight delays. Train arrivals are running within 10 minutes of schedule.",
-      sources: ["Charbagh Station Master Log Feed", "NER Passenger Information System"],
-      action: {
-        type: "FLY_TO",
-        latitude: 26.8322,
-        longitude: 80.9221,
-        layer: "railways"
-      }
-    };
-  }
-
-  if (q.includes("news") || q.includes("event") || q.includes("happening") || q.includes("today")) {
-    return {
-      answer: "Municipal repair work has started on major primary roads near Hazratganj. Additionally, Gomti Riverfront Park is hosting a local cultural exhibition starting at 6:00 PM, which may increase footfall around the Gomti banks.",
-      sources: ["Lucknow Municipal Corporation Bulletin", "Daily UP State Press Information Bureau"],
-      action: {
-        type: "FLY_TO",
-        latitude: 26.8525,
-        longitude: 80.9545,
-        layer: "news"
-      }
-    };
-  }
-
-  if (q.includes("gomti") || q.includes("river") || q.includes("water") || q.includes("barrage")) {
-    return {
-      answer: "Water levels of the Gomti River at the Gomti Barrage are within normal limits (108.5 meters above MSL). Flow velocity is stable. Localized riverbank cleaning activities are being monitored near the central barrage area.",
+      answer: "Water levels of the Gomti River at the Gomti Barrage are within normal limits (108.4 meters above MSL). Flow velocity is stable. Localized riverbank cleaning activities are being monitored near the central barrage area.",
       sources: ["UP Irrigation & Hydrology Department Data", "Gomti River Water Quality Monitors"],
       action: {
         type: "FLY_TO",
@@ -317,8 +365,8 @@ function getDeterministicResponse(question: string) {
   }
 
   return {
-    answer: "Welcome to Lucknow Lens AI City Analyst. I can answer real-time queries about Lucknow's live traffic, AQI, news, and flight paths. Try asking: 'Why is traffic bad in Hazratganj?' or 'What's the AQI around Gomti Nagar?'",
-    sources: ["Lucknow Lens Local Index Lookup"],
+    answer: "Welcome to Lucknow Lens AI City Analyst. I provide spatial intelligence across Lucknow's 3D twin: live traffic, waterlogging hotspots, flood risks, road closures, and route optimization. Try asking: 'Is there any reported waterlogging around Gomti Nagar?' or 'Find a route to Lucknow Airport avoiding reported road closures.'",
+    sources: ["Lucknow Lens Spatial Intelligence Layer (SIL)"],
     action: {
       type: "NONE"
     }
@@ -327,12 +375,12 @@ function getDeterministicResponse(question: string) {
 
 // POST endpoint for AI City Analyst
 app.post("/api/analyst", async (req, res) => {
-  const { question } = req.body;
+  const { question, context } = req.body;
   if (!question || typeof question !== "string") {
     return res.status(400).json({ error: "Invalid question body" });
   }
 
-  const fallback = getDeterministicResponse(question);
+  const fallback = getDeterministicResponse(question, context);
 
   if (!process.env.GEMINI_API_KEY) {
     return res.json(fallback);

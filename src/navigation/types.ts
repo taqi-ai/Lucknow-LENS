@@ -1,5 +1,9 @@
 import { OSMPoint } from '../types';
 
+export type TransportMode = 'car' | 'bike' | 'walking';
+
+export type RoutePreference = 'fastest' | 'shortest' | 'avoid-closures';
+
 export type ManeuverType =
   | 'depart'
   | 'straight'
@@ -27,6 +31,8 @@ export interface RouteWaypoint {
   y?: number;
   label?: string;
   name?: string;
+  lat?: number;
+  lon?: number;
 }
 
 export interface NavigationRoute {
@@ -37,6 +43,14 @@ export interface NavigationRoute {
   totalDistanceMeters: number;
   estimatedDurationSeconds: number;
   maneuvers: RouteManeuver[];
+  transportMode: TransportMode;
+  preference: RoutePreference;
+  majorRoads: string[];
+  trafficConditions: 'clear' | 'moderate' | 'congested';
+  trafficDelayMinutes: number;
+  closuresAvoidedCount: number;
+  isAlternative?: boolean;
+  alternativeRoutes?: NavigationRoute[];
 }
 
 export interface NavigatorState {
@@ -49,6 +63,15 @@ export interface NavigatorState {
   currentManeuverIndex: number;
   distanceRemainingMeters: number;
   timeRemainingSeconds: number;
+  isRerouting?: boolean;
+  rerouteNotification?: string | null;
 }
 
 export type GPSTheme = 'purple' | 'cyan' | 'neon' | 'amber';
+
+export interface RerouteEvent {
+  previousRouteId: string;
+  newRoute: NavigationRoute;
+  reason: 'deviation' | 'incident-reported' | 'user-request';
+  message: string;
+}

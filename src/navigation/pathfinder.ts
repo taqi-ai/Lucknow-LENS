@@ -1,5 +1,13 @@
 import { RoadGraph, GraphEdge } from './roadGraph';
-import { NavigationRoute, RouteManeuver, RouteWaypoint, ManeuverType } from './types';
+import {
+  NavigationRoute,
+  RouteManeuver,
+  RouteWaypoint,
+  ManeuverType,
+  TransportMode,
+  RoutePreference,
+} from './types';
+import { SpatialIntelligenceLayer } from '../spatial/spatialIntelligenceLayer';
 
 class MinPriorityQueue {
   private heap: Array<{ id: number; priority: number }> = [];
@@ -67,6 +75,13 @@ class MinPriorityQueue {
   }
 }
 
+export interface CalculateRouteOptions {
+  transportMode?: TransportMode;
+  preference?: RoutePreference;
+  penalizedEdges?: Set<string>;
+  calculateAlternatives?: boolean;
+}
+
 export class Pathfinder {
   private graph: RoadGraph;
 
@@ -76,9 +91,13 @@ export class Pathfinder {
 
   public async calculateRoute(
     start: RouteWaypoint,
-    destination: RouteWaypoint
+    destination: RouteWaypoint,
+    options: CalculateRouteOptions = {}
   ): Promise<NavigationRoute | null> {
     await this.graph.ensureLoaded();
+
+    const mode: TransportMode = options.transportMode ?? 'car';
+    const preference: RoutePreference = options.preference ?? 'fastest';
 
     const startMatch = this.graph.findNearestNode(start.x, start.z);
     const destMatch = this.graph.findNearestNode(destination.x, destination.z);
@@ -92,11 +111,87 @@ export class Pathfinder {
     const destNode = destMatch.nodeId;
 
     if (startNode === destNode) {
-      return this.createDirectRoute(start, destination);
+      return this.createDirectRoute(start, destination, mode, preference);
     }
 
-    // A* Search
-    const gScore = new Float32Array(this.graph.nodes.length);
+    // Determine nodes to avoid from active road closures
+    const avoidedNodes = new Set<number>();
+    let closuresAvoidedCount = 0;
+    if (preference === 'avoid-closures') {
+      const sil = SpatialIntelligenceLayer.getInstance();
+      const blocking = sil.getBlockingIncidents();
+      for (const inc of blocking) {
+        const match = this.graph.findNearestNode(inc.x, inc.z);
+        if (match && match.distance < 120) {
+          avoidedNodes.add(match.nodeId);
+          closuresAvoidedCount++;
+        }
+      }
+    }
+
+    // Primary route search
+    const primaryRoute = this.runAStar(
+      startNode,
+      destNode,
+      start,
+      destination,
+      mode,
+      preference,
+      avoidedNodes,
+      options.penalizedEdges,
+      closuresAvoidedCount
+    );
+
+    if (!primaryRoute) {
+      return this.createDirectRoute(start, destination, mode, preference);
+    }
+
+    // If alternatives requested, calculate a secondary alternative route
+    if (options.calculateAlternatives !== false) {
+      const usedEdges = new Set<string>();
+      for (let i = 1; i < primaryRoute.points.length; i++) {
+        const p1 = primaryRoute.points[i - 1];
+        const p2 = primaryRoute.points[i];
+        const key = `${Math.round(p1.x / 40)},${Math.round(p1.z / 40)}->${Math.round(p2.x / 40)},${Math.round(p2.z / 40)}`;
+        usedEdges.add(key);
+      }
+
+      const alt = this.runAStar(
+        startNode,
+        destNode,
+        start,
+        destination,
+        mode,
+        preference,
+        avoidedNodes,
+        usedEdges,
+        closuresAvoidedCount,
+        true
+      );
+
+      if (alt && Math.abs(alt.totalDistanceMeters - primaryRoute.totalDistanceMeters) > 80) {
+        alt.isAlternative = true;
+        primaryRoute.alternativeRoutes = [alt];
+      }
+    }
+
+    return primaryRoute;
+  }
+
+  private runAStar(
+    startNode: number,
+    destNode: number,
+    start: RouteWaypoint,
+    destination: RouteWaypoint,
+    mode: TransportMode,
+    preference: RoutePreference,
+    avoidedNodes: Set<number>,
+    penalizedEdges?: Set<string>,
+    closuresAvoidedCount: number = 0,
+    isAlternative: boolean = false
+  ): NavigationRoute | null {
+    const nodeCount = this.graph.nodes.length;
+    const gScore = new Float32Array(nodeCount);
     gScore.fill(Infinity);
     gScore[startNode] = 0;
 
@@ -112,7 +207,7 @@ export class Pathfinder {
     );
     pq.push(startNode, initialHeuristic);
 
-    const visited = new Uint8Array(this.graph.nodes.length);
+    const visited = new Uint8Array(nodeCount);
     let reached = false;
 
     while (!pq.isEmpty()) {
@@ -134,22 +229,62 @@ export class Pathfinder {
 
         if (visited[neighbor]) continue;
 
-        const tentativeG = currentG + edge.cost;
+        // Mode suitability filter
+        if (mode === 'walking') {
+          if (edge.roadType === 'motorway' || edge.roadType === 'trunk') continue;
+        } else if (mode === 'bike') {
+          if (edge.roadType === 'motorway') continue;
+        }
+
+        // Avoided closure nodes
+        let closurePenalty = 0;
+        if (avoidedNodes.has(neighbor)) {
+          closurePenalty = 10000;
+        }
+
+        // Penalty for edges used in primary route (for alternative calculation)
+        let alternativePenalty = 1.0;
+        if (penalizedEdges) {
+          const k1 = `${Math.round(this.graph.nodes[current].x / 40)},${Math.round(this.graph.nodes[current].z / 40)}->${Math.round(this.graph.nodes[neighbor].x / 40)},${Math.round(this.graph.nodes[neighbor].z / 40)}`;
+          if (penalizedEdges.has(k1)) {
+            alternativePenalty = 3.5;
+          }
+        }
+
+        // Speed by transport mode
+        let effectiveSpeed = edge.speedLimitKmH;
+        if (mode === 'bike') {
+          effectiveSpeed = Math.min(30, edge.speedLimitKmH * 0.7);
+        } else if (mode === 'walking') {
+          effectiveSpeed = 5.0; // 5 km/h pedestrian walking pace
+        }
+
+        // Cost calculation by preference
+        let edgeCost: number;
+        if (preference === 'shortest') {
+          edgeCost = edge.distance * alternativePenalty + closurePenalty;
+        } else {
+          // fastest: duration-based cost (seconds)
+          const timeCost = edge.distance / (effectiveSpeed / 3.6);
+          edgeCost = timeCost * alternativePenalty + closurePenalty;
+        }
+
+        const tentativeG = currentG + edgeCost;
         if (tentativeG < gScore[neighbor]) {
           gScore[neighbor] = tentativeG;
           cameFromEdge.set(neighbor, { fromNode: current, edge });
 
           const nx = this.graph.nodes[neighbor].x;
           const nz = this.graph.nodes[neighbor].z;
-          const h = Math.hypot(nx - destX, nz - destZ) * 0.7; // Admissible heuristic
+          const distToDest = Math.hypot(nx - destX, nz - destZ);
+          const h = (distToDest / (effectiveSpeed / 3.6)) * 0.75;
           pq.push(neighbor, tentativeG + h);
         }
       }
     }
 
     if (!reached) {
-      console.warn('[Pathfinder] No path found between nodes; falling back to direct connecting route');
-      return this.createDirectRoute(start, destination);
+      return null;
     }
 
     // Reconstruct route path
@@ -167,19 +302,32 @@ export class Pathfinder {
 
     // Stitch coordinate points
     const points: Array<{ x: number; y: number; z: number }> = [
-      { x: start.x, y: (start.y ?? 0) + 0.5, z: start.z }
+      { x: start.x, y: (start.y ?? 0) + 0.5, z: start.z },
     ];
 
     let totalDist = Math.hypot(
       this.graph.nodes[startNode].x - start.x,
       this.graph.nodes[startNode].z - start.z
     );
-    let totalSeconds = totalDist / (30 / 3.6); // ~30 km/h initial connection
+
+    const initialSpeed = mode === 'walking' ? 5 : mode === 'bike' ? 20 : 35;
+    let totalSeconds = totalDist / (initialSpeed / 3.6);
+
+    const majorRoadsSet = new Set<string>();
 
     for (let i = 0; i < routeEdges.length; i++) {
       const edge = routeEdges[i];
       totalDist += edge.distance;
-      totalSeconds += edge.distance / (edge.speedLimitKmH / 3.6);
+
+      let speed = edge.speedLimitKmH;
+      if (mode === 'bike') speed = Math.min(30, speed * 0.7);
+      if (mode === 'walking') speed = 5.0;
+
+      totalSeconds += edge.distance / (speed / 3.6);
+
+      if (edge.roadName && edge.roadName !== 'Unnamed Road' && !edge.roadName.includes('Link')) {
+        majorRoadsSet.add(edge.roadName);
+      }
 
       for (let pIdx = 0; pIdx < edge.points.length; pIdx++) {
         const pt = edge.points[pIdx];
@@ -187,26 +335,42 @@ export class Pathfinder {
       }
     }
 
-    // Add final destination
     points.push({ x: destination.x, y: (destination.y ?? 0) + 0.5, z: destination.z });
+
+    // Evaluate route against live incidents in SpatialIntelligenceLayer
+    const sil = SpatialIntelligenceLayer.getInstance();
+    const impact = sil.evaluateRouteIncidentImpact(points);
 
     // Build maneuvers (turn-by-turn instructions)
     const maneuvers = this.generateManeuvers(routeEdges, points, destination);
 
     return {
-      id: `route_${Date.now()}`,
+      id: `route_${mode}_${preference}_${Date.now()}_${isAlternative ? 'alt' : 'pri'}`,
       start,
       destination,
       points: this.smoothPolyline(points),
       totalDistanceMeters: Math.round(totalDist),
-      estimatedDurationSeconds: Math.round(totalSeconds),
+      estimatedDurationSeconds: Math.round(totalSeconds + impact.totalEstimatedDelayMinutes * 60),
       maneuvers,
+      transportMode: mode,
+      preference,
+      majorRoads: Array.from(majorRoadsSet).slice(0, 4),
+      trafficConditions: impact.totalEstimatedDelayMinutes > 15 ? 'congested' : impact.totalEstimatedDelayMinutes > 5 ? 'moderate' : 'clear',
+      trafficDelayMinutes: impact.totalEstimatedDelayMinutes,
+      closuresAvoidedCount,
+      isAlternative,
     };
   }
 
-  private createDirectRoute(start: RouteWaypoint, destination: RouteWaypoint): NavigationRoute {
+  private createDirectRoute(
+    start: RouteWaypoint,
+    destination: RouteWaypoint,
+    mode: TransportMode,
+    preference: RoutePreference
+  ): NavigationRoute {
     const dist = Math.hypot(destination.x - start.x, destination.z - start.z);
-    const duration = dist / (40 / 3.6);
+    const speed = mode === 'walking' ? 5 : mode === 'bike' ? 22 : 40;
+    const duration = dist / (speed / 3.6);
 
     return {
       id: `direct_${Date.now()}`,
@@ -221,7 +385,7 @@ export class Pathfinder {
       maneuvers: [
         {
           type: 'depart',
-          instruction: 'Proceed directly toward waypoint',
+          instruction: 'Proceed directly toward destination',
           streetName: destination.name || 'Target Location',
           distanceMeters: Math.round(dist),
           location: { x: start.x, z: start.z },
@@ -236,6 +400,12 @@ export class Pathfinder {
           cumulativeDistance: Math.round(dist),
         },
       ],
+      transportMode: mode,
+      preference,
+      majorRoads: ['Direct Geometric Path'],
+      trafficConditions: 'clear',
+      trafficDelayMinutes: 0,
+      closuresAvoidedCount: 0,
     };
   }
 
@@ -249,7 +419,6 @@ export class Pathfinder {
 
     let cumulativeDist = 0;
 
-    // 1. Depart maneuver
     const firstEdge = edges[0];
     maneuvers.push({
       type: 'depart',
@@ -262,7 +431,6 @@ export class Pathfinder {
 
     cumulativeDist += firstEdge.distance;
 
-    // Detect turn maneuvers along consecutive edges
     for (let i = 1; i < edges.length; i++) {
       const prevEdge = edges[i - 1];
       const curEdge = edges[i];
@@ -271,7 +439,6 @@ export class Pathfinder {
       const p2 = prevEdge.points[prevEdge.points.length - 1];
       const p3 = curEdge.points[curEdge.points.length - 1];
 
-      // Calculate bearing change
       const b1 = Math.atan2(p2.x - p1.x, p2.z - p1.z);
       const b2 = Math.atan2(p3.x - p2.x, p3.z - p2.z);
       let angleDiff = (b2 - b1) * (180 / Math.PI);
@@ -315,7 +482,6 @@ export class Pathfinder {
       cumulativeDist += curEdge.distance;
     }
 
-    // Arrival maneuver
     maneuvers.push({
       type: 'arrive',
       instruction: `Arrive at ${dest.name || 'Waypoint Destination'}`,
@@ -328,9 +494,6 @@ export class Pathfinder {
     return maneuvers;
   }
 
-  /**
-   * Remove redundant consecutive collinear points for smooth rendering
-   */
   private smoothPolyline(pts: Array<{ x: number; y: number; z: number }>): Array<{ x: number; y: number; z: number }> {
     if (pts.length <= 2) return pts;
     const res: Array<{ x: number; y: number; z: number }> = [pts[0]];
@@ -338,12 +501,8 @@ export class Pathfinder {
     for (let i = 1; i < pts.length - 1; i++) {
       const prev = res[res.length - 1];
       const cur = pts[i];
-      const next = pts[i + 1];
-
-      // If point is virtually identical to previous, skip
       const d1 = Math.hypot(cur.x - prev.x, cur.z - prev.z);
       if (d1 < 1.0) continue;
-
       res.push(cur);
     }
 

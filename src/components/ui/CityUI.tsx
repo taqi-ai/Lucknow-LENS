@@ -9,7 +9,9 @@ import { InfoPanel } from '../features/InfoPanel';
 import { AnalystPanel } from '../features/AnalystPanel';
 import { LiveDataPanel } from '../features/LiveDataPanel';
 import { NavigationHUD } from '../features/NavigationHUD';
-import type { NavigationRoute, NavigatorState, GPSTheme, RouteWaypoint } from '../../navigation/types';
+import { NavigationPanel } from '../features/NavigationPanel';
+import type { NavigationRoute, NavigatorState, GPSTheme, RouteWaypoint, TransportMode, RoutePreference } from '../../navigation/types';
+import type { SpatialIncident } from '../../spatial/types';
 import { Compass, Building2, FileText, Activity, Map, Navigation, MapPin, Grid, Globe, ShieldCheck, Sun, Moon, Tag, Palette, Maximize2, Eye, SlidersHorizontal, X } from 'lucide-react';
 import { CameraController } from '../../city/cameraController';
 
@@ -39,7 +41,7 @@ interface CityUIProps {
   newsFeed?: LiveListState<LiveNewsDTO>;
   onCameraSignal: (signal: CameraPreset) => void;
   onReloadOSM: () => void;
-  onToggleLayer: (category: 'base' | 'live', layer: string) => void;
+  onToggleLayer: (category: 'base' | 'live' | 'hazards' | 'incidents' | 'navigation' | 'pulse', layer: string) => void;
   onSelectEntity: (entity: SelectedEntity | null) => void;
   onExecuteAction: (action: AIAction) => void;
 
@@ -54,6 +56,19 @@ interface CityUIProps {
   onChangeTheme?: (theme: GPSTheme) => void;
   onClearRoute?: () => void;
   onSetDestinationWaypoint?: (dest: RouteWaypoint) => void;
+
+  // Spatial Intelligence & GTA Navigation Extensions
+  isNavigationMode?: boolean;
+  onToggleNavigationMode?: (active: boolean) => void;
+  onFindRoute?: (start: RouteWaypoint, dest: RouteWaypoint, mode: TransportMode, preference: RoutePreference) => void;
+  onSimulateReroute?: () => void;
+  isGPSActive?: boolean;
+  onToggleGPS?: () => void;
+  rerouteNotification?: string | null;
+  onCheckRouteImpact?: (incident: SpatialIncident) => void;
+  onFindAlternativeRoute?: (incident: SpatialIncident) => void;
+  onFlyToLocation?: (lat: number, lon: number, distance?: number) => void;
+  cameraCoordinates?: { lat: number; lon: number };
 }
 
 export const CityUI: React.FC<CityUIProps> = ({
@@ -95,6 +110,17 @@ export const CityUI: React.FC<CityUIProps> = ({
   onChangeTheme,
   onClearRoute,
   onSetDestinationWaypoint,
+  isNavigationMode = false,
+  onToggleNavigationMode,
+  onFindRoute,
+  onSimulateReroute,
+  isGPSActive = false,
+  onToggleGPS,
+  rerouteNotification = null,
+  onCheckRouteImpact,
+  onFindAlternativeRoute,
+  onFlyToLocation,
+  cameraCoordinates,
 }) => {
   const [isReportOpen, setIsReportOpen] = useState(false);
 
@@ -194,13 +220,33 @@ export const CityUI: React.FC<CityUIProps> = ({
               mapData={mapData}
               onSelectResult={handleSearchResultClick}
               onSetDestinationWaypoint={onSetDestinationWaypoint}
+              isNavigationMode={isNavigationMode}
+              onToggleNavigationMode={onToggleNavigationMode}
             />
           </div>
+
+          {/* GTA Navigation Drawer Panel */}
+          {isNavigationMode && onFindRoute && (
+            <div className="pointer-events-auto">
+              <NavigationPanel
+                onFindRoute={onFindRoute}
+                onClose={() => onToggleNavigationMode?.(false)}
+                onSimulateReroute={onSimulateReroute}
+                activeRoute={navigationRoute}
+                isGPSActive={isGPSActive}
+                onToggleGPS={onToggleGPS}
+                rerouteNotification={rerouteNotification}
+              />
+            </div>
+          )}
 
           {/* Ask Lucknow Lens AI Panel */}
           {!presentationMode && !compact && (
             <div className="pointer-events-auto">
-              <AnalystPanel onExecuteAction={onExecuteAction} />
+              <AnalystPanel
+                onExecuteAction={onExecuteAction}
+                cameraCoordinates={cameraCoordinates}
+              />
             </div>
           )}
         </div>
@@ -464,6 +510,9 @@ export const CityUI: React.FC<CityUIProps> = ({
                 entity={selectedEntity}
                 onClose={() => onSelectEntity(null)}
                 onSetDestinationWaypoint={onSetDestinationWaypoint}
+                onCheckRouteImpact={onCheckRouteImpact}
+                onFindAlternativeRoute={onFindAlternativeRoute}
+                onFlyToLocation={onFlyToLocation}
               />
             </div>
           )}

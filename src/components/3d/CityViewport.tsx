@@ -18,6 +18,9 @@ import { EmergencyVisualManager } from '../../city/emergencyVisuals';
 import { loadEmergencyFacilities, EmergencyFacility } from '../../city/emergencyServices';
 import { CampusAmbienceManager } from '../../city/campusAmbience';
 import { TransportHubManager, TRANSPORT_HUBS_REGISTRY, TransportHubData } from '../../city/transportHubs';
+import { HazardVisualManager } from '../../spatial/hazardVisuals';
+import { IncidentVisualManager } from '../../spatial/incidentVisuals';
+import { SpatialHazardZone, SpatialIncident } from '../../spatial/types';
 
 /**
  * Aircraft geometry and materials are created once at module scope and shared by
@@ -104,6 +107,8 @@ export const CityViewport: React.FC<CityViewportProps> = ({
   const routeDriverRef = useRef<RouteDriver | null>(null);
   const campusAmbienceRef = useRef<CampusAmbienceManager | null>(null);
   const transportHubsRef = useRef<TransportHubManager | null>(null);
+  const hazardVisualsRef = useRef<HazardVisualManager | null>(null);
+  const incidentVisualsRef = useRef<IncidentVisualManager | null>(null);
   
   const flightsGroupRef = useRef<THREE.Group | null>(null);
   const highlightRingRef = useRef<THREE.Mesh | null>(null);
@@ -207,6 +212,14 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     const transportHubs = new TransportHubManager(cityRenderer.scene);
     transportHubsRef.current = transportHubs;
     transportHubs.setNightMode(nightMode);
+
+    // Natural Hazards 3D Layer
+    const hazardVisuals = new HazardVisualManager(cityRenderer.scene);
+    hazardVisualsRef.current = hazardVisuals;
+
+    // Live Incidents 3D Layer
+    const incidentVisuals = new IncidentVisualManager(cityRenderer.scene);
+    incidentVisualsRef.current = incidentVisuals;
 
     // TileStreamer init
     streamer.init().then(() => {
@@ -333,6 +346,18 @@ export const CityViewport: React.FC<CityViewportProps> = ({
 
       // Transport Gateways (Airport & Charbagh Station)
       transportHubs.update(time * 0.001, cityRenderer.camera.position);
+
+      // Natural Hazards 3D Layer Update
+      if (currentLayers.hazards) {
+        hazardVisuals.updateFilters(currentLayers.hazards);
+        hazardVisuals.update(time * 0.001);
+      }
+
+      // Live Incidents 3D Layer Update
+      if (currentLayers.incidents) {
+        incidentVisuals.updateFilters(currentLayers.incidents);
+        incidentVisuals.update(time * 0.001, cityRenderer.camera.position);
+      }
 
       // Layer Visibility Check
       const layerKey = `${currentLayers.base.buildings}|${currentLayers.base.roads}|${currentLayers.base.parks}|${currentLayers.base.gomti}`;
@@ -510,6 +535,61 @@ export const CityViewport: React.FC<CityViewportProps> = ({
         }
       }
 
+      // Live Incidents click check
+      const incidentIntersects = raycaster.intersectObjects(
+        incidentVisuals.getInteractiveObjects(),
+        true
+      );
+      if (incidentIntersects.length > 0) {
+        let curr: THREE.Object3D | null = incidentIntersects[0].object;
+        let inc: SpatialIncident | null = null;
+        while (curr) {
+          if (curr.userData?.incident) {
+            inc = curr.userData.incident as SpatialIncident;
+            break;
+          }
+          curr = curr.parent;
+        }
+        if (inc) {
+          onSelectEntityRef.current({
+            type: 'incident',
+            id: inc.id,
+            name: inc.title,
+            details: inc,
+            latitude: inc.latitude,
+            longitude: inc.longitude,
+            x: inc.x,
+            z: inc.z,
+          });
+          controls.flyTo(inc.latitude, inc.longitude, 450);
+          return;
+        }
+      }
+
+      // Natural Hazard Zones click check
+      const hazardIntersects = raycaster.intersectObjects(
+        hazardVisuals.getInteractiveObjects(),
+        false
+      );
+      if (hazardIntersects.length > 0) {
+        const hitObj = hazardIntersects[0].object;
+        const hazard = hitObj.userData?.hazard as SpatialHazardZone;
+        if (hazard) {
+          onSelectEntityRef.current({
+            type: 'hazard',
+            id: hazard.id,
+            name: hazard.name,
+            details: hazard,
+            latitude: hazard.centroid.lat,
+            longitude: hazard.centroid.lon,
+            x: hitObj.position.x || 0,
+            z: hitObj.position.z || 0,
+          });
+          controls.flyTo(hazard.centroid.lat, hazard.centroid.lon, 650);
+          return;
+        }
+      }
+
       // Ground plane click check
       const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
       const groundIntersect = new THREE.Vector3();
@@ -632,6 +712,8 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       emergencyVisuals.dispose();
       campusAmbience.dispose();
       transportHubs.dispose();
+      hazardVisuals.dispose();
+      incidentVisuals.dispose();
       cityRenderer.dispose();
       if (container.contains(cityRenderer.renderer.domElement)) {
         container.removeChild(cityRenderer.renderer.domElement);

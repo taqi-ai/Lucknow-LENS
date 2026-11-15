@@ -31,6 +31,17 @@ const BUILT = [
   { slug: 'chota-imambara', name: 'Chota Imambara (Imambara Hussainabad Mubarak)', by: 'Nawab Muhammad Ali Shah', year: '1838', note: 'Built as a hall for Shia congregation and as a mausoleum for himself and his mother. Called the Palace of Lights by European visitors for its chandeliers.' },
 ];
 
+const MORE_BUILT = [
+  { name: 'Jama Masjid (Husainabad)', by: 'Nawab Muhammad Ali Shah, finished by his widow Malika Jahan', year: '1839 to 1845', note: 'Begun to surpass the Jama Masjid of Delhi in size. He died before it was done, and his widow completed it in 1845. After 1857, Friday prayers moved to Tehsin ki Masjid, so the "Jama Masjid" name is something of a misnomer.' },
+  { name: 'Satkhanda', by: 'Nawab Muhammad Ali Shah', year: '1840s', note: 'An unfinished watchtower opposite his tomb, standing at four storeys. Read as a monument to his ideas about governance.' },
+];
+
+const FOOD_FACTS = [
+  { t: 'Sheermal', d: 'A saffron-scented flatbread tied to the Nawabi kitchens. One account credits a cook named Muhamdu, in the reign of Nasir-ud-din Haider (1827 to 1837), with improving the baqarkhani into sheermal, to eat with nihari. Another dates the famous Ali Hussain shop to the early 18th century, and others trace the bread to Persia. The sources disagree. Today it is still handed out as tabarruk during Muharram.', u: 'https://livehistoryindia.com/story/living-culture/sheermal-lucknow', s: 'Live History India' },
+  { t: 'Dum pukht', d: 'Slow cooking in a sealed pot. The popular story links it to the famine-relief building of Bara Imambara under Asaf-ud-Daula, around 1783 or 1784, but that is legend rather than established history. Another account says the method resembles an older Peshawar technique of cooking pots buried in sand.', u: 'https://en.wikipedia.org/wiki/Dum_pukht', s: 'Wikipedia: Dum pukht' },
+  { t: 'UNESCO Creative City of Gastronomy', d: 'Announced on World Cities Day, 31 October 2025, as part of 58 new cities. Lucknow is the second Indian city after Hyderabad to receive the title. We found no other food award to list.', u: 'https://www.unesco.org/en/creative-cities/lucknow', s: 'UNESCO' },
+];
+
 const CMS = [
   { name: 'Yogi Adityanath', years: 'March 2017 to now', note: 'Sworn in on 25 March 2017. Sources call him the longest-serving chief minister in the state\'s history. Numbering of chief ministers differs between lists, so we do not number him.' },
   { name: 'Akhilesh Yadav', years: '2012 to 2017', note: '' },
@@ -92,7 +103,10 @@ export default function Pedia(_: TabProps) {
             </Reveal>
           ))}
         </div>
-        <Src items={[{ t: 'Wikipedia: Rumi Darwaza', u: 'https://en.wikipedia.org/wiki/Rumi_Darwaza' }, { t: 'Wikipedia: Bara Imambara', u: 'https://en.wikipedia.org/wiki/Bara_Imambara' }, { t: 'Wikipedia: Chota Imambara', u: 'https://en.wikipedia.org/wiki/Chota_Imambara' }]} />
+        <div className="mt-5 grid gap-5 md:grid-cols-2">
+          {MORE_BUILT.map((b, i) => (<Reveal key={b.name} i={i}><div className="h-full rounded-[22px] border border-paper/10 bg-terrain p-6"><p className="text-[13px] font-semibold text-sand">{b.year}, by {b.by}</p><h3 className="font-display text-[1.35rem] leading-tight text-paper">{b.name}</h3><p className="mt-3 text-[14.5px] leading-[1.7] text-paper/70">{b.note}</p></div></Reveal>))}
+        </div>
+        <Src items={[{ t: 'Hindustan Times: an architectural jewel', u: 'https://www.pressreader.com/india/hindustan-times-lucknow/20180604/281612421088360' }, { t: 'Live History India: the abandoned tower of ambition', u: 'https://www.livehistoryindia.com/story/amazing-india/the-abandoned-tower-of-ambition/' }, { t: 'Wikipedia: Rumi Darwaza', u: 'https://en.wikipedia.org/wiki/Rumi_Darwaza' }, { t: 'Wikipedia: Bara Imambara', u: 'https://en.wikipedia.org/wiki/Bara_Imambara' }, { t: 'Wikipedia: Chota Imambara', u: 'https://en.wikipedia.org/wiki/Chota_Imambara' }]} />
       </Wrap>
 
       <Wrap className="pb-24">
@@ -112,6 +126,13 @@ export default function Pedia(_: TabProps) {
           ))}
         </div>
         <Src items={SOURCES.food} />
+      </Wrap>
+
+      <Wrap className="pb-24">
+        <div className="mb-10 max-w-[640px]"><Kicker>On the table</Kicker><H2>Food, and where the stories come from</H2></div>
+        <div className="grid gap-4 md:grid-cols-3">
+          {FOOD_FACTS.map((f, i) => (<Reveal key={f.t} i={i}><div className="flex h-full flex-col rounded-[22px] border border-paper/10 bg-terrain p-6"><h3 className="font-display text-[1.4rem] leading-tight text-paper">{f.t}</h3><p className="mt-3 flex-1 text-[14.5px] leading-[1.7] text-paper/70">{f.d}</p><a href={f.u} target="_blank" rel="noreferrer noopener" className="mt-4 inline-flex items-center gap-1 text-[12.5px] font-semibold text-sand underline-offset-4 hover:underline">{f.s}<ArrowUpRight className="h-3 w-3" /></a></div></Reveal>))}
+        </div>
       </Wrap>
 
       <Wrap className="pb-24">

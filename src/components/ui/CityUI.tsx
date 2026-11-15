@@ -7,6 +7,7 @@ import { SearchUI } from '../features/SearchUI';
 import type { LayerState } from '../features/LayerControl';
 import { MapControls } from './MapControls';
 import { DayNightToggle } from './DayNight';
+import { runDayNight } from '../../landing/dayNightTransition';
 import type { ThemeId } from './themes';
 import type { LabelSettings } from '../../city/labelManager';
 import { InfoPanel } from '../features/InfoPanel';
@@ -236,7 +237,7 @@ export const CityUI: React.FC<CityUIProps> = ({
       </div>
 
       {!presentationMode && (
-        <div className={`absolute z-30 ${compact ? 'right-3 top-[64px]' : 'right-3 top-3'}`}><DayNightToggle night={night} onChange={onNight} compact={compact} /></div>
+        <div className={`absolute z-30 ${compact ? 'right-3 top-[64px]' : 'right-3 top-3'}`}><DayNightToggle night={night} onChange={(n, origin) => runDayNight(() => onNight(n), origin)} compact={compact} /></div>
       )}
       {!presentationMode && (
         <MapControls

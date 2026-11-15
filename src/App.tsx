@@ -14,7 +14,7 @@ const MapApp = lazy(loadMap);
  *         → ready (shade up, the real map is visible through the glass; nothing moves until you choose)
  *         → diving (the camera pushes through the window) → map
  */
-type Stage = 'landing' | 'boarding' | 'ready' | 'diving' | 'map';
+type Stage = 'landing' | 'boarding' | 'ready' | 'diving' | 'map' | 'leaving';
 
 const reduced = () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
@@ -49,10 +49,23 @@ export default function App() {
     window.scrollTo(0, 0);
   }, [scale, fade]);
 
-  const leave = useCallback(() => {
+  /** Back to the site: pull out through the cabin window (the dive in reverse), then the window fades into the page. */
+  const [exiting, setExiting] = useState(false);
+  const leave = useCallback(async () => {
+    const fromMap = stage === 'map' && !reduced();
+    if (fromMap) {
+      const h = Math.min(window.innerHeight * 0.78, 720);
+      const target = Math.max(window.innerWidth / (h * (PANE.w / 560)), window.innerHeight / (h * (PANE.h / 560))) * 1.25;
+      scale.set(target); fade.set(0);
+      setStage('leaving');
+      animate(fade, 1, { duration: 0.35 });
+      await animate(scale, 1, { duration: 1.25, ease: [0.3, 0, 0.2, 1] });
+      setExiting(true);
+    }
     setStage('landing');
     requestAnimationFrame(() => window.scrollTo(0, savedScroll.current));
-  }, []);
+    if (fromMap) { await animate(fade, 0, { duration: 0.7, delay: 0.15 }); setExiting(false); }
+  }, [stage, scale, fade]);
 
   const onProgress = useCallback((p: LoadProgress) => {
     setProgress(p);
@@ -106,7 +119,7 @@ export default function App() {
   }, [stage]);
 
   const shadeValue = stage === 'boarding' ? 1 - shown : 0;
-  const inCabin = stage === 'boarding' || stage === 'ready' || stage === 'diving';
+  const inCabin = stage === 'boarding' || stage === 'ready' || stage === 'diving' || stage === 'leaving' || exiting;
 
   return (
     <>
@@ -149,7 +162,7 @@ export default function App() {
 
             {/* status, on the cabin wall under the window */}
             <AnimatePresence mode="wait">
-              {stage !== 'diving' && (
+              {(stage === 'boarding' || stage === 'ready') && (
                 <motion.div key={stage} className="pointer-events-none absolute inset-x-0 bottom-[3vh] flex flex-col items-center px-6 text-center text-[#f6ead6]"
                   initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.4 }} role="status" aria-live="polite">
                   {stage === 'boarding' ? (

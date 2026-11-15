@@ -170,7 +170,7 @@ export default function MapApp({ entryPreset = 'hero', onProgress, released = tr
       railways: false,
       cameras: false,
       news: false,
-      emergency: true,
+      emergency: false,
     }
   });
 
@@ -216,6 +216,11 @@ export default function MapApp({ entryPreset = 'hero', onProgress, released = tr
   const readyRef = useRef(false);
   const flyInPendingRef = useRef(false);
   const [flyInTick, setFlyInTick] = useState(0);
+  // Through the cabin window the city should look like it does from a plane, not from space.
+  const windowViewSetRef = useRef(false);
+  useEffect(() => {
+    if (cameraController && !released && !windowViewSetRef.current) { windowViewSetRef.current = true; setCameraSignal('window' as CameraPreset); }
+  }, [cameraController, released]);
   const settleRef = useRef<number | null>(null);
   const t0Ref = useRef(performance.now());
   useEffect(() => {

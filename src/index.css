@@ -150,9 +150,10 @@ html.lenis, html.lenis body { height: auto; }
 
 /* jali: the carved stone lattice of Awadhi screens, as a faint page texture */
 .jali {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cg fill='none' stroke='%23b8892e' stroke-opacity='.12' stroke-width='1'%3E%3Cpath d='M28 4 L34 22 L52 28 L34 34 L28 52 L22 34 L4 28 L22 22 Z'/%3E%3Ccircle cx='28' cy='28' r='6'/%3E%3Cpath d='M0 0 L8 8 M56 0 L48 8 M0 56 L8 48 M56 56 L48 48'/%3E%3C/g%3E%3C/svg%3E");
-  mask-image: radial-gradient(80% 70% at 20% 40%, #000 0%, transparent 75%);
-  -webkit-mask-image: radial-gradient(80% 70% at 20% 40%, #000 0%, transparent 75%);
+  opacity: 1;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cg fill='none' stroke='%23b8892e' stroke-opacity='.26' stroke-width='1'%3E%3Cpath d='M28 4 L34 22 L52 28 L34 34 L28 52 L22 34 L4 28 L22 22 Z'/%3E%3Ccircle cx='28' cy='28' r='6'/%3E%3Cpath d='M0 0 L8 8 M56 0 L48 8 M0 56 L8 48 M56 56 L48 48'/%3E%3C/g%3E%3C/svg%3E");
+  mask-image: radial-gradient(120% 90% at 30% 40%, #000 30%, transparent 90%);
+  -webkit-mask-image: radial-gradient(120% 90% at 30% 40%, #000 30%, transparent 90%);
 }
 .jali-dark {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cg fill='none' stroke='%23d8b66a' stroke-opacity='.12' stroke-width='1'%3E%3Cpath d='M28 4 L34 22 L52 28 L34 34 L28 52 L22 34 L4 28 L22 22 Z'/%3E%3Ccircle cx='28' cy='28' r='6'/%3E%3C/g%3E%3C/svg%3E");
@@ -249,10 +250,45 @@ html.lenis, html.lenis body { height: auto; }
 
 /* Day/night on the site: the new look spreads from the switch in a circle. */
 ::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
-::view-transition-old(root) { animation: daynight-fade-out .7s ease both; }
-::view-transition-new(root) { animation: daynight-fade-in .7s ease both; }
-@keyframes daynight-fade-out { to { opacity: 0; } }
-@keyframes daynight-fade-in { from { opacity: 0; } }
 
 /* colour changes ease rather than snap, except while the view transition runs */
 body, header, section, footer { transition: background-color .6s ease, color .6s ease, border-color .6s ease; }
+
+/* Day/night: the new look grows out of the switch in a circle (see dayNightTransition.ts). */
+::view-transition-old(root) { animation: none; }
+::view-transition-new(root) { will-change: clip-path; animation: dn-reveal .95s cubic-bezier(.76,0,.24,1) both; }
+@keyframes dn-reveal { from { clip-path: circle(0px at var(--dn-x) var(--dn-y)); } to { clip-path: circle(var(--dn-r) at var(--dn-x) var(--dn-y)); } }
+@keyframes dn-recede { to { filter: blur(2px) brightness(.92); transform: scale(.985); } }
+.dn-ring {
+  position: fixed; z-index: 2147483647; pointer-events: none; width: var(--dn-size); height: var(--dn-size);
+  margin: calc(var(--dn-size) / -2) 0 0 calc(var(--dn-size) / -2); border-radius: 50%;
+  box-shadow: 0 0 0 1.5px rgba(232, 196, 120, .95), 0 0 34px 10px rgba(232, 196, 120, .45), inset 0 0 40px 6px rgba(232, 196, 120, .25);
+  animation: dn-ring .95s cubic-bezier(.76,0,.24,1) both;
+}
+@keyframes dn-ring { 0% { transform: scale(0); opacity: 1; } 75% { opacity: .9; } 100% { transform: scale(1); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .dn-ring { display: none; } }
+
+/* preview hero: day and night paintings, revealed through a round brush from the gate */
+.hero-paint img { -webkit-mask-image: radial-gradient(circle at 68% 58%, #000 38%, transparent 62%); mask-image: radial-gradient(circle at 68% 58%, #000 38%, transparent 62%); -webkit-mask-position: 68% 58%; mask-position: 68% 58%; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }
+.hero-paint .hero-night { opacity: 0; }
+:root[data-time="night"] .hero-paint .hero-night { opacity: 1; }
+:root[data-time="night"] .hero-paint .hero-day { opacity: 0; }
+
+/* the building hero: day and night sets, swapped by the circle transition */
+.hero-build .hero-night { visibility: hidden; }
+:root[data-time="night"] .hero-build .hero-night { visibility: visible; }
+:root[data-time="night"] .hero-build .hero-day { visibility: hidden; }
+.hero-build .hero-night .hero-sketch { filter: invert(1) sepia(.5) saturate(1.4) brightness(1.1); }
+/* the rim gets its own live layer above the reveal */
+.dn-ring { view-transition-name: dn-ring; }
+::view-transition-group(dn-ring) { animation: none; }
+::view-transition-old(dn-ring) { display: none; }
+::view-transition-new(dn-ring) { animation: none; }
+
+/* a slow drift on page-opening paintings */
+@keyframes kenburns { from { transform: scale(1.04) translate(0, 0); } to { transform: scale(1.14) translate(-2%, -2%); } }
+.kenburns { animation: kenburns 22s ease-in-out infinite alternate; }
+
+/* the finale painting follows day and night */
+.finale-night { opacity: 0; transition: opacity .6s ease; }
+:root[data-time="night"] .finale-night { opacity: 1; }

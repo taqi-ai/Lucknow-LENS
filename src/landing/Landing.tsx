@@ -1,9 +1,9 @@
 import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { flushSync } from 'react-dom';
+import { runDayNight } from './dayNightTransition';
 import { DayNightToggle } from '../components/ui/DayNight';
 import { PalettePicker, applyPalette, readPalette } from './PalettePicker';
 import Lenis from 'lenis';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, useScroll } from 'motion/react';
 import type { CameraPreset } from '../types';
 import { useLiveFeed, type LiveAirQualityDTO, type LiveWeatherDTO } from '../interactions/liveFeed';
 import { TerralytMark } from '../components/ui/TerralytMark';
@@ -38,6 +38,8 @@ export const Landing: React.FC<LandingProps> = ({ onEnter, onPrefetch }) => {
   const [tab, setTab] = useState(idFromHash);
   const [scrolled, setScrolled] = useState(false);
   const [pastHero, setPastHero] = useState(false);
+  const [hoverTab, setHoverTab] = useState<string | null>(null);
+  const { scrollYProgress: progress } = useScroll();
   const [night, setNight] = useState<boolean>(() => { try { return localStorage.getItem('terralyt.site.night') === '1'; } catch { return false; } });
   useEffect(() => { document.documentElement.dataset.time = night ? 'night' : 'day'; }, [night]);
   /** Day/night for the whole site; the map picks up the same choice when you board. */
@@ -50,9 +52,7 @@ export const Landing: React.FC<LandingProps> = ({ onEnter, onPrefetch }) => {
     } catch { /* storage blocked */ }
     const root = document.documentElement;
     if (origin) { root.style.setProperty('--dn-x', origin.x + 'px'); root.style.setProperty('--dn-y', origin.y + 'px'); }
-    const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
-    if (doc.startViewTransition && !prefersReducedMotion()) doc.startViewTransition(() => flushSync(() => setNight(n)));
-    else setNight(n);
+    runDayNight(() => setNight(n), origin);
   }, []);
   const navRef = useRef<HTMLElement>(null);
 
@@ -108,39 +108,51 @@ export const Landing: React.FC<LandingProps> = ({ onEnter, onPrefetch }) => {
       <div id="top" className="relative min-h-screen bg-cabin text-paper" onPointerOver={intent} onFocus={intent} onTouchStart={intent}>
         <a href="#main" onClick={(e) => { e.preventDefault(); document.getElementById('main')?.focus(); }} className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[90] focus:rounded-lg focus:bg-sand focus:px-4 focus:py-2 focus:text-terrain">Skip to content</a>
 
-        <div className={`${tab === 'overview' ? 'fixed' : 'sticky'} inset-x-0 top-0 z-40 transition-transform duration-500`} style={tab === 'overview' && pastHero ? { transform: 'translateY(-33px)' } : undefined}>
-        {/* utility strip */}
-        <div className={`relative z-50 text-[11.5px] transition-colors duration-500 ${floating ? 'border-b border-white/10 bg-transparent text-white/70' : 'border-b border-sand/10 bg-terrain text-paper/60'}`}>
-          <div className="mx-auto flex max-w-[1280px] flex-wrap items-center justify-between gap-x-6 gap-y-1 px-5 py-2 sm:px-8">
-            <p>An independent student project. Not an official website of any government body.</p>
-            <p className="flex items-center gap-4 font-mono">
-              <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-sage" />Lucknow</span>
-              {weather.value && weather.status !== 'unavailable' && <span>{Math.round(weather.value.temperatureC)}°C</span>}
-              {air.value && air.status !== 'unavailable' && <span>AQI {Math.round(air.value.usAqi)}</span>}
-              <a href="#/government" className="hidden underline-offset-4 hover:text-paper hover:underline sm:inline">Emergency 112</a>
-            </p>
-          </div>
-        </div>
+        <div className="sticky inset-x-0 top-0 z-40 px-3 pt-3 sm:px-5">
+        {/* header: a floating capsule that tightens as you scroll */}
+        <header
+          onMouseLeave={() => setHoverTab(null)}
+          className={`relative mx-auto flex max-w-[1320px] items-center justify-between gap-3 rounded-full border px-3 transition-all duration-500 sm:px-4 ${scrolled ? 'h-[56px] border-paper/10 bg-terrain/80 shadow-[0_18px_50px_-24px_rgba(0,0,0,.45)] backdrop-blur-2xl' : 'h-[64px] border-paper/[0.07] bg-terrain/55 backdrop-blur-xl'}`}
+        >
+          <a href="#/overview" className="group flex shrink-0 items-center gap-2.5 pl-2" aria-label="Terralyt Lucknow, overview">
+            <span aria-hidden className="relative grid h-9 w-9 place-items-center overflow-hidden rounded-full bg-sand text-terrain">
+              <svg viewBox="0 0 100 140" className="h-[22px] w-auto transition-transform duration-700 group-hover:-translate-y-[2px]"><path d="M14 140 V66 C14 50 22 42 32 39 C34 28 40 22 45 20 C47 16 49 14 50 13 C51 14 53 16 55 20 C60 22 66 28 68 39 C78 42 86 50 86 66 V140" fill="none" stroke="currentColor" strokeWidth="9" strokeLinejoin="round" /></svg>
+            </span>
+            <span className="leading-none">
+              <span className="block font-display text-[1.35rem] text-paper">Terralyt</span>
+              <span className="font-deva block text-[0.72rem] text-sand" lang="hi">लखनऊ</span>
+            </span>
+          </a>
 
-        {/* header */}
-        <header className={`transition-colors duration-500 ${floating ? 'border-b border-transparent bg-transparent' : scrolled ? 'border-b border-paper/10 bg-cabin/90 backdrop-blur-xl' : 'border-b border-transparent bg-cabin/60 backdrop-blur-md'}`}>
-          <div className="mx-auto flex h-[64px] max-w-[1280px] items-center justify-between gap-4 px-5 sm:px-8">
-            <a href="#/overview" className="flex shrink-0 items-center gap-3" aria-label="Terralyt Lucknow, overview">
-              <span className="font-display text-[1.6rem] leading-none text-paper">Terralyt</span>
-              <span className="font-deva mt-1 hidden text-[1rem] leading-none text-sand sm:inline" lang="hi">लखनऊ</span>
-            </a>
-            <nav ref={navRef} aria-label="Sections" className="no-scrollbar -mx-1 flex min-w-0 items-center gap-0.5 overflow-x-auto px-1 text-[13px] font-medium">
-              {TABS.map((t) => (
-                <a key={t.id} href={`#/${t.id}`} aria-current={tab === t.id ? 'page' : undefined} className={`relative whitespace-nowrap rounded-full px-3.5 py-2 transition-colors ${tab === t.id ? 'text-terrain' : floating ? 'text-white/80 hover:text-white' : 'text-paper/65 hover:text-paper'}`}>
-                  {tab === t.id && <motion.span layoutId="tabpill" className="absolute inset-0 -z-10 rounded-full bg-sand" transition={{ type: 'spring', stiffness: 420, damping: 36 }} />}
-                  {t.label}
+          <nav ref={navRef} aria-label="Sections" className="no-scrollbar relative -mx-1 flex min-w-0 items-center overflow-x-auto px-1 text-[13.5px] font-medium">
+            {TABS.map((t) => {
+              const active = tab === t.id;
+              return (
+                <a key={t.id} href={`#/${t.id}`} aria-current={active ? 'page' : undefined} onMouseEnter={() => setHoverTab(t.id)} onFocus={() => setHoverTab(t.id)}
+                  className={`group relative whitespace-nowrap rounded-full px-3.5 py-2 transition-colors duration-300 ${active ? 'text-terrain' : 'text-paper/70 hover:text-paper'}`}>
+                  {active && <motion.span layoutId="tabpill" className="absolute inset-0 -z-10 rounded-full bg-sand shadow-[0_8px_22px_-10px_var(--color-sand)]" transition={{ type: 'spring', stiffness: 420, damping: 34 }} />}
+                  {!active && hoverTab === t.id && <motion.span layoutId="tabhover" className="absolute inset-0 -z-10 rounded-full bg-paper/[0.07]" transition={{ type: 'spring', stiffness: 520, damping: 40 }} />}
+                  {/* the English label rolls away to its Hindi name on hover */}
+                  <span className="relative block h-[1.25em] overflow-hidden">
+                    <span className="block transition-transform duration-500 ease-[cubic-bezier(.22,1,.36,1)] group-hover:-translate-y-full">{t.label}</span>
+                    <span lang="hi" className="font-deva absolute inset-x-0 top-full block text-center transition-transform duration-500 ease-[cubic-bezier(.22,1,.36,1)] group-hover:-translate-y-full">{t.hi}</span>
+                  </span>
                 </a>
-              ))}
-            </nav>
+              );
+            })}
+          </nav>
+
+          <div className="flex shrink-0 items-center gap-1.5">
             <PalettePicker className="shrink-0" />
             <DayNightToggle night={night} onChange={switchTime} className="shrink-0" />
-            <button data-enter onClick={() => onEnter()} className="hidden shrink-0 rounded-full bg-sand px-5 py-2.5 text-[13px] font-semibold text-terrain transition-transform hover:scale-[1.04] active:scale-95 lg:block">Enter the city</button>
+            <button data-enter onClick={() => onEnter()} className="group ml-1 hidden shrink-0 items-center gap-2 overflow-hidden rounded-full bg-sand py-2.5 pl-5 pr-2.5 text-[13.5px] font-semibold text-terrain transition-transform active:scale-95 lg:inline-flex">
+              Enter the city
+              <span className="grid h-7 w-7 place-items-center rounded-full bg-terrain/15 transition-transform duration-500 group-hover:rotate-[-45deg]"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6h8m0 0L6.5 2.5M10 6L6.5 9.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg></span>
+            </button>
           </div>
+
+          {/* reading progress along the bottom of the capsule */}
+          <motion.span aria-hidden className="pointer-events-none absolute inset-x-6 -bottom-px h-[2px] origin-left rounded-full bg-gradient-to-r from-amber via-sand to-amber" style={{ scaleX: progress }} />
         </header>
         </div>
 

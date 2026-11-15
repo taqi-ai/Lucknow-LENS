@@ -89,7 +89,7 @@ export interface RenderStats {
 export type CameraPreset =
   | 'fullcity' | 'overview' | 'neighborhood' | 'street' | 'top' | 'frame'
   /** Cinematic framings over the same real city — see CINEMATIC_PRESETS. */
-  | 'hero' | 'gomti' | 'hazratganj' | 'ekana' | 'oldlucknow' | 'charbagh'
+  | 'hero' | 'window' | 'gomti' | 'hazratganj' | 'ekana' | 'oldlucknow' | 'charbagh'
   | 'rumi' | 'clocktower' | 'vidhansabha' | 'ambedkar';
 
 export type LODLevel = 0 | 1 | 2 | 3;

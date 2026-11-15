@@ -620,7 +620,9 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     const first = nightAppliedRef.current === null;
     if (nightAppliedRef.current === night) return;
     nightAppliedRef.current = night;
-    if (first || !tweenRef.current || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+    // During the site's circle reveal the change must land at once, so the reveal has the new look to show.
+    const revealing = document.documentElement.classList.contains('dn-running');
+    if (first || revealing || !tweenRef.current || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
       snapAll();
       skyRef.current?.setBlend(night ? 1 : 0);
       labelManagerRef.current?.setNightMode(night);

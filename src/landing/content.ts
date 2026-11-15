@@ -15,7 +15,7 @@ export const CREDITS = credits as Record<string, Credit>;
  * photograph of the place as a reference, in one consistent style. Where one
  * exists it replaces the photo; the original photo stays credited on the About page.
  */
-export const ART = new Set<string>(['rumi-darwaza', 'bara-imambara', 'chota-imambara', 'clock-tower', 'residency', 'la-martiniere', 'charbagh', 'satkhanda', 'jama-masjid', 'ambedkar-park']);
+export const ART = new Set<string>(['kosala', 'nawabs', 'kakori-train', 'pact', 'kaiserbagh', 'chhatar-manzil', 'dilkusha', 'vidhan-sabha', 'ekana', 'gomti-riverfront', 'hazratganj', 'metro', 'rumi-darwaza', 'bara-imambara', 'chota-imambara', 'clock-tower', 'residency', 'la-martiniere', 'charbagh', 'satkhanda', 'jama-masjid', 'ambedkar-park']);
 export const ART_FOOD = new Set<string>(['tunday', 'biryani', 'nihari', 'sheermal', 'makhan-malai', 'chaat', 'kulfi', 'kakori']);
 
 /** Image URLs: a large and a 640px WebP for each slug (illustration if there is one, otherwise the photo). */
@@ -83,13 +83,13 @@ export const ARCH_STYLES = [
 /* ───────────────────────── History ───────────────────────── */
 export interface Era { year: string; title: string; body: string; slug?: string }
 export const ERAS: Era[] = [
-  { year: '6th c. BCE', title: 'Kosala', body: 'The Lucknow region sits in Kosala, one of the sixteen Mahajanapadas of early India.' },
-  { year: '1722', title: 'The Nawabs of Awadh', body: 'Saadat Khan is appointed governor of Awadh. His successors build a court that becomes the centre of North Indian culture.' },
+  { year: '6th c. BCE', title: 'Kosala', body: 'The Lucknow region sits in Kosala, one of the sixteen Mahajanapadas of early India.', slug: 'kosala' },
+  { year: '1722', title: 'The Nawabs of Awadh', body: 'Saadat Khan is appointed governor of Awadh. His successors build a court that becomes the centre of North Indian culture.', slug: 'nawabs' },
   { year: '1775', title: 'Lucknow becomes the capital', body: 'Asaf-ud-Daula moves the Awadh court from Faizabad to Lucknow and begins the city of gateways and imambaras.', slug: 'bara-imambara' },
   { year: '1856', title: 'Annexation', body: 'The East India Company annexes Awadh and exiles the last Nawab, Wajid Ali Shah.', slug: 'kaiserbagh' },
   { year: '1857', title: 'The Siege of Lucknow', body: 'The Residency is besieged for months in the Rebellion of 1857. Its ruins are kept as they were left.', slug: 'residency' },
-  { year: '1916', title: 'The Lucknow Pact', body: 'The Indian National Congress and the Muslim League meet in Lucknow and agree a joint demand.' },
-  { year: '1925', title: 'Kakori', body: 'Revolutionaries stop a train near Kakori on the Lucknow route. The event becomes part of the freedom movement.' },
+  { year: '1916', title: 'The Lucknow Pact', body: 'The Indian National Congress and the Muslim League meet in Lucknow and agree a joint demand.', slug: 'pact' },
+  { year: '1925', title: 'Kakori', body: 'Revolutionaries stop a train near Kakori on the Lucknow route. The event becomes part of the freedom movement.', slug: 'kakori-train' },
   { year: '1920s', title: 'The modern capital', body: 'Lucknow becomes the capital of the United Provinces, now Uttar Pradesh, and gets its great public buildings.', slug: 'vidhan-sabha' },
   { year: '2017', title: 'The Lucknow Metro', body: 'The first stretch of the Red Line opens on 5 September 2017. The airport line follows in 2019.', slug: 'metro' },
 ];

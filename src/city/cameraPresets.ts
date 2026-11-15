@@ -18,6 +18,13 @@ export interface CinematicPreset {
 
 export const CINEMATIC_PRESETS: Record<string, CinematicPreset> = {
   /** High oblique over the whole city with the Gomti crossing frame. */
+  /** What you see through the cabin window while the map loads: low, oblique, the way a city looks from a descending flight. */
+  window: {
+    label: 'Window seat',
+    x: -900, z: 600,
+    azimuth: 0.55, pitch: 0.3, distance: 7000,
+  },
+
   hero: {
     label: 'City Hero',
     x: -600, z: 400,

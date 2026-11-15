@@ -62,13 +62,13 @@ export default function Overview(props: TabProps) {
 
       {/* three rooms, each with its drawing */}
       <Wrap className="pb-28">
-        <div className="grid gap-5 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
           {[
             { href: '#/heritage', title: 'The heritage', body: 'Gateways, imambaras and palaces, with the stories behind them.', Draw: ChotaImambara },
             { href: '#/food', title: 'The table', body: `${UNESCO_GASTRONOMY.text.replace('In October 2025 UNESCO named', 'UNESCO named')}`, Draw: Handi },
             { href: '#/history', title: 'The history', body: 'From the court of Awadh and the siege of 1857 to the metro.', Draw: ClockTower },
           ].map(({ href, title, body, Draw }, i) => (
-            <a key={href} href={href} className="group block">
+            <a key={href} href={href} className="group block min-w-0">
               <SpotlightCard spotlightColor="color-mix(in srgb, var(--color-amber) 22%, transparent)" className="!h-full !rounded-[28px] !border-paper/10 !bg-terrain p-7">
                 <div className="flex h-[200px] items-end justify-center text-paper/80 transition-colors group-hover:text-sand">
                   <Draw className="h-full w-auto" delay={i * 0.25} />

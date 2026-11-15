@@ -118,7 +118,7 @@ export const PageHero: React.FC<{ kicker: string; title: string; hi: string; int
         <div>
           <Kicker>{kicker}</Kicker>
           <div className="flex flex-wrap items-end gap-x-8 gap-y-2">
-            <h1 className="overflow-hidden pb-[0.06em] font-display text-[clamp(2.8rem,7.4vw,6.2rem)] leading-[0.98] text-paper">
+            <h1 className="overflow-hidden pb-[0.06em] font-display text-[clamp(2.1rem,7.4vw,6.2rem)] leading-[1.02] text-paper [overflow-wrap:anywhere]">
               <motion.span className="block" initial={reduce ? false : { y: '105%' }} animate={{ y: '0%' }} transition={{ duration: 1, ease: [0.22, 1, 0.36, 1] }}>{title}</motion.span>
             </h1>
             <motion.span className="font-deva pb-2 text-[clamp(1.6rem,3.4vw,2.6rem)] text-sand/80" lang="hi" initial={reduce ? false : { opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3, duration: 0.8 }}>{hi}</motion.span>

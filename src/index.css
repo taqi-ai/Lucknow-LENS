@@ -30,7 +30,7 @@ body { margin: 0; background: #0c161d; color: #eae9df; -webkit-font-smoothing: a
 
 @layer utilities {
   .glass-panel {
-    background: rgba(14, 26, 34, 0.62);
+    background: rgba(12, 22, 29, 0.8);
     -webkit-backdrop-filter: blur(18px) saturate(1.25);
     backdrop-filter: blur(18px) saturate(1.25);
     border: 1px solid rgba(213, 199, 165, 0.14);

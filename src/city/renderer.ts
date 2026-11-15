@@ -221,12 +221,12 @@ export class CityRenderer {
         // Balances warm sunlight with sky-blue ambient fill so shadows create
         // high 3D contrast across building facades and roofs without amber washout.
         this.scene.fog = new THREE.FogExp2(0xd6e5f3, 0.000000);
-        this.sunLight.color.setHex(0xfff6ea);
-        this.sunLight.intensity = 3.8;
-        this.ambientLight.color.setHex(0x9bc4e6);
-        this.ambientLight.intensity = 0.35;
-        this.hemiLight.color.setHex(0xb5dbf7);
-        this.hemiLight.groundColor.setHex(0x8a7f72);
+        this.sunLight.color.setHex(0xffecd0);
+        this.sunLight.intensity = 3.6;
+        this.ambientLight.color.setHex(0xb2c8dc);
+        this.ambientLight.intensity = 0.38;
+        this.hemiLight.color.setHex(0xc6def2);
+        this.hemiLight.groundColor.setHex(0x9c8868);
         this.hemiLight.intensity = 0.65;
         this.renderer.toneMappingExposure = 1.0;
       }

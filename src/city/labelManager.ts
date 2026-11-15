@@ -61,6 +61,24 @@ const LOD_CONFIG: Record<LODLevel, LODConfig> = {
   3: { placeMinImp: 5, placeMax: 12, roadMinImp: 6,  roadMax: 8,  visRadius: 900,   baseScale: 1.0, labelHeight: 30  },
 };
 
+export interface LabelSettings {
+  places: boolean;
+  roads: boolean;
+  /** Only monuments and major landmarks. */
+  landmarksOnly: boolean;
+  density: 'minimal' | 'balanced' | 'rich';
+  size: 'small' | 'medium' | 'large';
+}
+
+/** Calm by default: a few place anchors, no road names until asked for. */
+export const DEFAULT_LABEL_SETTINGS: LabelSettings = {
+  places: true, roads: false, landmarksOnly: false, density: 'balanced', size: 'medium',
+};
+
+const DENSITY = { minimal: { count: 0.5, imp: 1 }, balanced: { count: 1, imp: 0 }, rich: { count: 1.8, imp: -1 } } as const;
+const SIZE = { small: 0.82, medium: 0.95, large: 1.15 } as const;
+const LANDMARK_TYPES = new Set(['landmark', 'monument', 'landmark_and_historical_building']);
+
 // ─── Canvas sprite factory ────────────────────────────────────────────────────
 
 interface SpriteStyle {
@@ -171,7 +189,13 @@ export class LabelManager {
 
   private currentLOD: LODLevel = 0;
   private isNight = true;
-  public enabled = true;
+  private _enabled = true;
+  public get enabled(): boolean { return this._enabled; }
+  public set enabled(v: boolean) {
+    if (v && !this._enabled) this.lastCamPos.set(1e9, 0, 0); // re-enabled: rebuild even if the camera has not moved
+    this._enabled = v;
+  }
+  private settings: LabelSettings = DEFAULT_LABEL_SETTINGS;
 
   // Track camera movement to trigger rebuilds
   private lastCamPos = new THREE.Vector3();
@@ -208,6 +232,11 @@ export class LabelManager {
   }
 
   public setCamera(cam: THREE.Camera): void { this.camera = cam; }
+
+  public setSettings(next: LabelSettings): void {
+    this.settings = next;
+    this.lastCamPos.set(1e9, 0, 0); // force a rebuild on the next frame
+  }
 
   public setNightMode(night: boolean): void {
     if (this.isNight === night) return;
@@ -250,12 +279,21 @@ export class LabelManager {
 
   private rebuild(camPos: THREE.Vector3, lod: LODLevel): void {
     this.hideAll();
-    const cfg = LOD_CONFIG[lod];
+    const base = LOD_CONFIG[lod];
+    const dens = DENSITY[this.settings.density];
+    const cfg: LODConfig = {
+      ...base,
+      placeMinImp: base.placeMinImp + dens.imp,
+      roadMinImp: base.roadMinImp + dens.imp,
+      placeMax: Math.max(1, Math.round(base.placeMax * dens.count)),
+      roadMax: Math.max(1, Math.round(base.roadMax * dens.count)),
+      baseScale: base.baseScale * SIZE[this.settings.size],
+    };
     const camX = camPos.x, camZ = camPos.z;
 
     // ── Screen-space occupancy grid (pixel rects) ──────────────────────────────
     const occupied: { cx: number; cy: number; hw: number; hh: number }[] = [];
-    const PADDING = 20; // Screen pixels padding between labels
+    const PADDING = 28; // Screen pixels padding between labels
 
     const ndcOf = (wx: number, wz: number, wy: number): THREE.Vector3 | null => {
       if (!this.camera) return null;
@@ -280,8 +318,9 @@ export class LabelManager {
     let candidates: Candidate[] = [];
 
     // Filter places
-    for (const p of this.allPlaces) {
-      if (p.importance < cfg.placeMinImp) break; // Array is sorted by importance desc
+    for (const p of (this.settings.places ? this.allPlaces : [])) {
+      if (p.importance < cfg.placeMinImp) break;
+      if (this.settings.landmarksOnly && !(LANDMARK_TYPES.has(p.type) || p.importance >= 9)) continue; // Array is sorted by importance desc
       // Filter out ordinary businesses at high LODs
       if (lod <= 1 && (p.type === 'shop' || p.type === 'business' || p.type === 'restaurant' || p.importance < 6)) {
          continue;
@@ -292,7 +331,7 @@ export class LabelManager {
     }
 
     // Filter roads
-    for (const r of this.allRoads) {
+    for (const r of (this.settings.roads ? this.allRoads : [])) {
       if (r.importance < cfg.roadMinImp) break;
       const dist = Math.hypot(r.x - camX, r.z - camZ);
       if (dist > cfg.visRadius) continue;
@@ -394,8 +433,8 @@ export class LabelManager {
 
     if (this.isNight) {
       if (isLandmark) {
-        bgColor = 'rgba(245, 175, 75, 0.95)';
-        textColor = '#0f172a';
+        bgColor = 'rgba(30, 24, 16, 0.9)';
+        textColor = '#f6d9a8';
         borderColor = 'rgba(255, 235, 180, 0.85)';
         badgeColor = '#b45309';
       } else if (highImp) {
@@ -410,10 +449,10 @@ export class LabelManager {
       }
     } else {
       if (isLandmark) {
-        bgColor = 'rgba(194, 95, 20, 0.96)';
-        textColor = '#ffffff';
-        borderColor = 'rgba(255, 255, 255, 0.4)';
-        badgeColor = '#fef08a';
+        bgColor = 'rgba(255, 249, 238, 0.96)';
+        textColor = '#3a2a16';
+        borderColor = 'rgba(176, 120, 60, 0.45)';
+        badgeColor = '#c0762f';
       } else if (highImp) {
         bgColor = 'rgba(255, 255, 255, 0.94)';
         textColor = '#0f172a';
@@ -426,7 +465,7 @@ export class LabelManager {
       }
     }
 
-    const fontSize = isLandmark ? 15 : highImp ? 13 : midImp ? 12 : 11;
+    const fontSize = isLandmark ? 13 : highImp ? 12 : midImp ? 11 : 10;
     const bold = highImp;
 
     const sprite = createTextSprite({

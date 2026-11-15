@@ -13,6 +13,8 @@ import {
   type LiveTrainDTO, type LiveTrafficDTO, type LiveNewsDTO,
 } from './interactions/liveFeed';
 import type { SkylineStyle } from './city/buildingMaterial';
+import { DEFAULT_LABEL_SETTINGS, type LabelSettings } from './city/labelManager';
+import { THEMES, themeOf, type ThemeId } from './components/ui/themes';
 import { Pathfinder } from './navigation/pathfinder';
 import { RouteDriver } from './navigation/routeDriver';
 import type { NavigationRoute, NavigatorState, RouteWaypoint, GPSTheme } from './navigation/types';
@@ -48,7 +50,7 @@ const INITIAL_MAP_DATA: OSMMapData = {
 function WindowOverlay() {
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0 z-[3] overflow-hidden">
-      <div className="absolute inset-0" style={{ background: 'radial-gradient(120% 95% at 50% 48%, transparent 52%, rgba(10,18,26,.38) 82%, rgba(6,12,18,.7) 100%)' }} />
+      <div className="absolute inset-0" style={{ background: 'radial-gradient(120% 95% at 50% 48%, transparent 58%, rgba(10,18,26,.22) 84%, rgba(6,12,18,.5) 100%)' }} />
       <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(240,201,160,.16) 0%, rgba(240,201,160,0) 34%)', mixBlendMode: 'soft-light' }} />
       <div className="absolute inset-0" style={{ background: 'linear-gradient(112deg, rgba(255,255,255,.13) 0%, rgba(255,255,255,0) 22%, rgba(255,255,255,0) 66%, rgba(255,255,255,.06) 76%, rgba(255,255,255,0) 88%)' }} />
       <div className="grain absolute inset-0 overflow-hidden" />
@@ -71,6 +73,23 @@ interface MapAppProps {
   onRetry?: () => void;
 }
 
+type Prefs = { theme: ThemeId; showLabels: boolean; labelSettings: LabelSettings; windowView: boolean };
+const PREFS_KEY = 'terralyt.map.prefs.v1';
+function loadPrefs(): Prefs {
+  const d: Prefs = { theme: 'warm', showLabels: true, labelSettings: DEFAULT_LABEL_SETTINGS, windowView: true };
+  try {
+    const raw = JSON.parse(localStorage.getItem(PREFS_KEY) ?? 'null') as Partial<Prefs> | null;
+    if (!raw) return d;
+    return {
+      theme: THEMES.some((t) => t.id === raw.theme) ? (raw.theme as ThemeId) : d.theme,
+      showLabels: typeof raw.showLabels === 'boolean' ? raw.showLabels : d.showLabels,
+      labelSettings: { ...DEFAULT_LABEL_SETTINGS, ...(raw.labelSettings ?? {}) },
+      windowView: typeof raw.windowView === 'boolean' ? raw.windowView : d.windowView,
+    };
+  } catch { return d; }
+}
+function savePrefs(p: Prefs) { try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch { /* private mode */ } }
+
 export default function MapApp({ entryPreset = 'hero', onProgress }: MapAppProps) {
   const [mapData, setMapData] = useState<OSMMapData>(INITIAL_MAP_DATA);
   const [error, setError] = useState<string | null>(null);
@@ -78,13 +97,17 @@ export default function MapApp({ entryPreset = 'hero', onProgress }: MapAppProps
   const [cameraController, setCameraController] = useState<CameraController | null>(null);
 
   const [cameraSignal, setCameraSignal] = useState<CameraPreset | 'reset' | null>(null);
-  const [nightMode, setNightMode] = useState<boolean>(false); // Daylight by default; the window view reads best by day
-  const [skylineStyle, setSkylineStyle] = useState<SkylineStyle>('warm');
-  const [showLabels, setShowLabels] = useState<boolean>(true); // Default: labels ON
+  // Preferences survive reloads. Defaults: Natural warm, calm labels, window view on.
+  const prefs = useRef(loadPrefs()).current;
+  const [theme, setTheme] = useState<ThemeId>(prefs.theme);
+  const { night: nightMode, style: skylineStyle } = THEMES.find((t) => t.id === theme)!;
+  const [showLabels, setShowLabels] = useState<boolean>(prefs.showLabels);
+  const [labelSettings, setLabelSettings] = useState<LabelSettings>(prefs.labelSettings);
   const [presentationMode, setPresentationMode] = useState<boolean>(false);
   const [mapOnly, setMapOnly] = useState<boolean>(false);
   // Airplane-window treatment: vignette, glass glare and grain over the map. Cheap CSS, no extra GPU passes.
-  const [windowView, setWindowView] = useState<boolean>(true);
+  const [windowView, setWindowView] = useState<boolean>(prefs.windowView);
+  useEffect(() => { savePrefs({ theme, showLabels, labelSettings, windowView }); }, [theme, showLabels, labelSettings, windowView]);
 
   // GTA GPS Navigation State
   const pathfinderRef = useRef<Pathfinder>(new Pathfinder());
@@ -132,7 +155,6 @@ export default function MapApp({ entryPreset = 'hero', onProgress }: MapAppProps
       parks: true,
       gomti: true,
       places: true,
-      labels: true,
     },
     live: {
       traffic: false,
@@ -229,29 +251,13 @@ export default function MapApp({ entryPreset = 'hero', onProgress }: MapAppProps
   }, []);
 
   const handleToggleLayer = (category: 'base' | 'live', layer: string) => {
-    setLayers(prev => {
-      const nextCategory = { ...prev[category] };
-      const key = layer as keyof typeof nextCategory;
-      nextCategory[key] = !nextCategory[key] as any;
-      
-      if (layer === 'labels' && category === 'base') {
-        setShowLabels(nextCategory[key] as any);
-      }
-      
-      return {
-        ...prev,
-        [category]: nextCategory
-      };
-    });
+    setLayers((prev) => ({
+      ...prev,
+      [category]: { ...prev[category], [layer]: !(prev[category] as Record<string, boolean>)[layer] },
+    }));
   };
 
-  const handleToggleLabels = () => {
-    setShowLabels(prev => {
-      const newVal = !prev;
-      setLayers(l => ({ ...l.base, labels: newVal }));
-      return newVal;
-    });
-  };
+  const handleToggleLabels = useCallback(() => setShowLabels((v) => !v), []);
 
   // GTA GPS Waypoint & Navigation Handlers
   const handleSetDestinationWaypoint = useCallback(async (dest: RouteWaypoint) => {
@@ -400,6 +406,7 @@ export default function MapApp({ entryPreset = 'hero', onProgress }: MapAppProps
         nightMode={nightMode}
         skylineStyle={skylineStyle}
         showLabels={showLabels}
+        labelSettings={labelSettings}
         layers={layers}
         flights={flights}
         selectedEntity={selectedEntity}
@@ -414,26 +421,21 @@ export default function MapApp({ entryPreset = 'hero', onProgress }: MapAppProps
         onRouteDriverReady={handleRouteDriverReady}
       />
 
+      {theme === 'warm' && <div aria-hidden className="pointer-events-none absolute inset-0 z-[2]" style={{ background: 'linear-gradient(180deg, rgba(246,196,128,.22), rgba(232,170,100,.14))', mixBlendMode: 'soft-light' }} />}
       {windowView && <WindowOverlay />}
-      {!presentationMode && !mapOnly && (
-        <button
-          onClick={() => setWindowView((v) => !v)}
-          aria-pressed={windowView}
-          title="Toggle the airplane-window look (W)"
-          className={`fixed left-1/2 top-3 z-[60] ml-[92px] hidden items-center gap-2 rounded-full border px-4 py-2 text-[12px] font-semibold backdrop-blur-xl transition-colors sm:flex ${windowView ? 'border-amber/60 bg-amber/20 text-amber' : 'border-sand/20 bg-cabin/80 text-paper/70 hover:text-paper'}`}
-        >
-          Window view
-        </button>
-      )}
-
       {/* UI Overlay */}
       <CityUI
         mapData={mapData}
         cameraController={cameraController}
         renderStats={renderStats}
         streamingStats={streamingStats}
-        nightMode={nightMode}
         showLabels={showLabels}
+        labelSettings={labelSettings}
+        onLabelSettings={setLabelSettings}
+        theme={theme}
+        onTheme={setTheme}
+        windowView={windowView}
+        onWindowView={setWindowView}
         presentationMode={presentationMode}
         mapOnly={mapOnly}
         onToggleMapOnly={() => setMapOnly((v) => !v)}
@@ -446,9 +448,6 @@ export default function MapApp({ entryPreset = 'hero', onProgress }: MapAppProps
         trainFeed={trainFeed}
         trafficFeed={trafficFeed}
         newsFeed={newsFeed}
-        onToggleNightMode={() => setNightMode(prev => !prev)}
-        skylineStyle={skylineStyle}
-        onCycleSkyline={() => setSkylineStyle(p => p === 'warm' ? 'clear' : p === 'clear' ? 'cyberpunk' : 'warm')}
         onToggleLabels={handleToggleLabels}
         onTogglePresentationMode={() => setPresentationMode(prev => !prev)}
         onCameraSignal={handleCameraSignal}

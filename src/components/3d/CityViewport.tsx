@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { CameraPreset, OSMMapData, RenderStats, CityStreamingStats, SimulatedFlight, SelectedEntity } from '../../types';
 import { CityRenderer } from '../../city/renderer';
 import { TileStreamer } from '../../city/tileStreamer';
-import { LabelManager } from '../../city/labelManager';
+import { LabelManager, type LabelSettings } from '../../city/labelManager';
 import { CameraController } from '../../city/cameraController';
 import { AtmosphericSky } from '../../city/atmosphericSky';
 import { BuildingMaterialSystem, type SkylineStyle } from '../../city/buildingMaterial';
@@ -57,6 +57,7 @@ interface CityViewportProps {
   nightMode: boolean;
   skylineStyle: SkylineStyle;
   showLabels: boolean;
+  labelSettings: LabelSettings;
   layers: LayerState;
   flights: SimulatedFlight[];
   selectedEntity: SelectedEntity | null;
@@ -77,6 +78,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
   nightMode,
   skylineStyle,
   showLabels,
+  labelSettings,
   layers,
   flights,
   selectedEntity,
@@ -95,6 +97,8 @@ export const CityViewport: React.FC<CityViewportProps> = ({
   const streamerRef = useRef<TileStreamer | null>(null);
   const controlsRef = useRef<CameraController | null>(null);
   const labelManagerRef = useRef<LabelManager | null>(null);
+  const labelSettingsRef = useRef(labelSettings);
+  labelSettingsRef.current = labelSettings;
   const skyRef = useRef<AtmosphericSky | null>(null);
   const materialsRef = useRef<BuildingMaterialSystem | null>(null);
 
@@ -144,6 +148,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     labelManagerRef.current = labelManager;
     labelManager.setCamera(cityRenderer.camera);
     labelManager.setViewport(container.clientWidth, container.clientHeight);
+    labelManager.setSettings(labelSettingsRef.current);
     labelManager.loadData();
 
     const sky = new AtmosphericSky();
@@ -605,6 +610,10 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     if (skyRef.current) skyRef.current.setNightMode(nightMode);
     campusAmbienceRef.current?.setNightMode(nightMode);
   }, [nightMode, showLabels]);
+
+  useEffect(() => {
+    labelManagerRef.current?.setSettings(labelSettings);
+  }, [labelSettings]);
 
   // Skyline look
   useEffect(() => {

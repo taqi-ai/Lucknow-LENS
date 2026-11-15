@@ -1,5 +1,5 @@
 import React from 'react';
-import { Building2, Navigation, TreePine, Droplets, MapPin, Tag, Wind, CloudSun, Plane, Train, Video, Newspaper, Eye, EyeOff, ShieldAlert } from 'lucide-react';
+import { Building2, Navigation, TreePine, Droplets, MapPin, Wind, CloudSun, Plane, Train, Video, Newspaper, ShieldAlert, TrafficCone } from 'lucide-react';
 
 export interface LayerState {
   base: {
@@ -8,7 +8,6 @@ export interface LayerState {
     parks: boolean;
     gomti: boolean;
     places: boolean;
-    labels: boolean;
   };
   live: {
     traffic: boolean;
@@ -27,95 +26,57 @@ interface LayerControlProps {
   onToggleLayer: (category: 'base' | 'live', layer: string) => void;
 }
 
-export const LayerControl: React.FC<LayerControlProps> = ({ layers, onToggleLayer }) => {
-  return (
-    <div className="glass-panel rounded-2xl p-4 w-full transition-all hover:bg-slate-900/80">
-      <h3 className="text-xs font-extrabold uppercase tracking-widest text-amber-400 mb-3 flex items-center gap-1.5 border-b border-slate-800 pb-2">
-        <Navigation className="w-3.5 h-3.5 text-amber-400" />
-        <span>CITY LAYERS SYSTEM</span>
-      </h3>
+export const Switch: React.FC<{ on: boolean; onChange: () => void; label: string }> = ({ on, onChange, label }) => (
+  <button
+    role="switch"
+    aria-checked={on}
+    aria-label={label}
+    onClick={onChange}
+    className={`relative h-[22px] w-[38px] flex-shrink-0 rounded-full transition-colors ${on ? 'bg-sand' : 'bg-white/15'}`}
+  >
+    <span className={`absolute top-[3px] h-4 w-4 rounded-full shadow transition-all ${on ? 'left-[19px] bg-terrain' : 'left-[3px] bg-paper/80'}`} />
+  </button>
+);
 
-      <div className="space-y-4">
-        {/* BASE LAYERS */}
-        <div>
-          <h4 className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest mb-2 flex items-center justify-between">
-            <span>BASE VECTOR LAYERS</span>
-            <span className="text-[8px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono font-bold">STATIC</span>
-          </h4>
-          <div className="grid grid-cols-2 gap-2">
-            {Object.keys(layers.base).map((key) => {
-              const active = layers.base[key as keyof typeof layers.base];
-              return (
-                <button
-                  key={key}
-                  onClick={() => onToggleLayer('base', key)}
-                  className={`flex items-center justify-between p-2 rounded-xl text-left border transition-all duration-200 ${
-                    active
-                      ? 'bg-amber-500/10 border-amber-500/40 text-amber-300'
-                      : 'bg-slate-800/40 border-slate-700/30 text-slate-400 hover:bg-slate-800 hover:text-slate-300'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    {key === 'buildings' && <Building2 className="w-3.5 h-3.5 flex-shrink-0" />}
-                    {key === 'roads' && <Navigation className="w-3.5 h-3.5 flex-shrink-0 rotate-45" />}
-                    {key === 'parks' && <TreePine className="w-3.5 h-3.5 flex-shrink-0" />}
-                    {key === 'gomti' && <Droplets className="w-3.5 h-3.5 flex-shrink-0" />}
-                    {key === 'places' && <MapPin className="w-3.5 h-3.5 flex-shrink-0" />}
-                    {key === 'labels' && <Tag className="w-3.5 h-3.5 flex-shrink-0" />}
-                    <span className="text-[11px] font-semibold truncate capitalize">{key}</span>
-                  </div>
-                  {active ? (
-                    <Eye className="w-3 h-3 text-amber-400 flex-shrink-0" />
-                  ) : (
-                    <EyeOff className="w-3 h-3 text-slate-600 flex-shrink-0" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+const BASE: { key: keyof LayerState['base']; name: string; Icon: React.ElementType }[] = [
+  { key: 'buildings', name: 'Buildings', Icon: Building2 },
+  { key: 'roads', name: 'Roads', Icon: Navigation },
+  { key: 'parks', name: 'Parks and green', Icon: TreePine },
+  { key: 'gomti', name: 'Gomti river', Icon: Droplets },
+  { key: 'places', name: 'Place markers', Icon: MapPin },
+];
 
-        {/* LIVE LAYERS */}
-        <div>
-          <h4 className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest mb-2 flex items-center justify-between">
-            <span>LIVE SERVICES & FEEDS</span>
-            <span className="text-[8px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded font-mono font-bold animate-pulse">STREAMING</span>
-          </h4>
-          <div className="grid grid-cols-2 gap-2">
-            {Object.keys(layers.live).map((key) => {
-              const active = layers.live[key as keyof typeof layers.live];
-              return (
-                <button
-                  key={key}
-                  onClick={() => onToggleLayer('live', key)}
-                  className={`flex items-center justify-between p-2 rounded-xl text-left border transition-all duration-200 ${
-                    active
-                      ? 'bg-sky-500/10 border-sky-500/40 text-sky-300 shadow-[0_0_10px_rgba(14,165,233,0.05)]'
-                      : 'bg-slate-800/40 border-slate-700/30 text-slate-400 hover:bg-slate-800 hover:text-slate-300'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    {key === 'traffic' && <Navigation className="w-3.5 h-3.5 flex-shrink-0 text-rose-400" />}
-                    {key === 'aqi' && <Wind className="w-3.5 h-3.5 flex-shrink-0 text-emerald-400" />}
-                    {key === 'weather' && <CloudSun className="w-3.5 h-3.5 flex-shrink-0 text-yellow-400" />}
-                    {key === 'flights' && <Plane className="w-3.5 h-3.5 flex-shrink-0 text-cyan-400" />}
-                    {key === 'railways' && <Train className="w-3.5 h-3.5 flex-shrink-0 text-indigo-400" />}
-                    {key === 'cameras' && <Video className="w-3.5 h-3.5 flex-shrink-0 text-teal-400" />}
-                    {key === 'news' && <Newspaper className="w-3.5 h-3.5 flex-shrink-0 text-purple-400" />}
-                    {key === 'emergency' && <ShieldAlert className="w-3.5 h-3.5 flex-shrink-0 text-rose-400" />}
-                    <span className="text-[11px] font-semibold truncate capitalize">{key}</span>
-                  </div>
-                  {active ? (
-                    <span className="w-1.5 h-1.5 rounded-full bg-sky-400 shadow-[0_0_8px_#0ea5e9] flex-shrink-0 ml-1" />
-                  ) : (
-                    <span className="w-1.5 h-1.5 rounded-full bg-slate-700 flex-shrink-0 ml-1" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
+const LIVE: { key: keyof LayerState['live']; name: string; note: string; Icon: React.ElementType }[] = [
+  { key: 'emergency', name: 'Emergency services', note: 'Hospitals, fire, police', Icon: ShieldAlert },
+  { key: 'weather', name: 'Weather', note: 'Open-Meteo', Icon: CloudSun },
+  { key: 'aqi', name: 'Air quality', note: 'Open-Meteo', Icon: Wind },
+  { key: 'flights', name: 'Aircraft', note: 'Live ADS-B', Icon: Plane },
+  { key: 'railways', name: 'Trains', note: 'Needs a provider key', Icon: Train },
+  { key: 'traffic', name: 'Traffic', note: 'Needs a provider key', Icon: TrafficCone },
+  { key: 'news', name: 'News', note: 'Headlines about Lucknow', Icon: Newspaper },
+  { key: 'cameras', name: 'Cameras', note: 'Public camera points', Icon: Video },
+];
+
+const Row: React.FC<{ Icon: React.ElementType; name: string; note?: string; on: boolean; onChange: () => void }> = ({ Icon, name, note, on, onChange }) => (
+  <div className="flex items-center gap-3 rounded-xl px-2 py-2 hover:bg-white/5">
+    <Icon className={`h-4 w-4 flex-shrink-0 ${on ? 'text-sand' : 'text-paper/40'}`} strokeWidth={1.7} />
+    <div className="min-w-0 flex-1">
+      <p className="truncate text-[13px] font-medium text-paper/90">{name}</p>
+      {note && <p className="truncate text-[11px] text-paper/45">{note}</p>}
     </div>
-  );
-};
+    <Switch on={on} onChange={onChange} label={name} />
+  </div>
+);
+
+export const LayerControl: React.FC<LayerControlProps> = ({ layers, onToggleLayer }) => (
+  <div className="space-y-5">
+    <section>
+      <h4 className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-sand/70">Map</h4>
+      {BASE.map(({ key, name, Icon }) => <Row key={key} Icon={Icon} name={name} on={layers.base[key]} onChange={() => onToggleLayer('base', key)} />)}
+    </section>
+    <section>
+      <h4 className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-sand/70">Live data</h4>
+      {LIVE.map(({ key, name, note, Icon }) => <Row key={key} Icon={Icon} name={name} note={note} on={layers.live[key]} onChange={() => onToggleLayer('live', key)} />)}
+    </section>
+  </div>
+);

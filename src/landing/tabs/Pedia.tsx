@@ -25,6 +25,12 @@ const OUTLETS = [
   { name: 'Mubeen\'s', since: 'founding year not confirmed', story: 'Started by Mohd Mubeen and carried on by his son Mohd Rizwan Mubeen, with branches in Chowk and near Hazratganj.', art: 'nihari' },
 ];
 
+const BUILT = [
+  { slug: 'rumi-darwaza', name: 'Rumi Darwaza', by: 'Nawab Asaf-ud-Daula', year: '1784', note: 'About sixty feet tall, modelled on the Sublime Porte in Istanbul. It once marked the entrance to old Lucknow. An example of Awadhi architecture.' },
+  { slug: 'bara-imambara', name: 'Bara Imambara (Asafi Imambara)', by: 'Nawab Asaf-ud-Daula', year: '1784', note: 'The second largest imambara in the world, after the Nizamat Imambara. A Monument of National Importance run by the Archaeological Survey of India.' },
+  { slug: 'chota-imambara', name: 'Chota Imambara (Imambara Hussainabad Mubarak)', by: 'Nawab Muhammad Ali Shah', year: '1838', note: 'Built as a hall for Shia congregation and as a mausoleum for himself and his mother. Called the Palace of Lights by European visitors for its chandeliers.' },
+];
+
 const CMS = [
   { name: 'Yogi Adityanath', years: 'March 2017 to now', note: 'Sworn in on 25 March 2017. Sources call him the longest-serving chief minister in the state\'s history. Numbering of chief ministers differs between lists, so we do not number him.' },
   { name: 'Akhilesh Yadav', years: '2012 to 2017', note: '' },
@@ -72,6 +78,21 @@ export default function Pedia(_: TabProps) {
           ))}
         </ol>
         <Src items={SOURCES.nawabs} />
+      </Wrap>
+
+      <Wrap className="pb-24">
+        <div className="mb-10 max-w-[640px]"><Kicker>Who built what</Kicker><H2>Three monuments and their makers</H2></div>
+        <div className="grid gap-5 md:grid-cols-3">
+          {BUILT.map((b, i) => (
+            <Reveal key={b.slug} i={i}>
+              <article className="h-full overflow-hidden rounded-[26px] border border-paper/10 bg-terrain">
+                <div className="relative aspect-[4/3]"><Photo slug={b.slug} alt={b.name} className="absolute inset-0 h-full w-full object-cover" sizes="400px" /></div>
+                <div className="p-6"><p className="text-[13px] font-semibold text-sand">{b.year}, by {b.by}</p><h3 className="font-display text-[1.4rem] leading-tight text-paper">{b.name}</h3><p className="mt-3 text-[14.5px] leading-[1.7] text-paper/70">{b.note}</p></div>
+              </article>
+            </Reveal>
+          ))}
+        </div>
+        <Src items={[{ t: 'Wikipedia: Rumi Darwaza', u: 'https://en.wikipedia.org/wiki/Rumi_Darwaza' }, { t: 'Wikipedia: Bara Imambara', u: 'https://en.wikipedia.org/wiki/Bara_Imambara' }, { t: 'Wikipedia: Chota Imambara', u: 'https://en.wikipedia.org/wiki/Chota_Imambara' }]} />
       </Wrap>
 
       <Wrap className="pb-24">

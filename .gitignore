@@ -17,3 +17,6 @@ public/hlod/
 design pics/
 
 dist_bak/
+.vercel/
+
+.vercel

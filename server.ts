@@ -1,7 +1,6 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import compression from "compression";
 import { CachedFeed } from "./server/providers/cache";
@@ -396,6 +395,7 @@ async function startServer() {
   const useVite = process.env.NODE_ENV !== "production" && (!hasBuild || process.argv.includes("--dev"));
 
   if (useVite) {
+    const { createServer: createViteServer } = await import("vite"); // dev only, so serverless bundles stay small
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -456,4 +456,6 @@ async function startServer() {
   process.on("SIGINT", () => shutdown("SIGINT"));
 }
 
-startServer();
+// On Vercel the app is exported and run per request; locally it listens on a port.
+if (!process.env.VERCEL) startServer();
+export default app;

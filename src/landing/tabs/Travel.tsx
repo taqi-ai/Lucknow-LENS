@@ -55,7 +55,7 @@ export default function Travel({ onEnter }: TabProps) {
 
       <Wrap className="pb-28">
         <div className="mb-10 max-w-[640px]"><Kicker>Three days</Kicker><H2>A route through the city</H2></div>
-        <Stepper theme="light" accentColor="#9a6428" indicator="numbers" nextButtonText="Next day" backButtonText="Back" completeButtonText="Open the map" onFinalStepCompleted={() => onEnter()} className="mx-auto max-w-[760px]">
+        <Stepper theme="light" accentColor="#9a6428" indicator="numbers" nextButtonText="Next day" backButtonText="Back" completeButtonText="Open the map" onFinalStepCompleted={() => onEnter()} className="stepper-themed mx-auto max-w-[760px]">
           {ITINERARY.map((d) => (
             <React.Fragment key={d.day}><Step>
               <p className="font-mono text-[11px] uppercase tracking-wider text-sage">{d.day}</p>

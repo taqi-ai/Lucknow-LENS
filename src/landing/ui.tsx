@@ -102,7 +102,7 @@ const PAGE_BG: Record<string, BackdropKind> = {
 /** Which painting opens each page. */
 const PAGE_ART: Record<string, string> = {
   Heritage: 'chota-imambara', History: 'residency', Food: 'biryani', 'Travel guide': 'charbagh',
-  Geography: 'gomti-riverfront', Government: 'vidhan-sabha', 'The platform': 'hero-night', About: 'rumi-darwaza',
+  Geography: 'gomti-riverfront', Government: 'vidhan-sabha', 'The platform': 'hero-night', About: 'rumi-darwaza', Lucknowpedia: 'nawabs',
 };
 
 export const PageHero: React.FC<{ kicker: string; title: string; hi: string; intro: string; backdrop?: BackdropKind; art?: string; children?: React.ReactNode }> = ({ kicker, title, hi, intro, backdrop = 'none', art, children }) => {

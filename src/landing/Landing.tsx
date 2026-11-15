@@ -21,6 +21,7 @@ const PAGES: Record<string, React.LazyExoticComponent<React.ComponentType<TabPro
   travel: lazy(() => import('./tabs/Travel')),
   geography: lazy(() => import('./tabs/Geography')),
   government: lazy(() => import('./tabs/Government')),
+  pedia: lazy(() => import('./tabs/Pedia')),
   platform: lazy(() => import('./tabs/Platform')),
   about: lazy(() => import('./tabs/About')),
 };

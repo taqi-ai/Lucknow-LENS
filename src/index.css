@@ -292,3 +292,24 @@ body, header, section, footer { transition: background-color .6s ease, color .6s
 /* the finale painting follows day and night */
 .finale-night { opacity: 0; transition: opacity .6s ease; }
 :root[data-time="night"] .finale-night { opacity: 1; }
+
+/* React Bits Stepper, recoloured from the page's own tokens so it belongs to the theme */
+.stepper-themed[style*="--stepper"], .stepper-themed [style*="--stepper"] {
+  --stepper-frame: color-mix(in srgb, var(--color-terrain) 88%, transparent) !important;
+  --stepper-frame-edge: color-mix(in srgb, var(--color-paper) 12%, transparent) !important;
+  --stepper-frame-highlight: color-mix(in srgb, var(--color-paper) 8%, transparent) !important;
+  --stepper-frame-shadow: 0 22px 44px -24px rgba(0,0,0,.45) !important;
+  --stepper-tile: linear-gradient(180deg, var(--color-cabin), var(--color-slate)) !important;
+  --stepper-tile-edge: color-mix(in srgb, var(--color-paper) 12%, transparent) !important;
+  --stepper-tile-highlight: color-mix(in srgb, var(--color-paper) 10%, transparent) !important;
+  --stepper-tile-shadow: 0 4px 10px -5px rgba(0,0,0,.35) !important;
+  --stepper-well: color-mix(in srgb, var(--color-paper) 6%, transparent) !important;
+  --stepper-track: color-mix(in srgb, var(--color-paper) 12%, transparent) !important;
+  --stepper-ink: var(--color-paper) !important;
+  --stepper-muted: color-mix(in srgb, var(--color-paper) 62%, transparent) !important;
+  --stepper-faint: color-mix(in srgb, var(--color-paper) 26%, transparent) !important;
+  --stepper-ring: color-mix(in srgb, var(--color-paper) 32%, transparent) !important;
+  --stepper-solid: var(--color-sand) !important;
+  --stepper-solid-ink: var(--color-terrain) !important;
+  --stepper-hover-fill: color-mix(in srgb, var(--color-paper) 6%, transparent) !important;
+}

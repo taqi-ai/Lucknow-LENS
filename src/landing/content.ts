@@ -31,6 +31,7 @@ export const TABS: Tab[] = [
   { id: 'travel', label: 'Travel', hi: 'सफ़र', blurb: 'Plan a visit' },
   { id: 'geography', label: 'Geography', hi: 'भूगोल', blurb: 'River, plain and relief' },
   { id: 'government', label: 'Government', hi: 'शासन', blurb: 'Services and helplines' },
+  { id: 'pedia', label: 'Lucknowpedia', hi: 'ज्ञानकोश', blurb: 'Nawabs, kitchens, government and what is being built' },
   { id: 'platform', label: 'Platform', hi: 'मंच', blurb: 'What Terralyt is' },
   { id: 'about', label: 'About', hi: 'हमारे बारे में', blurb: 'Team and credits' },
 ];

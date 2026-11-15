@@ -120,6 +120,7 @@ export const HeroBuild: React.FC<TabProps> = ({ onEnter, goTab }) => {
 
           <div className="relative">
             <h1 className="text-paper" aria-label="Fly over Lucknow.">
+              <span className="mb-1 block" aria-hidden><LucknowLettering word="namaste" className="mx-auto block h-auto w-[min(30%,110px)] text-amber" delay={0.1} /></span>
               <span className="block" aria-hidden><LucknowLettering word="flyover" className="mx-auto block h-auto w-[min(62%,250px)] text-sand" delay={0.3} /></span>
               <span className="mt-2 block" aria-hidden><LucknowLettering className="mx-auto block h-auto w-[min(100%,470px)] text-paper" delay={0.55} /></span>
             </h1>

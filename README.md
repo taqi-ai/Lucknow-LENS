@@ -5,6 +5,16 @@
 
 ---
 
+## 🌆 Landing portfolio
+
+Visitors now land on a nine-tab portfolio of Lucknow (Overview, Heritage, History, Food, Travel, Geography, Government, Platform, About) at `#/<tab>`, and enter the 3D map from there. The map code and city data are fetched only after the first screen settles, so the front door is fast.
+
+- Animated components are vendored from [React Bits](https://reactbits.dev) in `src/reactbits` (MIT + Commons Clause).
+- Photos come from Wikimedia Commons; `node scripts/fetch_lucknow_media.mjs` re-downloads them and rewrites `src/landing/credits.json`. Convert to WebP afterwards (two widths, see `public/lucknow`).
+- `node scripts/bake_dem.mjs` bakes the real elevation grid used by the Geography page.
+- All copy lives in `src/landing/content.ts`; the team list is `TEAM` in that file.
+- `npm run dev` now always uses the Vite dev server (a stale `dist/` is no longer served by mistake).
+
 ## 🚀 Quick Start (Run Locally)
 
 Run Lucknow Lens locally in under 2 minutes:

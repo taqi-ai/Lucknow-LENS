@@ -1,20 +1,89 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..500&family=Manrope:wght@300..800&family=IBM+Plex+Mono:wght@400;500&family=Noto+Nastaliq+Urdu:wght@400;500&family=Noto+Serif+Devanagari:wght@400;500;600&family=Inter:wght@300;400;500;600;700&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --font-sans: 'Inter', sans-serif;
-  --font-display: 'Outfit', sans-serif;
+  --font-sans: 'Manrope', 'Inter', sans-serif;
+  --font-display: 'Fraunces', 'Georgia', serif;
+  --font-ui: 'Inter', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --font-urdu: 'Noto Nastaliq Urdu', serif;
+  --font-deva: 'Noto Serif Devanagari', serif;
+
+  /* TERRALYT palette */
+  --color-terrain: #14232d;
+  --color-cabin: #0c161d;
+  --color-slate: #263c42;
+  --color-sage: #789a85;
+  --color-sand: #d5c7a5;
+  --color-paper: #eae9df;
+  --color-amber: #c68b54;
+  --color-dusk: #f0c9a0;
 }
+
+:root {
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+html { background: #0c161d; }
+body { margin: 0; background: #0c161d; color: #eae9df; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
 
 @layer utilities {
   .glass-panel {
-    @apply bg-slate-900/60 backdrop-blur-md border border-white/10 shadow-xl;
+    background: rgba(14, 26, 34, 0.62);
+    -webkit-backdrop-filter: blur(18px) saturate(1.25);
+    backdrop-filter: blur(18px) saturate(1.25);
+    border: 1px solid rgba(213, 199, 165, 0.14);
+    box-shadow: 0 18px 50px -18px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   }
   .glass-panel-light {
     @apply bg-white/70 backdrop-blur-md border border-slate-200/50 shadow-xl;
   }
+  .font-urdu { font-family: var(--font-urdu); }
+  .font-deva { font-family: var(--font-deva); }
+  .tabular { font-variant-numeric: tabular-nums; }
 }
 
 /* Panel columns scroll instead of overlapping on short viewports. */
 .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Lenis smooth scroll */
+html.lenis, html.lenis body { height: auto; }
+.lenis.lenis-smooth { scroll-behavior: auto !important; }
+.lenis.lenis-smooth [data-lenis-prevent] { overscroll-behavior: contain; }
+.lenis.lenis-stopped { overflow: hidden; }
+
+/* Visible keyboard focus everywhere */
+:focus-visible { outline: 2px solid #d5c7a5; outline-offset: 3px; border-radius: 6px; }
+
+/* Film grain used by the landing page and the window overlay */
+.grain::after {
+  content: '';
+  position: absolute; inset: -50%;
+  pointer-events: none;
+  opacity: 0.07;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  animation: grain 1.2s steps(6) infinite;
+}
+@keyframes grain {
+  0% { transform: translate(0, 0); } 20% { transform: translate(-3%, 2%); }
+  40% { transform: translate(2%, -3%); } 60% { transform: translate(-2%, -1%); }
+  80% { transform: translate(3%, 3%); } 100% { transform: translate(0, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
+  .grain::after { display: none; }
+}
+
+/* landing: slow drifting clouds and a gentle pan across the aerial photo */
+@keyframes cloud-drift { from { transform: translate3d(0,0,0); } to { transform: translate3d(-18%,0,0); } }
+.cloud-drift { animation: cloud-drift 90s linear infinite alternate; will-change: transform; }
+@keyframes city-pan { from { transform: scale(1.12) translate3d(2%, 0, 0); } to { transform: scale(1.12) translate3d(-3%, -1%, 0); } }
+.city-pan { animation: city-pan 36s ease-in-out infinite alternate; will-change: transform; }
+@keyframes descent-zoom { from { transform: scale(1.02); } to { transform: scale(1.22); } }
+.descent-zoom { animation: descent-zoom 18s ease-out forwards; }
+
+@keyframes marquee-x { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+.marquee-track { animation: marquee-x 22s linear infinite; padding-right: 2rem; }

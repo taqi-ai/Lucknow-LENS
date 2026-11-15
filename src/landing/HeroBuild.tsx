@@ -120,9 +120,7 @@ export const HeroBuild: React.FC<TabProps> = ({ onEnter, goTab }) => {
 
           <div className="relative">
             <h1 className="text-paper" aria-label="Fly over Lucknow.">
-              <span className="block overflow-hidden" aria-hidden>
-                <motion.span className="block font-deva text-[clamp(1.6rem,3vw,2.5rem)] italic leading-none text-sand" initial={reduce ? false : { y: '110%' }} animate={{ y: '0%' }} transition={{ duration: 1, delay: 0.35, ease: [0.22, 1, 0.36, 1] }}>Fly over</motion.span>
-              </span>
+              <span className="block" aria-hidden><LucknowLettering word="flyover" className="mx-auto block h-auto w-[min(62%,250px)] text-sand" delay={0.3} /></span>
               <span className="mt-2 block" aria-hidden><LucknowLettering className="mx-auto block h-auto w-[min(100%,470px)] text-paper" delay={0.55} /></span>
             </h1>
             <div aria-hidden className="mx-auto mt-4 flex items-center justify-center gap-3 text-amber">

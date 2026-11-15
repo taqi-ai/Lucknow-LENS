@@ -20,3 +20,4 @@ dist_bak/
 .vercel/
 
 .vercel
+deploy-data/

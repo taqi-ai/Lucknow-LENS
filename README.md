@@ -15,6 +15,10 @@ Visitors now land on a nine-tab portfolio of Lucknow (Overview, Heritage, Histor
 - All copy lives in `src/landing/content.ts`; the team list is `TEAM` in that file.
 - `npm run dev` now always uses the Vite dev server (a stale `dist/` is no longer served by mistake).
 
+## Going live (Vercel)
+
+`npm run live` builds the site and deploys it to https://terralyt-six.vercel.app in about 20 seconds. The large map data lives in a second Vercel project (`terralyt-data`) that the site proxies to, so it is not re-uploaded; run `npm run live:data` only when the map data itself changes.
+
 ## 🚀 Quick Start (Run Locally)
 
 Run Lucknow Lens locally in under 2 minutes:

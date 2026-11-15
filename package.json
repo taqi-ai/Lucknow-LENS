@@ -17,7 +17,9 @@
     "suppress": "tsx --max-old-space-size=8192 scripts/suppress_conflicts.ts",
     "vegetation": "tsx --max-old-space-size=8192 scripts/place_vegetation.ts",
     "audit:landmarks": "tsx scripts/audit_landmarks.ts",
-    "smoke": "node scripts/smoke_test.mjs"
+    "smoke": "node scripts/smoke_test.mjs",
+    "live": "npm run build && node scripts/build_vercel.mjs app https://terralyt-six.vercel.app https://terralyt-data.vercel.app && vercel deploy --prebuilt --prod --yes --archive=tgz",
+    "live:data": "npm run build && node scripts/build_vercel.mjs data && cd deploy-data && vercel deploy --prebuilt --prod --yes --archive=tgz"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

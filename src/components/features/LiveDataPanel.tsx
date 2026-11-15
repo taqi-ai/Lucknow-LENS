@@ -22,7 +22,7 @@ import {
 interface StatusDotProps { status: 'ok' | 'stale' | 'unavailable' }
 const StatusDot: React.FC<StatusDotProps> = ({ status }) => (
   <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-    status === 'ok' ? 'bg-emerald-400' : status === 'stale' ? 'bg-amber-400' : 'bg-rose-500'
+    status === 'ok' ? 'bg-amber-400' : status === 'stale' ? 'bg-amber-400' : 'bg-rose-500'
   }`} />
 );
 
@@ -67,7 +67,7 @@ const Unavailable: React.FC<{ reason?: string }> = ({ reason }) => (
 );
 
 function aqiColor(v: number): string {
-  return v <= 50 ? 'text-emerald-400' : v <= 100 ? 'text-yellow-400' : v <= 150 ? 'text-orange-400' : v <= 200 ? 'text-rose-400' : 'text-fuchsia-400';
+  return v <= 50 ? 'text-amber-400' : v <= 100 ? 'text-yellow-400' : v <= 150 ? 'text-orange-400' : v <= 200 ? 'text-rose-400' : 'text-fuchsia-400';
 }
 
 interface LiveDataPanelProps {
@@ -116,7 +116,7 @@ export const LiveDataPanel: React.FC<LiveDataPanelProps> = ({
 
       {layers.aqi && airFeed && (
         <Section
-          icon={<Wind className="w-3.5 h-3.5 text-emerald-400" />}
+          icon={<Wind className="w-3.5 h-3.5 text-amber-400" />}
           title="Air Quality"
           status={airFeed.status}
           summary={airFeed.value ? `AQI ${airFeed.value.usAqi} · ${airFeed.value.category}` : (airFeed.reason ?? 'Unavailable')}
@@ -174,7 +174,7 @@ export const LiveDataPanel: React.FC<LiveDataPanelProps> = ({
                   <div className="flex items-center justify-between">
                     <span className="font-mono text-slate-100">{t.number ?? t.id}</span>
                     {t.delayMinutes != null && (
-                      <span className={t.delayMinutes > 5 ? 'text-rose-400' : 'text-emerald-400'}>
+                      <span className={t.delayMinutes > 5 ? 'text-rose-400' : 'text-amber-400'}>
                         {t.delayMinutes > 0 ? `+${t.delayMinutes}m` : 'on time'}
                       </span>
                     )}

@@ -1,23 +1,68 @@
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..500&family=Manrope:wght@300..800&family=IBM+Plex+Mono:wght@400;500&family=Noto+Nastaliq+Urdu:wght@400;500&family=Noto+Serif+Devanagari:wght@400;500;600&family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Rozha+One&family=Mukta:wght@300;400;500;600;700;800&family=Noto+Nastaliq+Urdu:wght@400;600&family=Tiro+Devanagari+Hindi:ital@0;1&display=swap');
 @import "tailwindcss";
 
+/*
+ * TERRALYT identity v3: Lucknow after sunset. The pages are night sky so the
+ * photographs (and the dark 3D map) carry the colour.
+ *   night #0E1220  page ground, the sky over the Gomti after dusk
+ *   dusk  #161B2C  raised surfaces
+ *   ivory #F3ECDF  text, the white of chikan thread
+ *   zari  #E0B46A  primary accent, zardozi gold and Rumi Darwaza's stone at sunset
+ *   rose  #D0485E  second accent, kebab-red and the Clock Tower brick
+ *   gomti #6FB3A8  quiet third accent for live and "working" states
+ *
+ * (v2, kept for reference:
+ *   haze  #DCE2E7  the pale blue-grey sky over Lucknow (the ground of every page)
+ *   cloud #F2F4F5  raised surfaces
+ *   ink   #1E2428  text
+ *   kebab #8E2C42  primary accent, from the red of Tunday's kebabs and the Clock Tower brick
+ *   zari  #9C7A2B  gold thread of zardozi, used for hairlines and small marks
+ *   chikan #8E7486 the mauve of a chikan kurta, a quiet second accent
+ *   stone #C29C67  Rumi Darwaza's lime-plastered sandstone
+ * )
+ * Type: Rozha One for display (one face for Latin and Devanagari), Mukta for text,
+ * Noto Nastaliq Urdu for Urdu names.
+ *
+ * The map is a dark surface. Its own tokens are set on .map-scope below.
+ */
 @theme {
-  --font-sans: 'Manrope', 'Inter', sans-serif;
-  --font-display: 'Fraunces', 'Georgia', serif;
-  --font-ui: 'Inter', sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --font-sans: 'Mukta', system-ui, sans-serif;
+  --font-display: 'Rozha One', 'Tiro Devanagari Hindi', Georgia, serif;
+  --font-ui: 'Mukta', system-ui, sans-serif;
+  --font-mono: 'Mukta', system-ui, sans-serif;
   --font-urdu: 'Noto Nastaliq Urdu', serif;
-  --font-deva: 'Noto Serif Devanagari', serif;
+  --font-deva: 'Tiro Devanagari Hindi', 'Rozha One', serif;
 
-  /* TERRALYT palette */
-  --color-terrain: #14232d;
-  --color-cabin: #0c161d;
-  --color-slate: #263c42;
-  --color-sage: #789a85;
-  --color-sand: #d5c7a5;
-  --color-paper: #eae9df;
-  --color-amber: #c68b54;
-  --color-dusk: #f0c9a0;
+  /* Default palette: burgundy and gold (day). Other palettes and night are
+     set on :root by data-palette / data-time, further down. */
+  --color-cabin: #f7efe4;
+  --color-terrain: #fffaf2;
+  --color-paper: #3a0c17;
+  --color-sand: #7a1630;
+  --color-sage: #5b6b8c;
+  --color-amber: #b8892e;
+  --color-slate: #ecdcc6;
+  --color-dusk: #d9b26a;
+  --color-haze: #dce2e7;
+  --color-ink: #1e2428;
+  --color-kebab: #8e2c42;
+  --color-zari: #9c7a2b;
+  --color-chikan: #8e7486;
+  --color-stone: #c29c67;
+}
+
+/* The live map stays dark: same class names, night-cabin values, zari gold accent. */
+.map-scope {
+  --color-cabin: #160f0a;
+  --color-terrain: #22170f;
+  --color-paper: #f6ead6;
+  --color-sand: #e0a55a;
+  --color-sage: #8fb0d6;
+  --color-amber: #d77e7e;
+  --color-slate: #3a2a1c;
+  --color-dusk: #f0c48a;
+  color: #f6ead6;
+  font-family: var(--font-sans);
 }
 
 :root {
@@ -25,15 +70,17 @@
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
 }
 
-html { background: #0c161d; }
-body { margin: 0; background: #0c161d; color: #eae9df; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+html { background: var(--color-cabin); }
+body { margin: 0; background: var(--color-cabin); color: var(--color-paper); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+.font-display { letter-spacing: -0.01em; }
+::selection { background: var(--color-sand); color: var(--color-terrain); }
 
 @layer utilities {
   .glass-panel {
-    background: rgba(12, 22, 29, 0.8);
+    background: rgba(22, 15, 10, 0.84);
     -webkit-backdrop-filter: blur(18px) saturate(1.25);
     backdrop-filter: blur(18px) saturate(1.25);
-    border: 1px solid rgba(213, 199, 165, 0.14);
+    border: 1px solid rgba(224, 165, 90, 0.18);
     box-shadow: 0 18px 50px -18px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   }
   .glass-panel-light {
@@ -55,7 +102,7 @@ html.lenis, html.lenis body { height: auto; }
 .lenis.lenis-stopped { overflow: hidden; }
 
 /* Visible keyboard focus everywhere */
-:focus-visible { outline: 2px solid #d5c7a5; outline-offset: 3px; border-radius: 6px; }
+:focus-visible { outline: 2px solid var(--color-sand); outline-offset: 3px; border-radius: 6px; }
 
 /* Film grain used by the landing page and the window overlay */
 .grain::after {
@@ -87,3 +134,125 @@ html.lenis, html.lenis body { height: auto; }
 
 @keyframes marquee-x { from { transform: translateX(0); } to { transform: translateX(-100%); } }
 .marquee-track { animation: marquee-x 22s linear infinite; padding-right: 2rem; }
+
+/* map-only: the restore pill dims after a moment but never disappears */
+@keyframes pill-settle { 0%, 70% { opacity: 1; } 100% { opacity: .55; } }
+.map-only-pill { animation: pill-settle 4s ease forwards; }
+.map-only-pill:hover, .map-only-pill:focus-visible { opacity: 1; animation: none; }
+
+.map-scope :focus-visible { outline-color: #e0a55a; }
+
+/* aircraft window: the city drifts slowly below, a cloud passes under the wing */
+@keyframes window-drift { from { transform: translate(-34px, 6px); } to { transform: translate(30px, -8px); } }
+.window-drift { animation: window-drift 38s ease-in-out infinite alternate; }
+@keyframes cloud-pass { from { transform: translateX(-320px); } to { transform: translateX(360px); } }
+.cloud-pass { animation: cloud-pass 24s linear infinite; }
+
+/* jali: the carved stone lattice of Awadhi screens, as a faint page texture */
+.jali {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cg fill='none' stroke='%23b8892e' stroke-opacity='.12' stroke-width='1'%3E%3Cpath d='M28 4 L34 22 L52 28 L34 34 L28 52 L22 34 L4 28 L22 22 Z'/%3E%3Ccircle cx='28' cy='28' r='6'/%3E%3Cpath d='M0 0 L8 8 M56 0 L48 8 M0 56 L8 48 M56 56 L48 48'/%3E%3C/g%3E%3C/svg%3E");
+  mask-image: radial-gradient(80% 70% at 20% 40%, #000 0%, transparent 75%);
+  -webkit-mask-image: radial-gradient(80% 70% at 20% 40%, #000 0%, transparent 75%);
+}
+.jali-dark {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cg fill='none' stroke='%23d8b66a' stroke-opacity='.12' stroke-width='1'%3E%3Cpath d='M28 4 L34 22 L52 28 L34 34 L28 52 L22 34 L4 28 L22 22 Z'/%3E%3Ccircle cx='28' cy='28' r='6'/%3E%3C/g%3E%3C/svg%3E");
+}
+/* photo cards cut to a cusped Awadhi arch */
+.arch-card {
+  border-radius: 0 0 20px 20px;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 140' preserveAspectRatio='none'%3E%3Cpath d='M0 140 V36 C0 22 8 16 18 15 C20 7 28 3 36 4 C40 1 45 0 50 0 C55 0 60 1 64 4 C72 3 80 7 82 15 C92 16 100 22 100 36 V140 Z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 140' preserveAspectRatio='none'%3E%3Cpath d='M0 140 V36 C0 22 8 16 18 15 C20 7 28 3 36 4 C40 1 45 0 50 0 C55 0 60 1 64 4 C72 3 80 7 82 15 C92 16 100 22 100 36 V140 Z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+}
+
+/* descent: soft cloud bands and the scroll cue */
+.cloud-band { background: radial-gradient(ellipse 30% 50% at 20% 50%, rgba(255,255,255,.95), transparent 70%), radial-gradient(ellipse 34% 55% at 55% 45%, rgba(255,255,255,.9), transparent 70%), radial-gradient(ellipse 28% 50% at 85% 55%, rgba(255,255,255,.92), transparent 72%); filter: blur(18px); animation: cloud-pass 30s linear infinite; }
+@keyframes scroll-cue { 0% { transform: scaleY(0); transform-origin: top; } 45% { transform: scaleY(1); transform-origin: top; } 55% { transform: scaleY(1); transform-origin: bottom; } 100% { transform: scaleY(0); transform-origin: bottom; } }
+.scroll-cue { animation: scroll-cue 2.2s cubic-bezier(.65,0,.35,1) infinite; }
+
+/* Site at night: the same monuments after dark. Umber halls, lamp-lit ochre. */
+/* Palettes. Order of each set: ground, surface, text, primary, quiet accent, second accent, soft fill, warm light. */
+/* Burgundy and gold (default) */
+:root[data-time="night"] {
+  --color-cabin: #1c0910;
+  --color-terrain: #2a0f18;
+  --color-paper: #f6e7cf;
+  --color-sand: #d9b26a;
+  --color-sage: #9fb0d6;
+  --color-amber: #e07a90;
+  --color-slate: #3d1822;
+  --color-dusk: #ecc98a;
+}
+/* Gulabi and plum */
+:root[data-palette="gulabi"] {
+  --color-cabin: #fce9e1;
+  --color-terrain: #fff5f0;
+  --color-paper: #2b1633;
+  --color-sand: #e9791c;
+  --color-sage: #6a4c9c;
+  --color-amber: #d93f79;
+  --color-slate: #f4d3c8;
+  --color-dusk: #f6b27a;
+}
+:root[data-palette="gulabi"][data-time="night"] {
+  --color-cabin: #1d1027;
+  --color-terrain: #2a1838;
+  --color-paper: #fbe7df;
+  --color-sand: #ffa24c;
+  --color-sage: #b9a6ef;
+  --color-amber: #ff6fa2;
+  --color-slate: #3a2450;
+  --color-dusk: #ffc78a;
+}
+/* Lime plaster and ochre, from Rumi Darwaza */
+:root[data-palette="plaster"] {
+  --color-cabin: #f1e3cc;
+  --color-terrain: #f8edda;
+  --color-paper: #2a1a10;
+  --color-sand: #9a6428;
+  --color-sage: #5b7ba3;
+  --color-amber: #8e4b4f;
+  --color-slate: #e6d3b3;
+  --color-dusk: #e8bb89;
+}
+:root[data-palette="plaster"][data-time="night"] {
+  --color-cabin: #1b120c;
+  --color-terrain: #26190f;
+  --color-paper: #f6ead6;
+  --color-sand: #e7ab5c;
+  --color-sage: #8fb0d6;
+  --color-amber: #e08a8a;
+  --color-slate: #3a2a1c;
+  --color-dusk: #f0c48a;
+}
+/* Indigo and saffron */
+:root[data-palette="indigo"] {
+  --color-cabin: #eceef7;
+  --color-terrain: #f8f9fd;
+  --color-paper: #161a3a;
+  --color-sand: #d9651f;
+  --color-sage: #4b5bb5;
+  --color-amber: #a33a6b;
+  --color-slate: #d9ddf0;
+  --color-dusk: #f0b37a;
+}
+:root[data-palette="indigo"][data-time="night"] {
+  --color-cabin: #0e1124;
+  --color-terrain: #171b36;
+  --color-paper: #ecebf6;
+  --color-sand: #ff9a4a;
+  --color-sage: #9aa6ef;
+  --color-amber: #f07aa8;
+  --color-slate: #262c52;
+  --color-dusk: #ffc78a;
+}
+:root[data-time="night"] .jali { filter: brightness(1.6); }
+
+/* Day/night on the site: the new look spreads from the switch in a circle. */
+::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+::view-transition-old(root) { animation: daynight-fade-out .7s ease both; }
+::view-transition-new(root) { animation: daynight-fade-in .7s ease both; }
+@keyframes daynight-fade-out { to { opacity: 0; } }
+@keyframes daynight-fade-in { from { opacity: 0; } }
+
+/* colour changes ease rather than snap, except while the view transition runs */
+body, header, section, footer { transition: background-color .6s ease, color .6s ease, border-color .6s ease; }

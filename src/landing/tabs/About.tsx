@@ -1,6 +1,5 @@
 import React from 'react';
 import GlareHover from '../../reactbits/GlareHover';
-import GradientText from '../../reactbits/GradientText';
 import { CREDITS, DATA_CREDITS, TEAM, TEAM_AFFILIATION, photoSm } from '../content';
 import { H2, Kicker, PageHero, Wrap } from '../ui';
 import type { TabProps } from '../Landing';
@@ -10,7 +9,7 @@ export default function About(_: TabProps) {
   return (
     <>
       <PageHero
-        kicker="The people and the credits" title="About" hi="हमारे बारे में" backdrop="particles"
+        kicker="The people and the credits" title="About" hi="हमारे बारे में"
         intro="Terralyt Lucknow is built by second-year students. We made it because we wanted to see our own city the way it deserves to be seen, and to prove that open data can make a serious city tool."
       />
 
@@ -18,10 +17,10 @@ export default function About(_: TabProps) {
         <div className="mb-10 max-w-[640px]"><Kicker>Team</Kicker><H2>Who built it</H2></div>
         <div className="grid gap-4 md:grid-cols-3">
           {TEAM.map((m) => (
-            <div key={m.name} className="contents"><GlareHover width="100%" height="100%" background={m.lead ? '#1b2f3b' : '#14232d'} borderColor={m.lead ? 'rgba(213,199,165,.4)' : 'rgba(213,199,165,.14)'} borderRadius="24px" glareColor="#d5c7a5" glareOpacity={0.25} style={{ display: 'block' }}>
+            <div key={m.name} className="contents"><GlareHover width="100%" height="100%" background={m.lead ? 'var(--color-slate)' : 'var(--color-terrain)'} borderColor={m.lead ? 'rgba(154,100,40,.55)' : 'rgba(42,26,16,.12)'} borderRadius="24px" glareColor="#ffffff" glareOpacity={0.25} style={{ display: 'block' }}>
               <div className="p-8 text-left">
                 <div className="grid h-14 w-14 place-items-center rounded-full bg-sand/15 font-display text-[1.4rem] text-sand" aria-hidden>{m.name.split(' ').map((w) => w[0]).slice(0, 2).join('')}</div>
-                <h3 className="mt-6 font-display text-[1.45rem] font-light leading-tight">{m.lead ? <GradientText colors={['#d5c7a5', '#f0c9a0', '#d5c7a5']} animationSpeed={6}>{m.name}</GradientText> : m.name}</h3>
+                <h3 className="mt-6 font-display text-[1.45rem] font-light leading-tight">{m.name}</h3>
                 <p className={`mt-2 text-[13px] font-medium ${m.lead ? 'text-amber' : 'text-sage'}`}>{m.role}</p>
                 <p className="mt-1 text-[12.5px] text-paper/50">{TEAM_AFFILIATION}</p>
               </div>
@@ -50,7 +49,7 @@ export default function About(_: TabProps) {
 
       <Wrap className="pb-28" id="credits">
         <div className="mb-8 max-w-[640px]"><Kicker>Photographs</Kicker><H2>Photo credits</H2></div>
-        <p className="mb-6 max-w-[46rem] text-[14px] leading-[1.7] text-paper/60">Photographs are from Wikimedia Commons under the licences shown. The hero picture of Rumi Darwaza on the overview page is an artist's impression made with AI, not a photograph.</p>
+        <p className="mb-6 max-w-[46rem] text-[14px] leading-[1.7] text-paper/60">Photographs are from Wikimedia Commons under the licences shown. The monument and food pictures on the Heritage, History and Food pages are AI illustrations we made with Google Flow, each drawn from the real photograph listed here as its reference. The line drawings on the home page are drawn by hand in code.</p>
         <ul className="grid gap-3 md:grid-cols-2">
           {rows.map(([slug, c]) => (
             <li key={slug} className="flex items-center gap-4 rounded-[16px] border border-sand/10 p-3">

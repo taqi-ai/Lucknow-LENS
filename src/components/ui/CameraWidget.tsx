@@ -4,13 +4,15 @@ import { Compass, RotateCcw, Sliders, X } from 'lucide-react';
 
 interface CameraWidgetProps {
   controller: CameraController | null;
+  /** Render the full panel inline (inside the map drawer) instead of as a floating corner chip. */
+  embedded?: boolean;
 }
 
-export const CameraWidget: React.FC<CameraWidgetProps> = ({ controller }) => {
+export const CameraWidget: React.FC<CameraWidgetProps> = ({ controller, embedded }) => {
   // Collapsed to a single chip by default — the full dial/sliders panel is a
   // tuning surface, not something that should occupy a corner of the viewport
   // permanently.
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(!!embedded);
   const compassDialRef = useRef<HTMLDivElement>(null);
   const headingTextRef = useRef<HTMLSpanElement>(null);
   const tiltTextRef = useRef<HTMLSpanElement>(null);
@@ -192,13 +194,13 @@ export const CameraWidget: React.FC<CameraWidgetProps> = ({ controller }) => {
   }
 
   return (
-    <div className="absolute right-4 bottom-4 z-30 pointer-events-none">
+    <div className={embedded ? '' : 'absolute right-4 bottom-4 z-30 pointer-events-none'}>
       <div 
-        className="pointer-events-auto bg-slate-900/90 border border-slate-700/80 backdrop-blur-xl rounded-2xl p-3 shadow-2xl flex flex-col items-center gap-2.5 w-36 select-none"
+        className={embedded ? 'flex w-full flex-col items-center gap-3 select-none [&_input]:accent-[#e0a55a]' : 'pointer-events-auto bg-slate-900/90 border border-slate-700/80 backdrop-blur-xl rounded-2xl p-3 shadow-2xl flex flex-col items-center gap-2.5 w-36 select-none'}
         onPointerDown={(e) => e.stopPropagation()}
         onWheel={(e) => e.stopPropagation()}
       >
-        <div className="text-[10px] font-extrabold tracking-widest text-slate-400 uppercase flex items-center gap-1 w-full justify-between">
+        {!embedded && <div className="text-[10px] font-extrabold tracking-widest text-slate-400 uppercase flex items-center gap-1 w-full justify-between">
           <span className="flex items-center gap-1"><Compass className="w-3 h-3 text-amber-500" /> CAMERA</span>
           <button
             onClick={() => setOpen(false)}
@@ -207,7 +209,7 @@ export const CameraWidget: React.FC<CameraWidgetProps> = ({ controller }) => {
           >
             <X className="w-3 h-3" />
           </button>
-        </div>
+        </div>}
 
         {/* Compass Dial */}
         <div className="relative w-16 h-16 flex items-center justify-center mt-0.5">
@@ -295,9 +297,9 @@ export const CameraWidget: React.FC<CameraWidgetProps> = ({ controller }) => {
         <div className="w-full flex flex-col items-center gap-0.5 mt-1">
           <span className="text-[9px] text-slate-400 font-semibold flex justify-between w-full px-0.5 items-center">
             <span className="flex items-center gap-0.5">
-              <Sliders className="w-2.5 h-2.5 text-emerald-400" /> ZOOM SENS.
+              <Sliders className="w-2.5 h-2.5 text-amber-300" /> ZOOM SENS.
             </span>
-            <span ref={zoomRespTextRef} className="text-emerald-400 font-bold">{initialZoomPct}%</span>
+            <span ref={zoomRespTextRef} className="text-amber-300 font-bold">{initialZoomPct}%</span>
           </span>
           <input
             ref={zoomRespInputRef}
@@ -310,7 +312,7 @@ export const CameraWidget: React.FC<CameraWidgetProps> = ({ controller }) => {
             onPointerDown={() => { isDraggingZoomResp.current = true; }}
             onPointerUp={() => { isDraggingZoomResp.current = false; }}
             onPointerLeave={() => { isDraggingZoomResp.current = false; }}
-            className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-400"
+            className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-amber-300"
           />
         </div>
         

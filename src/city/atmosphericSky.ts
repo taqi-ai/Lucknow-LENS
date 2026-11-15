@@ -293,6 +293,16 @@ export class AtmosphericSky {
     this.targetNightBlend = night ? 1.0 : 0.0;
   }
 
+  /** Drive the day/night blend directly (0 = day, 1 = night), for a scene-wide synced transition. */
+  public setBlend(v: number): void {
+    this.currentNightBlend = this.targetNightBlend = v;
+    if (this.skyMaterial) this.skyMaterial.uniforms.uNightBlend.value = v;
+    this.updateFog(v);
+  }
+
+  public get material(): THREE.Material | null { return this.skyMaterial ?? null; }
+  public get blend(): number { return this.currentNightBlend; }
+
   /**
    * Interpolate fog color and density smoothly.
    */

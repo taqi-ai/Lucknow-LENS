@@ -158,79 +158,47 @@ export class CityRenderer {
     this.applyDayNightState(night);
   }
 
+  /**
+   * Lighting presets per (time of day x style). Applied as targets and eased in
+   * update(), so switching day and night is a ~1.6 s dusk/dawn instead of a cut.
+   */
+  private lightTarget: { sun: THREE.Color; sunI: number; amb: THREE.Color; ambI: number; sky: THREE.Color; ground: THREE.Color; hemiI: number; exposure: number } | null = null;
+  private lastLightTick = performance.now();
+
   private applyDayNightState(night: boolean): void {
     this.scene.background = null;
-
+    const P = (sun: number, sunI: number, amb: number, ambI: number, sky: number, ground: number, hemiI: number, exposure: number) => ({
+      sun: new THREE.Color(sun), sunI, amb: new THREE.Color(amb), ambI, sky: new THREE.Color(sky), ground: new THREE.Color(ground), hemiI, exposure,
+    });
+    const st = this.skylineStyle;
+    let t;
     if (night) {
-      if (this.skylineStyle === 'cyberpunk') {
-        // True Cyberpunk Night: High contrast dark indigo backdrop, neon-accented lighting
-        this.scene.fog = new THREE.FogExp2(0x050714, 0.000000);
-        this.sunLight.color.setHex(0x00f0ff); // Electric cyan directional
-        this.sunLight.intensity = 1.6;
-        this.ambientLight.color.setHex(0x1a0a2a); // Deep magenta ambient fill
-        this.ambientLight.intensity = 1.8;
-        this.hemiLight.color.setHex(0x00d2ff); // Cyan sky
-        this.hemiLight.groundColor.setHex(0x380036); // Magenta ground
-        this.hemiLight.intensity = 2.2;
-        this.renderer.toneMappingExposure = 1.8;
-      } else {
-        // Realistic Lucknow Night
-        this.scene.fog = new THREE.FogExp2(0x0a1220, 0.000000);
-        this.sunLight.color.setHex(0x9fc0e8);
-        this.sunLight.intensity = 1.2;
-        this.ambientLight.color.setHex(0x607490);
-        this.ambientLight.intensity = 2.0;
-        this.hemiLight.color.setHex(0x6a87ae);
-        this.hemiLight.groundColor.setHex(0x2a3040);
-        this.hemiLight.intensity = 1.8;
-        this.renderer.toneMappingExposure = 1.6;
-      }
+      if (st === 'cyberpunk') t = P(0x00f0ff, 1.6, 0x1a0a2a, 1.8, 0x00d2ff, 0x380036, 2.2, 1.8);
+      else if (st === 'clear') t = P(0xb8cdf0, 1.0, 0x50627e, 1.7, 0x5e78a0, 0x22293a, 1.6, 1.45); // cool moonlight
+      else t = P(0xffc68a, 1.1, 0x6a5a4e, 1.9, 0x6a87ae, 0x3a2e24, 1.7, 1.6); // warm: sodium-lit streets
     } else {
-      if (this.skylineStyle === 'clear') {
-        // NATURAL WHITE — midday, neutral white balance. The reference the other
-        // two are read against, so it commits to nothing: white sun, faintly
-        // cool sky fill, neutral ground bounce.
-        this.scene.fog = new THREE.FogExp2(0xe6ebf0, 0.000000);
-        this.sunLight.color.setHex(0xffffff);
-        this.sunLight.intensity = 3.6;
-        this.ambientLight.color.setHex(0xdfe7f0);
-        this.ambientLight.intensity = 0.34;
-        this.hemiLight.color.setHex(0xd6e6f7);
-        this.hemiLight.groundColor.setHex(0x95999e);
-        this.hemiLight.intensity = 0.78;
-        this.renderer.toneMappingExposure = 0.95;
-      } else if (this.skylineStyle === 'cyberpunk') {
-        // CYBERPUNK — a genuinely different profile, not a tinted day. The key
-        // is that almost no light comes from the sky: a deep indigo environment
-        // with a cold cyan key from one side and a magenta ground bounce from
-        // the other, so surfaces split into cyan-lit and magenta-shadowed. The
-        // building shader's uCyber term supplies the neon windows and accents.
-        this.scene.fog = new THREE.FogExp2(0x0e1430, 0.000000);
-        this.sunLight.color.setHex(0x7af0ff);
-        this.sunLight.intensity = 3.4;
-        this.ambientLight.color.setHex(0x2a1a55);
-        this.ambientLight.intensity = 0.42;
-        // A strong cyan hemisphere floods the ground plane, which is what turned
-        // the whole city into a flat cyan sheet. Kept low; the sun carries the key.
-        this.hemiLight.color.setHex(0x5fd0f5);
-        this.hemiLight.groundColor.setHex(0x4a1440);
-        this.hemiLight.intensity = 0.50;
-        this.renderer.toneMappingExposure = 1.02;
-      } else {
-        // WARM WHITE — crisp, natural daylight with warm sunlight and cool sky fill.
-        // Balances warm sunlight with sky-blue ambient fill so shadows create
-        // high 3D contrast across building facades and roofs without amber washout.
-        this.scene.fog = new THREE.FogExp2(0xd6e5f3, 0.000000);
-        this.sunLight.color.setHex(0xffecd0);
-        this.sunLight.intensity = 3.6;
-        this.ambientLight.color.setHex(0xb2c8dc);
-        this.ambientLight.intensity = 0.38;
-        this.hemiLight.color.setHex(0xc6def2);
-        this.hemiLight.groundColor.setHex(0x9c8868);
-        this.hemiLight.intensity = 0.65;
-        this.renderer.toneMappingExposure = 1.0;
-      }
+      if (st === 'clear') t = P(0xffffff, 3.6, 0xdfe7f0, 0.34, 0xd6e6f7, 0x95999e, 0.78, 0.95);
+      else if (st === 'cyberpunk') t = P(0x7af0ff, 3.4, 0x2a1a55, 0.42, 0x5fd0f5, 0x4a1440, 0.5, 1.02);
+      else t = P(0xffecd0, 3.6, 0xb2c8dc, 0.38, 0xc6def2, 0x9c8868, 0.65, 1.0);
     }
+    this.scene.fog = new THREE.FogExp2(night ? 0x0a1220 : 0xd6e5f3, 0);
+    // Snap: the scene-wide SceneTween animates from the old look to this one.
+    this.lightTarget = t;
+    this.stepLighting(1);
+  }
+
+  /** Ease the lights toward the current target. k = 1 snaps. */
+  private stepLighting(k: number): void {
+    const t = this.lightTarget;
+    if (!t || !this.sunLight) return;
+    this.sunLight.color.lerp(t.sun, k);
+    this.sunLight.intensity += (t.sunI - this.sunLight.intensity) * k;
+    this.ambientLight.color.lerp(t.amb, k);
+    this.ambientLight.intensity += (t.ambI - this.ambientLight.intensity) * k;
+    this.hemiLight.color.lerp(t.sky, k);
+    this.hemiLight.groundColor.lerp(t.ground, k);
+    this.hemiLight.intensity += (t.hemiI - this.hemiLight.intensity) * k;
+    this.renderer.toneMappingExposure += (t.exposure - this.renderer.toneMappingExposure) * k;
   }
 
   /** Horizon colour + haze strength currently in effect, for the building shader. */

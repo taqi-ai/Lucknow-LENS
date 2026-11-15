@@ -17,7 +17,7 @@ export default function Government({ onEnter }: TabProps) {
   return (
     <>
       <PageHero
-        kicker="Services and helplines" title="Government" hi="शासन" backdrop="aurora"
+        kicker="Services and helplines" title="Government" hi="शासन"
         intro="Who runs what in Lucknow, and the numbers to call. Terralyt is an independent project: this page points to the departments that issue each service, and does not speak for them."
       >
         <a href="tel:112" className="mt-8 inline-flex items-center gap-3 rounded-full bg-[#b3402f] px-6 py-3 text-[15px] font-semibold text-white shadow-[0_18px_50px_-14px_rgba(179,64,47,.7)] transition-transform active:scale-95">
@@ -38,7 +38,7 @@ export default function Government({ onEnter }: TabProps) {
           {list.map((h) => (
             <li key={h.number + h.name}>
               <a href={`tel:${h.number}`} className="block h-full rounded-[22px] focus-visible:outline-offset-4">
-                <SpotlightCard spotlightColor="rgba(213,199,165,0.14)" className="!h-full !rounded-[22px] !border-sand/12 !bg-terrain/60 p-6">
+                <SpotlightCard spotlightColor="rgba(154,100,40,0.12)" className="!h-full !rounded-[22px] !border-sand/12 !bg-terrain/60 p-6">
                   <div className="flex items-start justify-between gap-4">
                     <p className="font-display text-[2.4rem] font-light leading-none tabular text-sand">{h.number}</p>
                     <span className="rounded-full border border-sand/20 px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-paper/55">{h.kind}</span>
@@ -58,7 +58,7 @@ export default function Government({ onEnter }: TabProps) {
         <div className="mb-10 max-w-[640px]"><Kicker>Who does what</Kicker><H2>The bodies that run the city</H2></div>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {GOV_BODIES.map((b) => (
-            <div key={b.name} className="contents"><GlareHover width="100%" height="100%" background="#14232d" borderColor="rgba(213,199,165,.14)" borderRadius="22px" glareColor="#d5c7a5" glareOpacity={0.22} style={{ display: 'block', height: '100%' }}>
+            <div key={b.name} className="contents"><GlareHover width="100%" height="100%" background="var(--color-terrain)" borderColor="color-mix(in srgb, var(--color-paper) 12%, transparent)" borderRadius="22px" glareColor="#ffffff" glareOpacity={0.22} style={{ display: 'block', height: '100%' }}>
               <div className="p-7 text-left">
                 <p className="font-deva text-[1.1rem] text-sand/80" lang="hi">{b.hi}</p>
                 <h3 className="mt-1 font-display text-[1.35rem] font-light">{b.name}</h3>
@@ -75,7 +75,7 @@ export default function Government({ onEnter }: TabProps) {
             <h3 className="font-display text-[1.7rem] font-light">See emergency coverage on the map</h3>
             <p className="mt-3 text-[15px] leading-[1.7] text-paper/65">Hospitals, fire stations and police stations are on the live map with coverage radii, so gaps in cover are easy to spot.</p>
           </div>
-          <button onClick={() => onEnter()} className="shrink-0 rounded-full bg-sand px-7 py-3.5 text-[14px] font-semibold text-terrain transition-transform active:scale-95">Open the map</button>
+          <button data-enter onClick={() => onEnter()} className="shrink-0 rounded-full bg-sand px-7 py-3.5 text-[14px] font-semibold text-terrain transition-transform active:scale-95">Open the map</button>
         </div>
       </Wrap>
     </>

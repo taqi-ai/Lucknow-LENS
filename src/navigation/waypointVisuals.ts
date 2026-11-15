@@ -40,6 +40,7 @@ function createRibbonShaderMaterial(theme: GPSTheme): THREE.ShaderMaterial {
     },
     vertexShader: `
       varying vec2 vUv;
+      #include <common>
       #include <logdepthbuf_pars_vertex>
 
       void main() {
@@ -104,6 +105,7 @@ function createBeamShaderMaterial(theme: GPSTheme): THREE.ShaderMaterial {
     vertexShader: `
       varying vec2 vUv;
       varying float vAltitude;
+      #include <common>
       #include <logdepthbuf_pars_vertex>
 
       void main() {

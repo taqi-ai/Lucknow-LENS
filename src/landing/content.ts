@@ -10,16 +10,24 @@ import credits from './credits.json';
 export type Credit = { title: string; author: string; licence: string; page: string };
 export const CREDITS = credits as Record<string, Credit>;
 
-/** Photo URLs: a 1400px and a 640px WebP for each slug. */
-export const photo = (slug: string) => `/lucknow/${slug}.webp`;
-export const photoSm = (slug: string) => `/lucknow/${slug}-sm.webp`;
+/**
+ * Illustrations made for this site with Google Flow, each generated from the real
+ * photograph of the place as a reference, in one consistent style. Where one
+ * exists it replaces the photo; the original photo stays credited on the About page.
+ */
+export const ART = new Set<string>(['rumi-darwaza', 'bara-imambara', 'chota-imambara', 'clock-tower', 'residency', 'la-martiniere', 'charbagh', 'satkhanda', 'jama-masjid', 'ambedkar-park']);
+export const ART_FOOD = new Set<string>(['tunday', 'biryani', 'nihari', 'sheermal', 'makhan-malai', 'chaat', 'kulfi', 'kakori']);
+
+/** Image URLs: a large and a 640px WebP for each slug (illustration if there is one, otherwise the photo). */
+export const photo = (slug: string) => (ART.has(slug) || ART_FOOD.has(slug) ? `/lucknow/art/${slug}.webp` : `/lucknow/${slug}.webp`);
+export const photoSm = (slug: string) => (ART.has(slug) || ART_FOOD.has(slug) ? `/lucknow/art/${slug}-sm.webp` : `/lucknow/${slug}-sm.webp`);
 
 export interface Tab { id: string; label: string; hi: string; blurb: string }
 export const TABS: Tab[] = [
   { id: 'overview', label: 'Overview', hi: 'मुख्य', blurb: 'The city at a glance' },
   { id: 'heritage', label: 'Heritage', hi: 'विरासत', blurb: 'Monuments and architecture' },
   { id: 'history', label: 'History', hi: 'इतिहास', blurb: 'From Kosala to the metro' },
-  { id: 'food', label: 'Food', hi: 'ज़ायका', blurb: 'The table of Awadh' },
+  { id: 'food', label: 'Food', hi: 'ज़ायका', blurb: 'A UNESCO city of gastronomy' },
   { id: 'travel', label: 'Travel', hi: 'सफ़र', blurb: 'Plan a visit' },
   { id: 'geography', label: 'Geography', hi: 'भूगोल', blurb: 'River, plain and relief' },
   { id: 'government', label: 'Government', hi: 'शासन', blurb: 'Services and helplines' },
@@ -89,16 +97,20 @@ export const ERAS: Era[] = [
 /* ───────────────────────── Food ───────────────────────── */
 export interface Dish { slug: string; name: string; hi: string; kind: string; note: string; where?: string }
 export const DISHES: Dish[] = [
-  { slug: 'tunday', name: 'Tunday Kebab', hi: 'टुंडे कबाब', kind: 'Kebab', note: 'Minced buffalo or mutton, slow-cooked until it melts, from the legendary Tunday Kababi lanes of Aminabad and Chowk.', where: 'Aminabad, Chowk' },
-  { slug: 'galouti', name: 'Galouti Kebab', hi: 'गलौटी कबाब', kind: 'Kebab', note: 'A kebab so soft it needs almost no chewing. Legend says it was invented for a Nawab who had lost his teeth.', where: 'Old city lanes' },
+  { slug: 'tunday', name: 'Galouti Kebab', hi: 'गलौटी कबाब', kind: 'Kebab', note: 'So soft it barely needs chewing; legend says it was made for a Nawab who had lost his teeth. Tunday Kababi in Aminabad and Chowk is the famous name', where: 'Aminabad, Chowk' },
   { slug: 'biryani', name: 'Awadhi Biryani', hi: 'अवधी बिरयानी', kind: 'Rice', note: 'Cooked dum pukht style, sealed and steamed in its own juices. Lighter and more fragrant than its southern cousins.', where: 'Chowk' },
   { slug: 'nihari', name: 'Nihari Kulcha', hi: 'निहारी कुलचा', kind: 'Breakfast', note: 'Meat stewed overnight and eaten with soft kulcha at dawn.', where: 'Chowk' },
   { slug: 'sheermal', name: 'Sheermal', hi: 'शीरमाल', kind: 'Bread', note: 'A saffron-scented, mildly sweet flatbread, the usual companion to rich curries and kebabs.' },
   { slug: 'makhan-malai', name: 'Makhan Malai', hi: 'मक्खन मलाई', kind: 'Winter sweet', note: 'A foam of milk and morning dew, sold on winter mornings and gone by noon.', where: 'Winter only' },
   { slug: 'chaat', name: 'Basket Chaat', hi: 'बास्केट चाट', kind: 'Chaat', note: 'A crisp potato basket filled with chickpeas, yoghurt and chutneys. A Hazratganj classic.', where: 'Hazratganj' },
   { slug: 'kulfi', name: 'Kulfi Falooda', hi: 'कुल्फी फ़ालूदा', kind: 'Dessert', note: 'Dense, slow-frozen kulfi on rose-scented falooda noodles.', where: 'Aminabad' },
-  { slug: 'chikankari', name: 'Chikankari', hi: 'चिकनकारी', kind: 'Craft, not food', note: 'Lucknow\'s white-on-white hand embroidery, the other thing the city is known for. You will pass its shops on the way to dinner.' },
+  { slug: 'kakori', name: 'Kakori Kebab', hi: 'काकोरी कबाब', kind: 'Kebab', note: 'Long, silky skewered kebabs named after Kakori, a town just outside Lucknow.', where: 'Old city' },
 ];
+
+export const UNESCO_GASTRONOMY = {
+  text: 'In October 2025 UNESCO named Lucknow a Creative City of Gastronomy, for its centuries-old Awadhi cuisine.',
+  url: 'https://www.unesco.org/en/creative-cities/lucknow',
+};
 
 export const FOOD_NOTES = [
   'Mango season brings Malihabad\'s Dussehri to the markets from about May to July.',

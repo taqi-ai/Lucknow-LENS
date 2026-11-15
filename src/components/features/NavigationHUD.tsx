@@ -47,7 +47,7 @@ function getManeuverIcon(type?: ManeuverType) {
     case 'u-turn':
       return <RotateCcw className="w-7 h-7 text-white" />;
     case 'arrive':
-      return <Flag className="w-7 h-7 text-emerald-400" />;
+      return <Flag className="w-7 h-7 text-amber-400" />;
     case 'depart':
     case 'straight':
     default:

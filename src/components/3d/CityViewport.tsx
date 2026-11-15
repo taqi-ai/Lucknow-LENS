@@ -4,6 +4,7 @@ import { CameraPreset, OSMMapData, RenderStats, CityStreamingStats, SimulatedFli
 import { CityRenderer } from '../../city/renderer';
 import { TileStreamer } from '../../city/tileStreamer';
 import { LabelManager, type LabelSettings } from '../../city/labelManager';
+import { SceneTween, DAY_NIGHT_SECONDS } from '../../city/sceneTween';
 import { CameraController } from '../../city/cameraController';
 import { AtmosphericSky } from '../../city/atmosphericSky';
 import { BuildingMaterialSystem, type SkylineStyle } from '../../city/buildingMaterial';
@@ -98,6 +99,8 @@ export const CityViewport: React.FC<CityViewportProps> = ({
   const controlsRef = useRef<CameraController | null>(null);
   const labelManagerRef = useRef<LabelManager | null>(null);
   const labelSettingsRef = useRef(labelSettings);
+  const tweenRef = useRef<SceneTween | null>(null);
+  const nightAppliedRef = useRef<boolean | null>(null);
   labelSettingsRef.current = labelSettings;
   const skyRef = useRef<AtmosphericSky | null>(null);
   const materialsRef = useRef<BuildingMaterialSystem | null>(null);
@@ -153,6 +156,8 @@ export const CityViewport: React.FC<CityViewportProps> = ({
 
     const sky = new AtmosphericSky();
     skyRef.current = sky;
+    if (import.meta.env.DEV) (window as unknown as { __tween?: () => SceneTween | null }).__tween = () => tweenRef.current;
+    tweenRef.current = new SceneTween(cityRenderer.scene, cityRenderer.renderer, new Set([sky.material].filter(Boolean) as THREE.Material[]));
 
     // Custom Target-Orbit Navigation
     const controls = new CameraController(cityRenderer.camera, cityRenderer.renderer.domElement);
@@ -341,6 +346,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
         });
       }
 
+      tweenRef.current?.tick();
       cityRenderer.update();
 
       if (time - lastStatsTime > 400) {
@@ -600,16 +606,39 @@ export const CityViewport: React.FC<CityViewportProps> = ({
   }, [followCamera]);
 
   // Update Night Mode & Labels
+  // Day and night on one clock: lights, sky, buildings, roads, lamps and lawns
+  // all move together over DAY_NIGHT_SECONDS; labels swap palette at the midpoint.
   useEffect(() => {
-    if (rendererRef.current) rendererRef.current.setNightMode(nightMode);
-    if (streamerRef.current) streamerRef.current.setNightMode(nightMode);
-    if (labelManagerRef.current) {
-      labelManagerRef.current.setNightMode(nightMode);
-      labelManagerRef.current.enabled = showLabels;
+    const renderer = rendererRef.current;
+    if (!renderer) return;
+    const night = nightMode;
+    const snapAll = () => {
+      renderer.setNightMode(night);
+      streamerRef.current?.setNightMode(night);
+      campusAmbienceRef.current?.setNightMode(night);
+    };
+    const first = nightAppliedRef.current === null;
+    if (nightAppliedRef.current === night) return;
+    nightAppliedRef.current = night;
+    if (first || !tweenRef.current || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      snapAll();
+      skyRef.current?.setBlend(night ? 1 : 0);
+      labelManagerRef.current?.setNightMode(night);
+      return;
     }
-    if (skyRef.current) skyRef.current.setNightMode(nightMode);
-    campusAmbienceRef.current?.setNightMode(nightMode);
-  }, [nightMode, showLabels]);
+    let swapped = false;
+    // start the sky from wherever it is, so toggling mid-transition does not jump
+    const skyFrom = skyRef.current?.blend ?? (night ? 0 : 1);
+    const skyTo = night ? 1 : 0;
+    tweenRef.current.transition(snapAll, DAY_NIGHT_SECONDS, (t) => {
+      skyRef.current?.setBlend(skyFrom + (skyTo - skyFrom) * t);
+      if (!swapped && t >= 0.5) { swapped = true; labelManagerRef.current?.setNightMode(night); }
+    });
+  });
+
+  useEffect(() => {
+    if (labelManagerRef.current) labelManagerRef.current.enabled = showLabels;
+  }, [showLabels]);
 
   useEffect(() => {
     labelManagerRef.current?.setSettings(labelSettings);

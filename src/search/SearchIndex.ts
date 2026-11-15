@@ -4,6 +4,16 @@ import { project, unproject } from '../geo/projection';
 
 export { project, unproject };
 
+const CURATED = [
+  { name: 'Rumi Darwaza', lat: 26.8697, lon: 80.9131 },
+  { name: 'Bara Imambara', lat: 26.8688, lon: 80.9125 },
+  { name: 'Chota Imambara', lat: 26.8726, lon: 80.9058 },
+  { name: 'Hussainabad Clock Tower', lat: 26.8720, lon: 80.9076 },
+  { name: 'The Residency', lat: 26.8606, lon: 80.9264 },
+  { name: 'Hazratganj', lat: 26.8467, lon: 80.9461 },
+  { name: 'Charbagh Railway Station', lat: 26.8322, lon: 80.9221 },
+];
+
 export class SearchIndex {
   private items: SearchResult[] = [];
   private initialized = false;
@@ -51,6 +61,12 @@ export class SearchIndex {
         });
       };
 
+      // Famous names people type that the open data spells differently (it has "Rumi Gate", not "Rumi Darwaza").
+      for (const c of CURATED) {
+        const { x, z } = project(c.lat, c.lon);
+        seenNames.add(c.name.toLowerCase());
+        this.items.push({ id: `curated-${c.name}`, name: c.name, category: 'landmark', latitude: c.lat, longitude: c.lon, x, z, importance: 11 });
+      }
       for (const p of placesData) merge(p, p.type || 'Landmark');
       for (const r of roadsData) merge(r, 'Road');
 

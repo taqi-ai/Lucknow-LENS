@@ -12,6 +12,7 @@ import { OpenMeteoWeatherProvider, OpenMeteoAirQualityProvider } from "./server/
 import { RailRadarProvider } from "./server/providers/railradar";
 import { TomTomTrafficProvider } from "./server/providers/tomtomTraffic";
 import { GdeltNewsProvider } from "./server/providers/gdeltNews";
+import { RssNewsProvider } from "./server/providers/rssNews";
 
 dotenv.config();
 
@@ -129,11 +130,11 @@ const trafficFeed = new CachedFeed(new TomTomTrafficProvider(), {
   attribution: "Traffic incidents by TomTom",
 });
 
-const newsFeed = new CachedFeed(new GdeltNewsProvider(), {
+const newsFeed = new CachedFeed(new ChainProvider([new RssNewsProvider(), new GdeltNewsProvider()]), {
   ttlMs: 900_000,        // GDELT's own index updates roughly every 15 min
-  timeoutMs: 10_000,
+  timeoutMs: 16_000,
   maxStaleMs: 21_600_000, // GDELT rate-limits hard (1 request / 5 s); keep serving the last good list, labelled stale
-  attribution: "News via the GDELT Project (gdeltproject.org)",
+  attribution: "Headlines from the Hindustan Times and Times of India Lucknow feeds (GDELT as backup); links go to the publisher",
 });
 
 // ---------------------------------------------------------------------------

@@ -14,7 +14,7 @@ import {
 } from './interactions/liveFeed';
 import type { SkylineStyle } from './city/buildingMaterial';
 import { DEFAULT_LABEL_SETTINGS, type LabelSettings } from './city/labelManager';
-import { THEMES, themeOf, type ThemeId } from './components/ui/themes';
+import { THEMES, themeById, type ThemeId } from './components/ui/themes';
 import { Pathfinder } from './navigation/pathfinder';
 import { RouteDriver } from './navigation/routeDriver';
 import type { NavigationRoute, NavigatorState, RouteWaypoint, GPSTheme } from './navigation/types';
@@ -71,17 +71,22 @@ interface MapAppProps {
   entryPreset?: CameraPreset;
   onProgress?: (p: LoadProgress) => void;
   onRetry?: () => void;
+  /** The fly-in waits for this, so it plays after the visitor dives in rather than behind the loader. */
+  released?: boolean;
 }
 
-type Prefs = { theme: ThemeId; showLabels: boolean; labelSettings: LabelSettings; windowView: boolean };
+type Prefs = { theme: ThemeId; night: boolean; showLabels: boolean; labelSettings: LabelSettings; windowView: boolean };
 const PREFS_KEY = 'terralyt.map.prefs.v1';
 function loadPrefs(): Prefs {
-  const d: Prefs = { theme: 'warm', showLabels: true, labelSettings: DEFAULT_LABEL_SETTINGS, windowView: true };
+  const d: Prefs = { theme: 'warm', night: false, showLabels: true, labelSettings: DEFAULT_LABEL_SETTINGS, windowView: true };
   try {
-    const raw = JSON.parse(localStorage.getItem(PREFS_KEY) ?? 'null') as Partial<Prefs> | null;
+    const raw = JSON.parse(localStorage.getItem(PREFS_KEY) ?? 'null') as (Omit<Partial<Prefs>, 'theme'> & { theme?: string }) | null;
     if (!raw) return d;
+    // v1 stored night as a theme; it is its own switch now.
+    const legacyNight = raw.theme === 'night';
     return {
       theme: THEMES.some((t) => t.id === raw.theme) ? (raw.theme as ThemeId) : d.theme,
+      night: typeof raw.night === 'boolean' ? raw.night : legacyNight,
       showLabels: typeof raw.showLabels === 'boolean' ? raw.showLabels : d.showLabels,
       labelSettings: { ...DEFAULT_LABEL_SETTINGS, ...(raw.labelSettings ?? {}) },
       windowView: typeof raw.windowView === 'boolean' ? raw.windowView : d.windowView,
@@ -90,7 +95,7 @@ function loadPrefs(): Prefs {
 }
 function savePrefs(p: Prefs) { try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch { /* private mode */ } }
 
-export default function MapApp({ entryPreset = 'hero', onProgress }: MapAppProps) {
+export default function MapApp({ entryPreset = 'hero', onProgress, released = true }: MapAppProps) {
   const [mapData, setMapData] = useState<OSMMapData>(INITIAL_MAP_DATA);
   const [error, setError] = useState<string | null>(null);
 
@@ -100,14 +105,15 @@ export default function MapApp({ entryPreset = 'hero', onProgress }: MapAppProps
   // Preferences survive reloads. Defaults: Natural warm, calm labels, window view on.
   const prefs = useRef(loadPrefs()).current;
   const [theme, setTheme] = useState<ThemeId>(prefs.theme);
-  const { night: nightMode, style: skylineStyle } = THEMES.find((t) => t.id === theme)!;
+  const [nightMode, setNightMode] = useState<boolean>(prefs.night);
+  const skylineStyle = themeById(theme).style;
   const [showLabels, setShowLabels] = useState<boolean>(prefs.showLabels);
   const [labelSettings, setLabelSettings] = useState<LabelSettings>(prefs.labelSettings);
   const [presentationMode, setPresentationMode] = useState<boolean>(false);
   const [mapOnly, setMapOnly] = useState<boolean>(false);
   // Airplane-window treatment: vignette, glass glare and grain over the map. Cheap CSS, no extra GPU passes.
   const [windowView, setWindowView] = useState<boolean>(prefs.windowView);
-  useEffect(() => { savePrefs({ theme, showLabels, labelSettings, windowView }); }, [theme, showLabels, labelSettings, windowView]);
+  useEffect(() => { savePrefs({ theme, night: nightMode, showLabels, labelSettings, windowView }); }, [theme, nightMode, showLabels, labelSettings, windowView]);
 
   // GTA GPS Navigation State
   const pathfinderRef = useRef<Pathfinder>(new Pathfinder());
@@ -208,6 +214,8 @@ export default function MapApp({ entryPreset = 'hero', onProgress }: MapAppProps
   const [dataLoaded, setDataLoaded] = useState(false);
   const bestRef = useRef(0);
   const readyRef = useRef(false);
+  const flyInPendingRef = useRef(false);
+  const [flyInTick, setFlyInTick] = useState(0);
   const settleRef = useRef<number | null>(null);
   const t0Ref = useRef(performance.now());
   useEffect(() => {
@@ -226,19 +234,26 @@ export default function MapApp({ entryPreset = 'hero', onProgress }: MapAppProps
       if (settleRef.current === null) settleRef.current = window.setTimeout(() => {
         readyRef.current = true; bestRef.current = 1;
         onProgress({ value: 1, stage: 'Ready', ready: true, error: null });
-        setCameraSignal(entryPreset);
+        flyInPendingRef.current = true; setFlyInTick((n) => n + 1);
       }, 500);
     } else if (settleRef.current !== null) { window.clearTimeout(settleRef.current); settleRef.current = null; }
     // Safety valve: a slow network should never trap people on the loader.
     if (!settled && elapsed > 30000 && dataLoaded && tilesLoaded > 0) {
       readyRef.current = true; bestRef.current = 1;
       onProgress({ value: 1, stage: 'Ready', ready: true, error: null });
-      setCameraSignal(entryPreset);
+      flyInPendingRef.current = true; setFlyInTick((n) => n + 1);
       return;
     }
     bestRef.current = Math.max(bestRef.current, Math.min(value, 0.97));
     onProgress({ value: bestRef.current, stage, ready: false, error });
   }, [dataLoaded, cameraController, streamingStats, error, onProgress, entryPreset]);
+
+  useEffect(() => {
+    if (released && flyInPendingRef.current) {
+      flyInPendingRef.current = false;
+      setCameraSignal(entryPreset);
+    }
+  }, [released, flyInTick, entryPreset]);
 
   const handleCameraSignal = (signal: CameraPreset) => {
     setCameraSignal(signal);
@@ -421,7 +436,7 @@ export default function MapApp({ entryPreset = 'hero', onProgress }: MapAppProps
         onRouteDriverReady={handleRouteDriverReady}
       />
 
-      {theme === 'warm' && <div aria-hidden className="pointer-events-none absolute inset-0 z-[2]" style={{ background: 'linear-gradient(180deg, rgba(246,196,128,.22), rgba(232,170,100,.14))', mixBlendMode: 'soft-light' }} />}
+      <div aria-hidden className="pointer-events-none absolute inset-0 z-[2] transition-opacity ease-in-out" style={{ opacity: theme === 'warm' && !nightMode ? 1 : 0, transitionDuration: '2600ms', background: 'linear-gradient(180deg, rgba(246,196,128,.22), rgba(232,170,100,.14))', mixBlendMode: 'soft-light' }} />
       {windowView && <WindowOverlay />}
       {/* UI Overlay */}
       <CityUI
@@ -434,6 +449,8 @@ export default function MapApp({ entryPreset = 'hero', onProgress }: MapAppProps
         onLabelSettings={setLabelSettings}
         theme={theme}
         onTheme={setTheme}
+        night={nightMode}
+        onNight={setNightMode}
         windowView={windowView}
         onWindowView={setWindowView}
         presentationMode={presentationMode}

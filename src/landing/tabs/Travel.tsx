@@ -14,7 +14,7 @@ export default function Travel({ onEnter }: TabProps) {
   return (
     <>
       <PageHero
-        kicker="Plan a visit" title="Travel guide" hi="सफ़र" backdrop="dots"
+        kicker="Plan a visit" title="Travel guide" hi="सफ़र"
         intro="Lucknow is easy to reach and best taken slowly. This page covers when to come, how to arrive, and a three-day route through the old city, the colonial centre and the river."
       >
         {weather.value && weather.status !== 'unavailable' && (
@@ -28,7 +28,7 @@ export default function Travel({ onEnter }: TabProps) {
         <div className="mb-10 max-w-[640px]"><Kicker>When to go</Kicker><H2>Three seasons</H2></div>
         <div className="grid gap-4 md:grid-cols-3">
           {SEASONS.map((s) => (
-            <SpotlightCard key={s.name} spotlightColor="rgba(198,139,84,0.18)" className="!rounded-[24px] !border-sand/12 !bg-terrain/60 p-8">
+            <SpotlightCard key={s.name} spotlightColor="rgba(154,100,40,0.12)" className="!rounded-[24px] !border-sand/12 !bg-terrain/60 p-8">
               <div className="flex gap-1" aria-label={`${s.score} out of 5`}>{Array.from({ length: 5 }).map((_, i) => <span key={i} className={`h-1.5 w-6 rounded-full ${i < s.score ? 'bg-sand' : 'bg-sand/15'}`} />)}</div>
               <h3 className="mt-5 font-display text-[1.5rem] font-light">{s.name}</h3>
               <p className="mt-3 text-[14.5px] leading-[1.7] text-paper/65">{s.note}</p>
@@ -55,7 +55,7 @@ export default function Travel({ onEnter }: TabProps) {
 
       <Wrap className="pb-28">
         <div className="mb-10 max-w-[640px]"><Kicker>Three days</Kicker><H2>A route through the city</H2></div>
-        <Stepper theme="dark" accentColor="#d5c7a5" indicator="numbers" nextButtonText="Next day" backButtonText="Back" completeButtonText="Open the map" onFinalStepCompleted={() => onEnter()} className="mx-auto max-w-[760px]">
+        <Stepper theme="light" accentColor="#9a6428" indicator="numbers" nextButtonText="Next day" backButtonText="Back" completeButtonText="Open the map" onFinalStepCompleted={() => onEnter()} className="mx-auto max-w-[760px]">
           {ITINERARY.map((d) => (
             <React.Fragment key={d.day}><Step>
               <p className="font-mono text-[11px] uppercase tracking-wider text-sage">{d.day}</p>

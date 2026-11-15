@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useId } from 'react';
 import { SearchResult, OSMMapData } from '../../types';
 import { SearchIndex } from '../../search/SearchIndex';
-import { Search, MapPin, Hospital, Utensils, Hotel, ShoppingBag, Landmark, Navigation, Plane, TreePine, Building2, X } from 'lucide-react';
+import { Search, MapPin, Hospital, Utensils, Hotel, ShoppingBag, Landmark, Train, Plane, TreePine, Building2, GraduationCap, X, Navigation, Loader2 } from 'lucide-react';
 
 interface SearchUIProps {
   mapData: OSMMapData;
@@ -9,142 +9,136 @@ interface SearchUIProps {
   onSetDestinationWaypoint?: (dest: { x: number; z: number; name: string }) => void;
 }
 
-const getCategoryIcon = (category: string) => {
-  const cat = category.toLowerCase();
-  if (cat.includes('hospital') || cat.includes('medical') || cat.includes('health')) return <Hospital className="w-4 h-4 text-emerald-400" />;
-  if (cat.includes('restaurant') || cat.includes('food') || cat.includes('cafe') || cat.includes('bakery')) return <Utensils className="w-4 h-4 text-orange-400" />;
-  if (cat.includes('hotel') || cat.includes('lodging') || cat.includes('resort')) return <Hotel className="w-4 h-4 text-indigo-400" />;
-  if (cat.includes('shopping') || cat.includes('mall') || cat.includes('store') || cat.includes('retail')) return <ShoppingBag className="w-4 h-4 text-amber-400" />;
-  if (cat.includes('landmark') || cat.includes('historic') || cat.includes('monument') || cat.includes('museum')) return <Landmark className="w-4 h-4 text-yellow-400" />;
-  if (cat.includes('station') || cat.includes('bus') || cat.includes('railway') || cat.includes('train')) return <Navigation className="w-4 h-4 text-sky-400" />;
-  if (cat.includes('airport') || cat.includes('flight')) return <Plane className="w-4 h-4 text-cyan-400" />;
-  if (cat.includes('park') || cat.includes('green') || cat.includes('garden') || cat.includes('forest')) return <TreePine className="w-4 h-4 text-green-400" />;
-  if (cat.includes('government') || cat.includes('political') || cat.includes('office') || cat.includes('university') || cat.includes('school')) return <Building2 className="w-4 h-4 text-rose-400" />;
-  return <MapPin className="w-4 h-4 text-slate-400" />;
+/**
+ * Overture place types are noisy (Charbagh station is tagged `beauty_salon`), so
+ * raw categories are never shown. Each type is folded into a plain-English kind,
+ * and anything unrecognised is just "Place".
+ */
+const KINDS: [RegExp, string, React.ElementType][] = [
+  [/hospital|clinic|medical|health|doctor|pharma/, 'Health', Hospital],
+  [/restaurant|food|cafe|bakery|sweet|dhaba|eat/, 'Food', Utensils],
+  [/hotel|lodg|resort|guest/, 'Stay', Hotel],
+  [/mall|shop|store|market|retail/, 'Shopping', ShoppingBag],
+  [/landmark|historic|monument|museum|memorial|mosque|temple|church|imambara/, 'Landmark', Landmark],
+  [/station|railway|train|bus|metro/, 'Transport', Train],
+  [/airport/, 'Airport', Plane],
+  [/park|garden|green|forest|zoo/, 'Park', TreePine],
+  [/school|college|university|institute/, 'Education', GraduationCap],
+  [/government|office|court|assembly|police|fire/, 'Civic', Building2],
+  [/^road$/, 'Road', Navigation],
+];
+const kindOf = (category: string, name: string): [string, React.ElementType] => {
+  const n = name.toLowerCase();
+  // the name is often more reliable than the type
+  if (/station|junction/.test(n)) return ['Transport', Train];
+  if (/airport/.test(n)) return ['Airport', Plane];
+  if (/hospital|medical/.test(n)) return ['Health', Hospital];
+  const c = category.toLowerCase();
+  for (const [re, label, Icon] of KINDS) if (re.test(c)) return [label, Icon];
+  return ['Place', MapPin];
 };
 
 export const SearchUI: React.FC<SearchUIProps> = ({ mapData, onSelectResult, onSetDestinationWaypoint }) => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const searchIndexRef = useRef<SearchIndex | null>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [active, setActive] = useState(0);
+  const indexRef = useRef<SearchIndex | null>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const listId = useId();
 
-  // Initialize SearchIndex
+  // The index parses a 7 MB file; results wait for it instead of silently coming back empty.
   useEffect(() => {
+    let live = true;
     const index = new SearchIndex();
-    index.initialize();
-    searchIndexRef.current = index;
+    indexRef.current = index;
+    index.initialize().then(() => { if (live) setReady(true); });
+    return () => { live = false; };
   }, []);
 
-  // Handle Search Input Change
   useEffect(() => {
-    if (!searchIndexRef.current || !query.trim()) {
-      setResults([]);
-      return;
-    }
-    const found = searchIndexRef.current.search(query, mapData);
-    setResults(found);
-  }, [query, mapData]);
+    const q = query.trim();
+    if (!indexRef.current || !q || !ready) { setResults([]); return; }
+    const t = window.setTimeout(() => { setResults(indexRef.current!.search(q, mapData)); setActive(0); }, 90);
+    return () => window.clearTimeout(t);
+  }, [query, mapData, ready]);
 
-  // Close dropdown on click outside
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setShowDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    const onDown = (e: MouseEvent) => { if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
   }, []);
 
-  const handleSelect = (result: SearchResult) => {
-    onSelectResult(result);
-    setQuery(result.name);
-    setShowDropdown(false);
-  };
+  const pick = (r: SearchResult) => { onSelectResult(r); setQuery(r.name); setOpen(false); (document.activeElement as HTMLElement | null)?.blur(); };
 
-  const handleClear = () => {
-    setQuery('');
-    setResults([]);
-    setShowDropdown(false);
-  };
+  const showList = open && query.trim().length > 0;
 
   return (
-    <div className="relative w-full z-30" ref={dropdownRef}>
-      {/* Search Input Box */}
-      <div className="flex items-center gap-2.5 bg-slate-900/80 border border-slate-700/60 backdrop-blur-xl rounded-2xl p-2.5 shadow-2xl transition-all duration-300 focus-within:border-amber-500/50 focus-within:shadow-[0_0_20px_rgba(245,158,11,0.15)]">
-        <Search className="w-4 h-4 text-slate-400 ml-1 flex-shrink-0" />
+    <div ref={boxRef} className="w-full">
+      <div className="glass-panel flex items-center gap-2.5 rounded-2xl px-3.5 py-2.5 transition-shadow focus-within:shadow-[0_0_0_1px_rgba(216,182,106,.55),0_18px_50px_-18px_rgba(0,0,0,.65)]">
+        <Search className="h-4 w-4 flex-shrink-0 text-paper/50" />
         <input
-          type="text"
-          placeholder="Search Lucknow landmarks, roads, places..."
+          type="search"
+          role="combobox"
+          aria-expanded={showList}
+          aria-controls={listId}
+          aria-activedescendant={showList && results[active] ? `${listId}-${active}` : undefined}
+          placeholder="Search places, roads, landmarks"
           value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setShowDropdown(true);
+          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={(e) => {
+            if (!showList || results.length === 0) { if (e.key === 'Escape') setOpen(false); return; }
+            if (e.key === 'ArrowDown') { e.preventDefault(); setActive((i) => (i + 1) % results.length); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((i) => (i - 1 + results.length) % results.length); }
+            else if (e.key === 'Enter') { e.preventDefault(); pick(results[active]); }
+            else if (e.key === 'Escape') setOpen(false);
           }}
-          onFocus={() => setShowDropdown(true)}
-          className="w-full bg-transparent border-none outline-none text-white text-xs font-medium placeholder-slate-500"
+          className="w-full min-w-0 border-none bg-transparent text-[13px] font-medium text-paper outline-none placeholder:text-paper/40 [&::-webkit-search-cancel-button]:hidden"
         />
         {query && (
-          <button
-            onClick={handleClear}
-            className="p-1 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors flex-shrink-0"
-          >
-            <X className="w-3.5 h-3.5" />
+          <button onClick={() => { setQuery(''); setResults([]); }} aria-label="Clear search" className="flex-shrink-0 rounded-lg p-1 text-paper/50 hover:bg-white/10 hover:text-paper">
+            <X className="h-3.5 w-3.5" />
           </button>
         )}
       </div>
 
-      {/* Autocomplete Dropdown List */}
-      {showDropdown && results.length > 0 && (
-        <div className="absolute top-[105%] left-0 w-full bg-slate-900/95 border border-slate-700/60 backdrop-blur-2xl rounded-2xl shadow-3xl overflow-hidden mt-1 max-h-[300px] overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="p-1.5 space-y-0.5">
-            {results.map((result) => (
-              <div
-                key={result.id}
-                className="w-full flex items-center justify-between p-2 rounded-xl hover:bg-slate-800/80 transition-all duration-200 group"
-              >
-                <button
-                  onClick={() => handleSelect(result)}
-                  className="flex items-start gap-3 min-w-0 flex-1 text-left"
-                >
-                  <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0 group-hover:bg-slate-700 transition-colors">
-                    {getCategoryIcon(result.category)}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h4 className="text-xs font-bold text-white group-hover:text-amber-300 transition-colors truncate">
-                      {result.name}
-                    </h4>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider bg-slate-800/50 px-1.5 py-0.5 rounded border border-slate-700/30">
-                        {result.category}
+      {/* In normal flow, not absolutely positioned: the left column scrolls, and an absolute list was being clipped out of sight. */}
+      {showList && (
+        <div className="glass-panel mt-2 overflow-hidden rounded-2xl">
+          {!ready ? (
+            <p className="flex items-center gap-2 px-4 py-3.5 text-[12.5px] text-paper/60"><Loader2 className="h-3.5 w-3.5 animate-spin" />Loading 48,000 places…</p>
+          ) : results.length === 0 ? (
+            <p className="px-4 py-3.5 text-[12.5px] leading-[1.5] text-paper/60">Nothing called “{query.trim()}”. Try a landmark like Rumi Darwaza, or a road like Shaheed Path.</p>
+          ) : (
+            <ul id={listId} role="listbox" className="max-h-[320px] overflow-y-auto p-1.5 no-scrollbar">
+              {results.map((r, i) => {
+                const [kind, Icon] = kindOf(r.category, r.name);
+                return (
+                  <li key={r.id} id={`${listId}-${i}`} role="option" aria-selected={i === active} onMouseEnter={() => setActive(i)}
+                    className={`group flex items-center gap-1 rounded-xl ${i === active ? 'bg-white/[0.08]' : ''}`}>
+                    <button onClick={() => pick(r)} className="flex min-w-0 flex-1 items-center gap-3 px-2.5 py-2 text-left">
+                      <span className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-lg bg-white/[0.07]"><Icon className="h-4 w-4 text-[#e0a55a]" strokeWidth={1.7} /></span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-[13px] font-medium text-paper">{r.name}</span>
+                        <span className="block text-[11px] text-paper/45">{kind}</span>
                       </span>
-                      <span className="text-[10px] text-slate-400 truncate">
-                        Lat {result.latitude.toFixed(4)}° • Lon {result.longitude.toFixed(4)}°
-                      </span>
-                    </div>
-                  </div>
-                </button>
-
-                {onSetDestinationWaypoint && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSetDestinationWaypoint({ x: result.x, z: result.z, name: result.name });
-                      setShowDropdown(false);
-                    }}
-                    title="Set as GTA GPS Waypoint"
-                    className="p-2 ml-1.5 hover:bg-cyan-500/20 text-slate-400 hover:text-cyan-400 rounded-xl transition-all flex items-center gap-1 text-[10px] font-bold"
-                  >
-                    <Navigation className="w-3.5 h-3.5 fill-current" />
-                    <span className="hidden sm:inline">GPS</span>
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
+                    </button>
+                    {onSetDestinationWaypoint && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onSetDestinationWaypoint({ x: r.x, z: r.z, name: r.name }); setOpen(false); }}
+                        title={`Route to ${r.name}`} aria-label={`Route to ${r.name}`}
+                        className="mr-1.5 flex-shrink-0 rounded-lg px-2 py-1.5 text-[11px] font-semibold text-paper/55 opacity-0 transition-opacity hover:bg-white/10 hover:text-paper group-hover:opacity-100 focus:opacity-100"
+                      >
+                        Route
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
       )}
     </div>

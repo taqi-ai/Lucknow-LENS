@@ -51,10 +51,9 @@ const LIVE: { key: keyof LayerState['live']; name: string; note: string; Icon: R
   { key: 'weather', name: 'Weather', note: 'Open-Meteo', Icon: CloudSun },
   { key: 'aqi', name: 'Air quality', note: 'Open-Meteo', Icon: Wind },
   { key: 'flights', name: 'Aircraft', note: 'Live ADS-B', Icon: Plane },
-  { key: 'railways', name: 'Trains', note: 'Needs a provider key', Icon: Train },
-  { key: 'traffic', name: 'Traffic', note: 'Needs a provider key', Icon: TrafficCone },
-  { key: 'news', name: 'News', note: 'Headlines about Lucknow', Icon: Newspaper },
-  { key: 'cameras', name: 'Cameras', note: 'Public camera points', Icon: Video },
+  { key: 'railways', name: 'Trains', note: 'Needs a RailRadar key', Icon: Train },
+  { key: 'traffic', name: 'Traffic', note: 'Needs a free TomTom key', Icon: TrafficCone },
+  { key: 'news', name: 'News', note: 'Lucknow headlines, HT and TOI', Icon: Newspaper },
 ];
 
 const Row: React.FC<{ Icon: React.ElementType; name: string; note?: string; on: boolean; onChange: () => void }> = ({ Icon, name, note, on, onChange }) => (

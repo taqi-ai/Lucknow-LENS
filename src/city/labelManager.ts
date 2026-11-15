@@ -173,6 +173,95 @@ function createTextSprite(style: SpriteStyle): THREE.Sprite {
   return sprite;
 }
 
+// ─── Lucknow label style ──────────────────────────────────────────────────────
+//
+// Landmarks get a small plaque: a cusped Awadhi arch glyph in zardozi gold and
+// the name set in Rozha One. Everything else is bare type on a soft halo, the
+// way good printed maps do it, so the city is not buried under pills.
+
+export const LABEL_FONTS = { display: '"Rozha One", Georgia, serif', text: 'Mukta, "Hanken Grotesk", system-ui, sans-serif' };
+
+type LabelKind = 'landmark' | 'major' | 'place' | 'road' | 'roadMajor';
+
+function drawArch(ctx: CanvasRenderingContext2D, x: number, y: number, h: number, color: string) {
+  // a three-lobed (cusped) arch on two slim piers
+  const w = h * 0.72, r = w / 2;
+  ctx.save();
+  ctx.strokeStyle = color; ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x - r, y + h / 2);
+  ctx.lineTo(x - r, y - h * 0.02);
+  ctx.quadraticCurveTo(x - r, y - h * 0.32, x - r * 0.42, y - h * 0.3);
+  ctx.quadraticCurveTo(x - r * 0.38, y - h * 0.52, x, y - h / 2);
+  ctx.quadraticCurveTo(x + r * 0.38, y - h * 0.52, x + r * 0.42, y - h * 0.3);
+  ctx.quadraticCurveTo(x + r, y - h * 0.32, x + r, y - h * 0.02);
+  ctx.lineTo(x + r, y + h / 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function createLabelSprite(text: string, kind: LabelKind, night: boolean): THREE.Sprite {
+  const dpr = 2;
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d')!;
+  const plaque = kind === 'landmark';
+  const size = plaque ? 15 : kind === 'major' ? 13 : kind === 'place' ? 12 : kind === 'roadMajor' ? 11 : 10;
+  const font = plaque ? `400 ${size}px ${LABEL_FONTS.display}` : kind.startsWith('road') ? `500 ${size}px ${LABEL_FONTS.text}` : `${kind === 'major' ? 700 : 600} ${size}px ${LABEL_FONTS.text}`;
+  const label = kind.startsWith('road') ? text.toUpperCase() : text;
+  const tracking = kind.startsWith('road') ? 1.2 : 0;
+  ctx.font = font;
+  if ('letterSpacing' in ctx) (ctx as unknown as { letterSpacing: string }).letterSpacing = `${tracking}px`;
+  const tw = ctx.measureText(label).width;
+
+  const padH = plaque ? 11 : 6, padV = plaque ? 7 : 5;
+  const glyph = plaque ? 16 : kind === 'major' ? 9 : 0;
+  const W = Math.ceil(tw + padH * 2 + glyph + 2), H = Math.ceil(size * 1.25 + padV * 2);
+  canvas.width = W * dpr; canvas.height = H * dpr;
+  ctx.scale(dpr, dpr);
+  ctx.font = font;
+  if ('letterSpacing' in ctx) (ctx as unknown as { letterSpacing: string }).letterSpacing = `${tracking}px`;
+  ctx.textBaseline = 'middle';
+
+  const gold = night ? '#e2c27a' : '#a87b24';
+  const ink = night ? '#f4efe4' : '#1d2a26';
+  const halo = night ? 'rgba(8,12,18,0.92)' : 'rgba(250,247,240,0.95)';
+
+  if (plaque) {
+    const r = H / 2;
+    ctx.shadowColor = 'rgba(0,0,0,0.28)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 2;
+    ctx.fillStyle = night ? 'rgba(18,24,22,0.94)' : 'rgba(252,249,242,0.97)';
+    ctx.beginPath(); ctx.roundRect(1, 1, W - 2, H - 2, r); ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.strokeStyle = night ? 'rgba(226,194,122,0.55)' : 'rgba(168,123,36,0.55)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(3.5, 3.5, W - 7, H - 7, r - 2.5); ctx.stroke();
+    drawArch(ctx, padH + 5, H / 2 + 0.5, H * 0.5, gold);
+    ctx.fillStyle = ink;
+    ctx.fillText(label, padH + glyph, H / 2 + 1);
+  } else {
+    const x = 2 + padH + glyph;
+    if (kind === 'major') {
+      // a small gold lozenge marks institutions and districts
+      ctx.save(); ctx.translate(padH + 3, H / 2); ctx.rotate(Math.PI / 4);
+      ctx.fillStyle = gold; ctx.fillRect(-2.6, -2.6, 5.2, 5.2); ctx.restore();
+    }
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = halo; ctx.lineWidth = kind.startsWith('road') ? 3 : 3.6;
+    ctx.strokeText(label, x, H / 2 + 1);
+    ctx.fillStyle = kind.startsWith('road') ? (night ? 'rgba(214,222,234,0.78)' : 'rgba(58,70,66,0.82)') : kind === 'place' ? (night ? 'rgba(244,239,228,0.86)' : 'rgba(29,42,38,0.86)') : ink;
+    ctx.fillText(label, x, H / 2 + 1);
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.generateMipmaps = true;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, sizeAttenuation: false }));
+  (sprite as any).__canvasW = W;
+  (sprite as any).__canvasH = H;
+  return sprite;
+}
+
 // ─── LabelManager ─────────────────────────────────────────────────────────────
 
 export class LabelManager {
@@ -222,6 +311,14 @@ export class LabelManager {
         loadJSON<RoadLabel[]>('/overture_tiles_full/road_labels.json'),
       ]);
 
+      // Canvas text uses whatever font is loaded at draw time, so wait for the label faces (briefly).
+      if (typeof document !== 'undefined' && document.fonts?.load) {
+        await Promise.race([
+          Promise.all([document.fonts.load(`15px ${LABEL_FONTS.display}`), document.fonts.load(`600 12px ${LABEL_FONTS.text}`), document.fonts.load(`700 13px ${LABEL_FONTS.text}`)]),
+          new Promise((r) => setTimeout(r, 2500)),
+        ]).catch(() => undefined);
+        this.clearCache();
+      }
       this.allPlaces = places.slice().sort((a, b) => b.importance - a.importance);
       this.allRoads = roads;
       this.loaded = true;
@@ -242,6 +339,7 @@ export class LabelManager {
     if (this.isNight === night) return;
     this.isNight = night;
     this.clearCache();
+    this.lastCamPos.set(1e9, 0, 0); // redraw in the new palette without waiting for the camera to move
   }
 
   public setViewport(w: number, h: number): void {
@@ -418,99 +516,16 @@ export class LabelManager {
     return sprite;
   }
 
-  private makePlaceSprite(p: Candidate, cfg: LODConfig): THREE.Sprite {
-    const isLandmark = (p as PlaceLabel).type === 'landmark' || 
-                       (p as PlaceLabel).type === 'monument' || 
-                       (p as PlaceLabel).type === 'landmark_and_historical_building' ||
-                       p.importance >= 9;
-    const highImp = isLandmark || p.importance >= 8;
-    const midImp  = p.importance >= 6;
-
-    let bgColor: string;
-    let textColor: string;
-    let borderColor: string | undefined;
-    let badgeColor: string | undefined;
-
-    if (this.isNight) {
-      if (isLandmark) {
-        bgColor = 'rgba(30, 24, 16, 0.9)';
-        textColor = '#f6d9a8';
-        borderColor = 'rgba(255, 235, 180, 0.85)';
-        badgeColor = '#b45309';
-      } else if (highImp) {
-        bgColor = 'rgba(15, 23, 42, 0.88)';
-        textColor = '#f8fafc';
-        borderColor = 'rgba(255, 255, 255, 0.25)';
-        badgeColor = '#38bdf8';
-      } else {
-        bgColor = midImp ? 'rgba(15, 23, 42, 0.78)' : 'rgba(10, 14, 22, 0.70)';
-        textColor = midImp ? '#cbd5e1' : '#94a3b8';
-        borderColor = 'rgba(255, 255, 255, 0.12)';
-      }
-    } else {
-      if (isLandmark) {
-        bgColor = 'rgba(255, 249, 238, 0.96)';
-        textColor = '#3a2a16';
-        borderColor = 'rgba(176, 120, 60, 0.45)';
-        badgeColor = '#c0762f';
-      } else if (highImp) {
-        bgColor = 'rgba(255, 255, 255, 0.94)';
-        textColor = '#0f172a';
-        borderColor = 'rgba(0, 0, 0, 0.16)';
-        badgeColor = '#0284c7';
-      } else {
-        bgColor = midImp ? 'rgba(255, 255, 255, 0.86)' : 'rgba(255, 255, 255, 0.75)';
-        textColor = midImp ? '#1e293b' : '#475569';
-        borderColor = 'rgba(0, 0, 0, 0.08)';
-      }
-    }
-
-    const fontSize = isLandmark ? 13 : highImp ? 12 : midImp ? 11 : 10;
-    const bold = highImp;
-
-    const sprite = createTextSprite({
-      text: p.name,
-      textColor,
-      bgColor,
-      borderColor,
-      badgeColor,
-      fontSize,
-      bold,
-      paddingH: isLandmark ? 11 : 9,
-      paddingV: isLandmark ? 6 : 4,
-    });
+  private makePlaceSprite(p: Candidate, _cfg: LODConfig): THREE.Sprite {
+    const isLandmark = LANDMARK_TYPES.has((p as PlaceLabel).type) || (p.importance >= 10 && !/mall|palassio|plaza|hotel|bus|terminal/i.test(p.name));
+    const kind: LabelKind = isLandmark ? 'landmark' : p.importance >= 7 ? 'major' : 'place';
+    const sprite = createLabelSprite(p.name, kind, this.isNight);
     sprite.renderOrder = isLandmark ? 1000 : 999;
     return sprite;
   }
 
-  private makeRoadSprite(r: Candidate, cfg: LODConfig): THREE.Sprite {
-    const highImp = r.importance >= 8;
-
-    // Roads read as unobtrusive route markers, never as chips competing with places.
-    const bgColor = this.isNight
-      ? 'rgba(15, 23, 42, 0.65)'
-      : 'rgba(255, 255, 255, 0.72)';
-
-    const textColor = this.isNight
-      ? (highImp ? '#93c5fd' : '#94a3b8')
-      : (highImp ? '#0369a1' : '#475569');
-
-    const borderColor = this.isNight
-      ? 'rgba(148, 163, 184, 0.2)'
-      : 'rgba(0, 0, 0, 0.08)';
-
-    const fontSize = highImp ? 12 : 10;
-
-    const sprite = createTextSprite({
-      text: r.name,
-      textColor,
-      bgColor,
-      borderColor,
-      fontSize,
-      bold: highImp,
-      paddingH: 8,
-      paddingV: 3,
-    });
+  private makeRoadSprite(r: Candidate, _cfg: LODConfig): THREE.Sprite {
+    const sprite = createLabelSprite(r.name, r.importance >= 8 ? 'roadMajor' : 'road', this.isNight);
     sprite.renderOrder = 998;
     return sprite;
   }

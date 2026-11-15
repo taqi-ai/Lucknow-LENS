@@ -6,6 +6,7 @@ import { CameraWidget } from './CameraWidget';
 import { SearchUI } from '../features/SearchUI';
 import type { LayerState } from '../features/LayerControl';
 import { MapControls } from './MapControls';
+import { DayNightToggle } from './DayNight';
 import type { ThemeId } from './themes';
 import type { LabelSettings } from '../../city/labelManager';
 import { InfoPanel } from '../features/InfoPanel';
@@ -13,7 +14,7 @@ import { LiveDataPanel } from '../features/LiveDataPanel';
 import { NavigationHUD } from '../features/NavigationHUD';
 import { TerralytMark } from './TerralytMark';
 import type { NavigationRoute, NavigatorState, GPSTheme, RouteWaypoint } from '../../navigation/types';
-import { Eye } from 'lucide-react';
+import { Eye, Search as SearchIcon, PanelLeftOpen, PanelLeftClose } from 'lucide-react';
 import { CameraController } from '../../city/cameraController';
 
 interface CityUIProps {
@@ -26,6 +27,8 @@ interface CityUIProps {
   onLabelSettings: (s: LabelSettings) => void;
   theme: ThemeId;
   onTheme: (t: ThemeId) => void;
+  night: boolean;
+  onNight: (n: boolean) => void;
   windowView: boolean;
   onWindowView: (v: boolean) => void;
   presentationMode: boolean;
@@ -71,6 +74,8 @@ export const CityUI: React.FC<CityUIProps> = ({
   onLabelSettings,
   theme,
   onTheme,
+  night,
+  onNight,
   windowView,
   onWindowView,
   presentationMode,
@@ -105,6 +110,10 @@ export const CityUI: React.FC<CityUIProps> = ({
 }) => {
   const [isReportOpen, setIsReportOpen] = useState(false);
 
+  // Panels start minimised (icons only). Expanding is one click and is remembered.
+  const [minimal, setMinimal] = useState<boolean>(() => { try { return localStorage.getItem('terralyt.map.ui.expanded') !== '1'; } catch { return true; } });
+  const toggleMinimal = () => setMinimal((m) => { try { localStorage.setItem('terralyt.map.ui.expanded', m ? '1' : '0'); } catch { /* storage blocked */ } return !m; });
+  const [searchOpen, setSearchOpen] = useState(false);
   const [compact, setCompact] = useState(
     () => typeof window !== 'undefined' && window.innerWidth < 640,
   );
@@ -136,14 +145,13 @@ export const CityUI: React.FC<CityUIProps> = ({
 
   if (mapOnly) {
     return (
-      <div className="absolute bottom-4 right-4 z-30 pointer-events-auto">
+      <div className="pointer-events-none absolute inset-x-0 bottom-5 z-30 flex justify-center">
         <button
           onClick={onToggleMapOnly}
-          className="w-11 h-11 rounded-full bg-slate-900/55 hover:bg-slate-900/85 backdrop-blur-md border border-white/10 text-slate-200 flex items-center justify-center shadow-2xl transition-all"
-          title="Show panels (Esc)"
-          aria-label="Show panels"
+          className="map-only-pill pointer-events-auto flex items-center gap-2.5 rounded-full border border-white/15 bg-[#0c161d]/80 py-2.5 pl-4 pr-2.5 text-[13px] font-semibold text-[#eae9df] shadow-[0_14px_40px_-12px_rgba(0,0,0,.7)] backdrop-blur-xl hover:bg-[#0c161d]"
         >
-          <Eye className="w-4 h-4" />
+          <Eye className="h-4 w-4 text-[#e0a55a]" /> Show controls
+          {!compact && <kbd className="rounded-md bg-white/10 px-1.5 py-0.5 font-mono text-[10.5px] text-white/70">M</kbd>}
         </button>
       </div>
     );
@@ -165,14 +173,37 @@ export const CityUI: React.FC<CityUIProps> = ({
         />
       )}
 
-      {/* Left: where am I, and find something */}
+      {/* Left: where am I, and find something. Minimised: two icons. */}
+      {minimal ? (
+        <div className="absolute left-3 top-3 z-20 flex flex-col gap-2">
+          <button onClick={toggleMinimal} title="Show panels" aria-label="Show panels" className="glass-panel grid h-11 w-11 place-items-center rounded-full text-paper/80 hover:text-paper">
+            <PanelLeftOpen className="h-[18px] w-[18px]" strokeWidth={1.7} />
+          </button>
+          <button onClick={() => setSearchOpen((v) => !v)} title="Search" aria-label="Search" aria-expanded={searchOpen} className={`glass-panel grid h-11 w-11 place-items-center rounded-full transition-colors ${searchOpen ? 'text-sand' : 'text-paper/80 hover:text-paper'}`}>
+            <SearchIcon className="h-[18px] w-[18px]" strokeWidth={1.7} />
+          </button>
+          {searchOpen && (
+            <div className={`${compact ? 'w-[calc(100vw-5.5rem)]' : 'w-[300px]'} -mt-[52px] ml-[52px]`}>
+              <SearchUI mapData={mapData} onSelectResult={(r) => { handleSearchResultClick(r); setSearchOpen(false); }} onSetDestinationWaypoint={onSetDestinationWaypoint} />
+            </div>
+          )}
+          {selectedEntity && (
+            <div className={`${compact ? 'w-[calc(100vw-1.5rem)]' : 'w-[300px]'} max-h-[60vh] overflow-y-auto no-scrollbar`}>
+              <InfoPanel entity={selectedEntity} onClose={() => onSelectEntity(null)} onSetDestinationWaypoint={onSetDestinationWaypoint} />
+            </div>
+          )}
+        </div>
+      ) : (
       <div className={`absolute left-3 top-3 z-20 pointer-events-none flex flex-col gap-2.5 overflow-y-auto no-scrollbar ${compact ? 'right-[68px] max-h-[55vh]' : 'w-[300px] max-h-[calc(100vh-1.5rem)]'}`}>
         <div className="pointer-events-auto glass-panel flex items-center gap-3 rounded-2xl px-3.5 py-2.5">
           <TerralytMark className="h-9 w-9 flex-shrink-0 object-contain" />
-          <div className="min-w-0">
-            <h1 className="font-sans text-[13px] font-bold tracking-[0.12em] text-paper">TERRALYT <span className="text-sand">LUCKNOW</span></h1>
-            <p className="font-mono text-[10.5px] text-paper/45">{mapData.bounds.centerLat.toFixed(3)}° N · {mapData.bounds.centerLon.toFixed(3)}° E</p>
+          <div className="min-w-0 flex-1">
+            <h1 className="font-display text-[1.15rem] leading-none text-paper">Terralyt <span className="font-deva text-[0.9rem] text-sand">लखनऊ</span></h1>
+            <p className="mt-1 text-[11px] text-paper/45">{mapData.bounds.centerLat.toFixed(3)}° N, {mapData.bounds.centerLon.toFixed(3)}° E</p>
           </div>
+          <button onClick={toggleMinimal} title="Minimise panels" aria-label="Minimise panels" className="grid h-8 w-8 place-items-center rounded-full text-paper/60 hover:bg-white/10 hover:text-paper">
+            <PanelLeftClose className="h-4 w-4" strokeWidth={1.7} />
+          </button>
         </div>
         <div className="pointer-events-auto">
           <SearchUI mapData={mapData} onSelectResult={handleSearchResultClick} onSetDestinationWaypoint={onSetDestinationWaypoint} />
@@ -183,6 +214,7 @@ export const CityUI: React.FC<CityUIProps> = ({
           </div>
         )}
       </div>
+      )}
 
       {/* Bottom-left: only the live feeds you switched on */}
       <div className={`absolute z-20 pointer-events-none flex flex-col gap-1.5 ${compact ? 'bottom-[88px] left-3' : 'bottom-3 left-3'}`}>
@@ -204,6 +236,9 @@ export const CityUI: React.FC<CityUIProps> = ({
       </div>
 
       {!presentationMode && (
+        <div className={`absolute z-30 ${compact ? 'right-3 top-[64px]' : 'right-3 top-3'}`}><DayNightToggle night={night} onChange={onNight} compact={compact} /></div>
+      )}
+      {!presentationMode && (
         <MapControls
           compact={compact}
           layers={layers}
@@ -214,6 +249,8 @@ export const CityUI: React.FC<CityUIProps> = ({
           onLabelSettings={onLabelSettings}
           theme={theme}
           onTheme={onTheme}
+          night={night}
+          cameraPanel={<CameraWidget controller={cameraController} embedded />}
           windowView={windowView}
           onWindowView={onWindowView}
           onCameraSignal={onCameraSignal}
@@ -245,7 +282,6 @@ export const CityUI: React.FC<CityUIProps> = ({
         </div>
       )}
 
-      {!compact && <CameraWidget controller={cameraController} />}
 
       <ReportModal isOpen={isReportOpen} onClose={() => setIsReportOpen(false)} mapData={mapData} renderStats={renderStats} />
     </>
@@ -253,8 +289,8 @@ export const CityUI: React.FC<CityUIProps> = ({
 };
 
 const Chip: React.FC<{ status: 'ok' | 'stale' | 'unavailable'; children: React.ReactNode }> = ({ status, children }) => (
-  <div className="glass-panel flex w-fit items-center gap-2 rounded-xl px-3 py-1.5 text-[11.5px] text-paper/80">
-    <span className={`h-1.5 w-1.5 rounded-full ${status === 'ok' ? 'bg-emerald-400' : status === 'stale' ? 'bg-amber-400' : 'bg-rose-500'}`} />
+  <div className="glass-panel flex w-fit max-w-[70vw] items-center gap-2 truncate rounded-full px-3 py-1.5 text-[11.5px] text-paper/80">
+    <span className={`h-1.5 w-1.5 rounded-full ${status === 'ok' ? 'bg-amber-300' : status === 'stale' ? 'bg-amber-400' : 'bg-rose-500'}`} />
     {children}
   </div>
 );

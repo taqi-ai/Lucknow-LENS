@@ -302,9 +302,11 @@ function baraImambara(k: Kit, g: Grounds, s: LandmarkSite): void {
   // Grounds: base paving, three courts, the circular forecourt, gardens.
   g.color(C.paveSand).rect(-116, 116, -260, 46, 0.08);
   g.color(C.paveGrey).rect(-60, 60, -258, -218, 0.1);                        // outer forecourt
-  g.color(C.lawn).disc(0, -238, 15, 0.13, 32); g.color(C.paveSand).disc(0, -238, 6, 0.15, 24);
-  g.color(C.water).disc(0, -238, 3.5, 0.17, 20);
-  for (const su of [-1, 1]) { g.color(C.lawn).rect(su * 22, su * 52, -256, -224, 0.12); }
+  // Circular lawn court with a paved ring path and a central fountain, as in the reference
+  // satellite view of the outer forecourt (ring path r 24-30, lawn r 24, fountain r 4).
+  g.color(C.path).disc(0, -236, 31, 0.12, 48); g.color(C.lawn).disc(0, -236, 25, 0.14, 48);
+  g.color(C.paveSand).disc(0, -236, 5.5, 0.15, 24); g.color(C.water).disc(0, -236, 3.5, 0.17, 20);
+  for (let i = 0; i < 24; i++) { const a = (i / 24) * Math.PI * 2; g.tree(Math.cos(a) * 27.5, -236 + Math.sin(a) * 27.5, 4.2, true, 300 + i); }
   g.color(C.lawn).rect(-50, -10, -208, -172, 0.12); g.color(C.lawn).rect(10, 50, -208, -172, 0.12); // second court
   // Main garden (charbagh-style parterres with hedged borders and cross paths).
   for (const [u0, u1] of [[-46, -4], [4, 46]]) for (const [v0, v1] of [[-150, -95], [-88, -32]]) {
@@ -312,9 +314,26 @@ function baraImambara(k: Kit, g: Grounds, s: LandmarkSite): void {
     g.color(C.bed).rect((u0 + u1) / 2 - 3, (u0 + u1) / 2 + 3, (v0 + v1) / 2 - 3, (v0 + v1) / 2 + 3, 0.16);
   }
   g.color(C.path).rect(-4, 4, -158, -24, 0.15); g.color(C.path).rect(-48, 48, -93, -89, 0.15);
+  // Diagonal paths across the garden from the second gateway toward the corners.
+  for (const sg of [-1, 1]) for (let t = 0; t < 60; t += 2) {
+    g.color(C.path).disc(sg * (4 + t * 0.62), -165 + t * 1.0, 1.7, 0.16, 8);
+  }
+  // Open dusty courtyard north of the Asafi Masjid (the large bare forecourt in the photograph).
+  g.color(0xb9a583).rect(-112, -52, -200, -128, 0.1);
+  g.color(0xa89572).rect(-112, -52, -200, -196, 0.11);
   let seed = 1;
   for (let v = -150; v <= -32; v += 9) { g.tree(-49, v, 9, true, seed++); g.tree(49, v, 9, true, seed++); }
+  // East side of the compound is wooded in the photograph: a dense grove along the east wall.
+  for (let v = -150; v <= 20; v += 8) for (let u = 80; u <= 108; u += 9) g.tree(u + ((v * 7) % 5), v + ((u * 3) % 4), 8 + ((u + v) % 4), false, seed++);
   for (let u = -40; u <= 40; u += 10) { g.tree(u, -255, 7, false, seed++); }
+  // Long arcaded galleries with small domed kiosks flank the circular court along the north wall.
+  for (const sg of [-1, 1]) {
+    const u0 = sg > 0 ? 36 : -106, u1 = sg > 0 ? 106 : -36;
+    k.box(u0, u1, 0, 5.5, -262, -250, S.LIME);
+    k.arcade('v1', -250, u0 + 1, u1 - 1, 0.5, 2.2, 3.8, Math.round((u1 - u0) / 5));
+    k.merlons(u0, u1, -262, -250, 5.5);
+    for (let u = u0 + 6; u < u1; u += 14) k.chhatri(u, -256, 2.4, 5.5);
+  }
   // Perimeter walls with openings at the gates.
   const wallH = 6;
   k.box(-116, -114, 0, wallH, -260, 46, S.LIME);
@@ -996,6 +1015,22 @@ function buildAll(k: Kit, g: Grounds): { flag?: WavingFlag } {
       k.cylinder(0, 0, r0 + 0.6, r0 + 0.6, y0 + 5.6, y0 + 6, 8, S.STONE);
     }
     k.merlons(-3.8, 3.8, -3.8, 3.8, 24, S.STONE);
+  }
+  // Husainabad Talab (beside the Picture Gallery): a dry octagonal LAWN, not water, with a stone
+  // surround, three steps and a pale pitch strip, after the satellite reference. (Overture maps it as
+  // a reservoir; that polygon is removed in data/overrides/water_overrides.geojson.)
+  {
+    const oct = (cx: number, cz: number, r: number, rot: number): number[][] => Array.from({ length: 8 }, (_, i) => {
+      const a = rot + (i / 8) * Math.PI * 2 + Math.PI / 8; return [cx + Math.cos(a) * r, cz + Math.sin(a) * r];
+    });
+    const ox = -4253, oz = -2710, rot = 0.25;
+    g.color(0xd2c6b0).polyWorld(oct(ox, oz, 54, rot), 0.12);
+    g.color(0xbfb298).polyWorld(oct(ox, oz, 49, rot), 0.14);
+    g.color(0xd2c6b0).polyWorld(oct(ox, oz, 46, rot), 0.16);
+    g.color(0x5d7a3e).polyWorld(oct(ox, oz, 43, rot), 0.18);
+    const ca = Math.cos(rot), sa = Math.sin(rot);
+    const pr = (u: number, v: number): number[] => [ox + u * ca - v * sa, oz + u * sa + v * ca];
+    g.color(0xc9bc7a).polyWorld([pr(-3, -14), pr(3, -14), pr(3, 14), pr(-3, 14)], 0.2);
   }
   const pg = site('picture_gallery');
   if (pg) ringMonument(k, pg, 11, S.REDSTONE, 67, (kk, hu, hv) => { kk.arcadeAll(-hu, hu, -hv, hv, 0.5, 2.2, 5, 4); kk.merlons(-hu, hu, -hv, hv, 11, S.DOME); });

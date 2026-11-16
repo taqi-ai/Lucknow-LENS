@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { loadBuffer } from '../data/resourceCache';
 import { type RoadClass } from './ribbon';
+import { createRoadMaterial, applyRoadPalette, roadUniforms } from './roadMaterial';
 import { BridgeSystem } from './bridges';
 
 /**
@@ -16,48 +17,6 @@ import { BridgeSystem } from './bridges';
  * roads win the depth test where both exist.
  */
 
-const ROAD_COLORS_DAY: Record<RoadClass, number> = {
-  motorway: 0x16181d, // deep black highway asphalt
-  trunk: 0x1a1c22, // dark trunk asphalt
-  primary: 0x1e2128, // dark primary arterial
-  secondary: 0x242830, // dark secondary road
-  tertiary: 0x2a2e37, // dark tertiary street
-  residential: 0x30353f, // dark neighborhood lane
-  service: 0x363b46, // service lane
-  footway: 0x484e5a, // paved pedestrian walkway
-  railway: 0x222429, // dark rail trackbed
-  flyover: 0x181a20, // dark elevated flyover asphalt
-};
-
-/**
- * Night road hierarchy: deep midnight black asphalt with warm golden sodium
- * streetlight wash along carriageways.
- */
-const ROAD_COLORS_NIGHT: Record<RoadClass, number> = {
-  motorway: 0x0f1115,
-  trunk: 0x121418,
-  primary: 0x14161b,
-  secondary: 0x16181e,
-  tertiary: 0x181b22,
-  residential: 0x1b1e26,
-  service: 0x1e212a,
-  footway: 0x20242e,
-  railway: 0x15161b,
-  flyover: 0x111317,
-};
-
-const ROAD_EMISSIVE_NIGHT: Record<RoadClass, number> = {
-  motorway: 0x7a5b32, // bright sodium luminaire wash
-  trunk: 0x6e522c,
-  primary: 0x624826,
-  secondary: 0x543c1f,
-  tertiary: 0x443018,
-  residential: 0x322210,
-  service: 0x1e140a,
-  footway: 0x0f0b05,
-  railway: 0x1a1d24,
-  flyover: 0x856236,
-};
 
 export class CityOverlay {
   private group = new THREE.Group();
@@ -160,17 +119,14 @@ export class CityOverlay {
       color: 0xa9a396, roughness: 0.88, flatShading: true,
     });
 
-    for (const cls of Object.keys(ROAD_COLORS_DAY) as RoadClass[]) {
-      this.roadMaterials.set(cls, new THREE.MeshStandardMaterial({
-        color: ROAD_COLORS_NIGHT[cls],
-        emissive: ROAD_EMISSIVE_NIGHT[cls],
-        // Wider roads are smoother, better-maintained asphalt.
-        roughness: cls === 'motorway' || cls === 'trunk' || cls === 'flyover' ? 0.62 : 0.86,
-        metalness: cls === 'railway' ? 0.25 : 0.0,
+    for (const cls of ['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'residential', 'service', 'footway', 'railway', 'flyover'] as RoadClass[]) {
+      const mat = createRoadMaterial(cls, {
         polygonOffset: true,
         polygonOffsetFactor: cls === 'flyover' ? -2 : 3,
         polygonOffsetUnits: cls === 'flyover' ? -4 : 6,
-      }));
+      });
+      (mat as unknown as { uniforms: unknown }).uniforms = roadUniforms;
+      this.roadMaterials.set(cls, mat);
     }
 
     // Metalness stays low. A metallic surface with no environment map has nothing
@@ -306,8 +262,13 @@ export class CityOverlay {
         if (sec.name.startsWith('road:')) {
           const cls = sec.name.slice(5) as RoadClass;
           const mesh = this.makeMesh(pos, this.roadMaterials.get(cls)!, 'roads');
+          // Zero UVs until the matching roaduv section arrives (older bakes have none).
+          mesh.geometry.setAttribute('aRoadUV', new THREE.BufferAttribute(new Float32Array((sec.floats / 3) * 2), 2));
           this.roadMeshes.set(cls, mesh);
           this.stats.roadVerts += sec.floats / 3;
+        } else if (sec.name.startsWith('roaduv:')) {
+          const mesh = this.roadMeshes.get(sec.name.slice(7) as RoadClass);
+          if (mesh) mesh.geometry.setAttribute('aRoadUV', new THREE.BufferAttribute(pos, 2));
         } else if (sec.name === 'water') {
           this.waterMesh = this.makeMesh(pos, this.waterMaterial, 'water');
           this.stats.waterVerts = sec.floats / 3;
@@ -445,11 +406,8 @@ export class CityOverlay {
     this.isNight = night;
 
     this.bridges.setNightMode(night);
-    for (const [cls, mat] of this.roadMaterials) {
-      mat.color.setHex(night ? ROAD_COLORS_NIGHT[cls] : ROAD_COLORS_DAY[cls]);
-      mat.emissive.setHex(night ? ROAD_EMISSIVE_NIGHT[cls] : 0x000000);
-      mat.emissiveIntensity = night ? 1 : 0;
-    }
+    for (const [cls, mat] of this.roadMaterials) applyRoadPalette(mat, cls, night);
+    roadUniforms.uRoadNight.value = night ? 1 : 0;
 
     if (night) {
       this.waterMaterial.color.setHex(0x14293d);

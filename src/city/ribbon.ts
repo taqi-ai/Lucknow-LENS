@@ -22,6 +22,13 @@ export interface RibbonOptions {
   minSegment?: number;
   /** Optional vertical offset for elevation */
   elevationOffset?: number;
+  /**
+   * Optional per-vertex (u, v) sink: u = -1 right edge .. +1 left edge, v = metres along
+   * the polyline. Lets the road shader draw lane markings, kerbs and asphalt wear.
+   */
+  uvOut?: number[];
+  /** Starting v, so a feature split across calls keeps continuous dashes. */
+  vStart?: number;
 }
 
 /** Drop duplicate / near-duplicate points — they produce NaN normals. */
@@ -107,8 +114,16 @@ export function appendRibbon(out: number[], points: Pt[], opts: RibbonOptions): 
   const { offX, offZ } = mitredOffsets(pts, half);
 
   let added = 0;
+  const uv = opts.uvOut;
+  let vAcc = opts.vStart ?? 0;
   for (let i = 0; i < n - 1; i++) {
     const p1 = pts[i], p2 = pts[i + 1];
+    if (uv) {
+      const segLen = Math.hypot(p2.x - p1.x, p2.z - p1.z);
+      const v1 = vAcc, v2 = vAcc + segLen;
+      vAcc = v2;
+      uv.push(-1, v1, 1, v1, 1, v2, -1, v1, 1, v2, -1, v2);
+    }
     const y1 = (p1.y ?? baseY) + elevOff;
     const y2 = (p2.y ?? baseY) + elevOff;
 
@@ -159,6 +174,28 @@ export const ROAD_HALF_WIDTH: Record<RoadClass, number> = {
   railway: 2.6,
   flyover: 7.5,
 };
+
+/**
+ * Per-feature carriageway half-width. Overture carries no width, and the tile `width`
+ * field was itself written from the class table (6 m for 133k segments), so it is not
+ * evidence. This keeps the class hierarchy but breaks the uniformity: link roads are
+ * narrower, unclassified/track/living streets are lanes rather than streets, and each
+ * feature gets a deterministic +/-9% variation from its id.
+ */
+export function roadHalfWidth(cls: RoadClass, type?: string, id?: string): number {
+  let h = ROAD_HALF_WIDTH[cls];
+  if (type && type.endsWith('_link')) h *= 0.62;
+  else if (type === 'living_street') h = 2.0;
+  else if (type === 'unclassified' || type === 'unknown' || type === undefined) h = cls === 'residential' ? 2.4 : h;
+  else if (type === 'track') h = 1.7;
+  else if (type === 'path' || type === 'steps') h = 0.8;
+  if (id) {
+    let x = 0;
+    for (let i = 0; i < id.length; i++) x = ((x << 5) - x + id.charCodeAt(i)) | 0;
+    h *= 0.91 + ((Math.abs(x) % 1000) / 1000) * 0.18;
+  }
+  return h;
+}
 
 /** Draw order / elevation, so bigger roads sit visually on top at crossings. */
 export const ROAD_LAYER_Y: Record<RoadClass, number> = {

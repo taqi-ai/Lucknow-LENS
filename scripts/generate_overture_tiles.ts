@@ -151,32 +151,12 @@ async function processStream(filePath: string, type: string) {
         stats.buildingsProcessed++;
         if (coords.length < 3) continue;
         const points = coords.map((c: number[]) => project(c[0], c[1]));
-        const bldId = props.id || `bld-${Math.random()}`;
-        const tile = getTile(points[0].x, points[0].z);
-        
-        // Use the first coord for density tracking
+        // Buildings are NOT generated here any more. The old pass gave every building a
+        // Math.random() id and a synthetic height from the id hash (12-26 m). The building
+        // stream is owned by scripts/build_buildings.ts (real ids, parts, holes, height
+        // provenance); this generator only tracks density for the overview.
+        void points;
         trackDensity(coords[0][0], coords[0][1]);
-
-        const hash = stringHash(bldId);
-        const isLarge = props.level >= 3 || hash % 10 > 8; 
-        let height = 12 + (hash % 15);
-        if (props.height) height = props.height;
-        else if (props.num_floors) height = props.num_floors * 3.5;
-
-        const bldgObj = {
-          id: bldId,
-          points,
-          height,
-          stories: Math.ceil(height / 3.5),
-          color: hash % 2 === 0 ? '#cbd5e1' : '#94a3b8'
-        };
-
-        tile.lod2.buildings.push(bldgObj);
-        tile.counts.bldgsLOD2++;
-        if (isLarge) {
-          tile.lod1.buildings.push(bldgObj);
-          tile.counts.bldgsLOD1++;
-        }
 
       } else if (type === 'segment') {
         stats.roadsProcessed++;
@@ -281,6 +261,8 @@ async function processStream(filePath: string, type: string) {
 // --- MAIN RUNNER ---
 
 async function run() {
+  console.warn('NOTE: building tiles are produced by `npm run buildings` (scripts/build_buildings.ts).\n' +
+    'This generator writes tiles WITHOUT buildings; run `npm run data:city` afterwards.');
   console.log(`🚀 Starting Overture Generation (${USE_FULL_BBOX ? 'FULL LUCKNOW' : 'HAZRATGANJ TEST'})`);
   
   if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });

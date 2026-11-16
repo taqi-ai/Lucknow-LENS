@@ -8,7 +8,10 @@ import { BuildingMaterialSystem, type SkylineStyle } from './buildingMaterial';
 import { HLODLayer } from './hlodLayer';
 import { CityOverlay } from './cityOverlay';
 import { ROAD_LAYER_Y, type RoadClass } from './ribbon';
-import { SeededRNG } from './rng';
+import { createRoadMaterial, applyRoadPalette, roadUniforms } from './roadMaterial';
+import { GroundSurface } from './groundSurface';
+import { buildLandmarkMesh } from './landmarks';
+import { buildTreePrototypes, createTreeMaterial, pickSpecies, SPECIES, SPECIES_COUNT } from './treePrototypes';
 import type { TileWorkerRequest, TileWorkerResponse } from './tileWorker';
 import { getDeviceProfile } from './deviceProfile';
 
@@ -36,7 +39,16 @@ interface LoadedTileContainer {
   group: THREE.Group;
   lod: LODLevel;
   stats: { buildings: number; roads: number; trees: number };
+  /** Near-range rooftop/facade detail mesh, built on demand (see DETAIL_*). */
+  detail?: THREE.Mesh;
+  detailPending?: boolean;
+  /** Full species tree meshes vs the single far blob mesh. */
+  treesNear?: THREE.Object3D[];
+  treesFar?: THREE.Object3D;
 }
+
+/** Rooftop/facade detail only exists below this altitude. */
+const DETAIL_MAX_ALT = 1500;
 
 /** Altitude breakpoints, metres. */
 const ALT_DISTRICT = 4000;
@@ -70,46 +82,6 @@ const LAMP_EMISSIVE_NIGHT = 5.2;
 /** Halo and ground-pool opacity at night. */
 const LAMP_GLOW_NIGHT = 0.85;
 const LAMP_POOL_NIGHT = 0.5;
-
-const ROAD_COLORS_DAY: Record<RoadClass, number> = {
-  motorway: 0x16181d, // deep black highway asphalt
-  trunk: 0x1a1c22, // dark trunk asphalt
-  primary: 0x1e2128, // dark primary arterial
-  secondary: 0x242830, // dark secondary road
-  tertiary: 0x2a2e37, // dark tertiary street
-  residential: 0x30353f, // dark neighborhood lane
-  service: 0x363b46, // service lane
-  footway: 0x484e5a, // paved pedestrian walkway
-  railway: 0x222429, // dark rail trackbed
-  flyover: 0x181a20, // dark elevated flyover asphalt
-};
-
-const ROAD_COLORS_NIGHT: Record<RoadClass, number> = {
-  motorway: 0x0f1115,
-  trunk: 0x121418,
-  primary: 0x14161b,
-  secondary: 0x16181e,
-  tertiary: 0x181b22,
-  residential: 0x1b1e26,
-  service: 0x1e212a,
-  footway: 0x20242e,
-  railway: 0x15161b,
-  flyover: 0x111317,
-};
-
-/** Night lighting hierarchy: warm golden sodium streetlight wash along corridors. */
-const ROAD_EMISSIVE_NIGHT: Record<RoadClass, number> = {
-  motorway: 0x7a5b32, // bright sodium luminaire wash
-  trunk: 0x6e522c,
-  primary: 0x624826,
-  secondary: 0x543c1f,
-  tertiary: 0x443018,
-  residential: 0x322210,
-  service: 0x1e140a,
-  footway: 0x0f0b05,
-  railway: 0x1a1d24,
-  flyover: 0x856236,
-};
 
 export class TileStreamer {
   private scene: THREE.Scene;
@@ -155,9 +127,13 @@ export class TileStreamer {
   private roadMaterials: Record<string, THREE.MeshStandardMaterial> = {};
   private parkMaterial: THREE.MeshStandardMaterial;
   private waterMaterial: THREE.MeshStandardMaterial;
-  private groundMaterial: THREE.MeshStandardMaterial;
+  private ground: GroundSurface;
   private treeGeometries: THREE.BufferGeometry[] = [];
-  private treeMaterials: THREE.MeshStandardMaterial[] = [];
+  private treeMaterial!: THREE.MeshStandardMaterial;
+  private readonly detailRadius = getDeviceProfile().detailRadius;
+  private readonly treeNearRadius = getDeviceProfile().treeNearRadius;
+  private lastAltitude = 1e9;
+  private landmarkMesh: THREE.Mesh;
 
   private lampMastGeo!: THREE.BufferGeometry;
   private lampHeadGeo!: THREE.BufferGeometry;
@@ -175,6 +151,7 @@ export class TileStreamer {
   private frustum = new THREE.Frustum();
   private frustumMatrix = new THREE.Matrix4();
   private tileBoxes = new Map<string, THREE.Box3>();
+  private manifestIndex = new Map<string, TileManifestItem>();
 
   /** Camera motion, used to bias loading along the direction of travel. */
   private lastCamPos = new THREE.Vector3();
@@ -196,21 +173,18 @@ export class TileStreamer {
     scene.add(this.tileGroupParent);
     scene.add(this.debugGroup);
 
-    this.groundMaterial = new THREE.MeshStandardMaterial({
-      color: 0x0c1628, roughness: 1.0, metalness: 0.0,
-    });
+    const dist = materials.getDistrictUniforms();
+    this.ground = new GroundSurface(dist.tex, dist.xform);
+    scene.add(this.ground.group);
 
-    for (const cat of Object.keys(ROAD_COLORS_DAY) as RoadClass[]) {
-      this.roadMaterials[cat] = new THREE.MeshStandardMaterial({
-        color: ROAD_COLORS_NIGHT[cat],
-        emissive: ROAD_EMISSIVE_NIGHT[cat],
-        roughness: cat === 'motorway' || cat === 'trunk' ? 0.62 : 0.86,
-        metalness: 0.0,
-      });
+    for (const cat of ['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'residential', 'service', 'footway', 'railway', 'flyover'] as RoadClass[]) {
+      this.roadMaterials[cat] = createRoadMaterial(cat);
+      (this.roadMaterials[cat] as unknown as { uniforms: unknown }).uniforms = roadUniforms;
     }
 
     this.parkMaterial = new THREE.MeshStandardMaterial({
       color: 0x2f3e2f, roughness: 0.98, metalness: 0.0,
+      polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 4,
     });
 
     this.waterMaterial = new THREE.MeshStandardMaterial({
@@ -222,6 +196,9 @@ export class TileStreamer {
     this.initWorkers();
 
     this.hlod = new HLODLayer(scene, materials);
+    // Procedural landmark models (their source footprints are excluded from tiles + HLOD).
+    this.landmarkMesh = buildLandmarkMesh(materials.solid);
+    scene.add(this.landmarkMesh);
     this.overlay = new CityOverlay(scene);
   }
 
@@ -229,39 +206,8 @@ export class TileStreamer {
   // SETUP
 
   private buildTreePrototypes(): void {
-    // Three silhouettes rather than four near-identical blobs. Low poly by design;
-    // trees are instanced in the thousands.
-    const mkTrunk = (h: number, r: number) => {
-      const g = new THREE.CylinderGeometry(r * 0.7, r, h, 5);
-      g.translate(0, h / 2, 0);
-      return g;
-    };
-
-    // Neem / mango — broad rounded crown.
-    const c1 = new THREE.IcosahedronGeometry(3.4, 1);
-    c1.scale(1, 0.82, 1);
-    c1.translate(0, 5.6, 0);
-
-    // Ashoka / palm-ish — tall narrow.
-    const c2 = new THREE.ConeGeometry(1.9, 8.5, 6);
-    c2.translate(0, 6.0, 0);
-
-    // Banyan / acacia — wide umbrella.
-    const c3 = new THREE.SphereGeometry(4.2, 7, 5);
-    c3.scale(1, 0.5, 1);
-    c3.translate(0, 5.2, 0);
-
-    this.treeGeometries = [
-      mergePositionOnly([c1, mkTrunk(4.2, 0.34)]),
-      mergePositionOnly([c2, mkTrunk(3.4, 0.26)]),
-      mergePositionOnly([c3, mkTrunk(4.6, 0.42)]),
-    ];
-
-    this.treeMaterials = [
-      new THREE.MeshStandardMaterial({ color: 0x1d3524, roughness: 0.95, flatShading: true }),
-      new THREE.MeshStandardMaterial({ color: 0x24402a, roughness: 0.95, flatShading: true }),
-      new THREE.MeshStandardMaterial({ color: 0x1a2e20, roughness: 0.95, flatShading: true }),
-    ];
+    this.treeGeometries = buildTreePrototypes();
+    this.treeMaterial = createTreeMaterial();
   }
 
   /**
@@ -415,6 +361,7 @@ export class TileStreamer {
     if (manifestResult) {
       this.manifest = manifestResult;
       for (const t of this.manifest!.tiles) {
+        this.manifestIndex.set(t.id, t);
         this.tileBoxes.set(t.id, new THREE.Box3(
           new THREE.Vector3(t.bounds.minX, -20, t.bounds.minZ),
           new THREE.Vector3(t.bounds.maxX, 320, t.bounds.maxZ),
@@ -423,24 +370,7 @@ export class TileStreamer {
     }
 
     void hlodManifest;
-    this.buildGround();
-  }
-
-  private buildGround(): void {
-    this.groundGroup.clear();
-    const extent = this.getSpatialExtent();
-    const cx = (extent.minX + extent.maxX) / 2;
-    const cz = (extent.minZ + extent.maxZ) / 2;
-
-    // Single large disc so the horizon reads as a curve rather than a rectangle edge.
-    const geo = new THREE.CircleGeometry(150000, 96);
-    const ground = new THREE.Mesh(geo, this.groundMaterial);
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.set(cx, -0.6, cz);
-    ground.receiveShadow = false;
-    ground.matrixAutoUpdate = false;
-    ground.updateMatrix();
-    this.groundGroup.add(ground);
+    await this.ground.init().catch((e) => console.warn('[TileStreamer] ground init failed:', e));
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -487,6 +417,11 @@ export class TileStreamer {
     } else {
       this.retireAllStreamedTiles();
     }
+
+    this.lastAltitude = altitude;
+    this.ground.update(camera.position);
+    roadUniforms.uRoadCam.value.copy(camera.position);
+    this.updateDetailAndTrees(camera, altitude);
 
     this.pumpQueue();
     this.cullLoadedTiles();
@@ -614,12 +549,14 @@ export class TileStreamer {
       this.pending.set(next.id, { tile: next.tile, lod: next.lod });
       this.workerBusy[i] = true;
 
+      const isDetail = next.id.endsWith('#d');
       const req: TileWorkerRequest = {
         id: next.id,
-        url: `/overture_tiles_full/${next.tile.id}.json`,
+        url: `/overture_tiles_full/${isDetail ? next.id.slice(0, -2) : next.tile.id}.json`,
         lod: next.lod,
         originX,
         originZ,
+        kind: isDetail ? 'detail' : 'full',
       };
       this.workers[i].postMessage(req);
     }
@@ -630,6 +567,28 @@ export class TileStreamer {
     const req = this.pending.get(msg.id);
     this.pending.delete(msg.id);
     if (!req) return;
+    if (msg.kind === 'detail') {
+      const baseId = msg.id.slice(0, -2);
+      const container = this.loadedTiles.get(baseId);
+      if (container) {
+        container.detailPending = false;
+        if (msg.ok && msg.detail && msg.detail.count > 0 && !container.detail) {
+          const geo = new THREE.BufferGeometry();
+          geo.setAttribute('position', new THREE.BufferAttribute(msg.detail.pos, 3));
+          geo.setAttribute('aPack', new THREE.Uint8BufferAttribute(msg.detail.pack, 4, true));
+          geo.computeBoundingSphere();
+          const mesh = new THREE.Mesh(geo, this.materials.solid);
+          mesh.name = 'buildingDetail';
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+          mesh.visible = this.layerVisibility.buildings && this.lastAltitude < DETAIL_MAX_ALT;
+          container.group.add(mesh);
+          container.detail = mesh;
+        }
+      }
+      this.pumpQueue();
+      return;
+    }
     if (!msg.ok) {
       // Previously a bare `return`. A worker that throws on every tile then looks
       // exactly like a city with no streamed detail and a clean console, which is
@@ -654,6 +613,8 @@ export class TileStreamer {
     this.loadedTiles.set(msg.id, {
       id: msg.id,
       group,
+      treesNear: group.userData.treesNear,
+      treesFar: group.userData.treesFar,
       lod: req.lod,
       stats: {
         buildings: msg.counts?.buildings ?? 0,
@@ -695,6 +656,7 @@ export class TileStreamer {
         if (strip.pos.length === 0) continue;
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.BufferAttribute(strip.pos, 3));
+        geo.setAttribute('aRoadUV', new THREE.BufferAttribute(strip.uv, 2));
         geo.computeBoundingSphere();
         const mat = this.roadMaterials[strip.category] || this.roadMaterials.residential;
         const mesh = new THREE.Mesh(geo, mat);
@@ -725,7 +687,8 @@ export class TileStreamer {
     }
 
     if (msg.trees && msg.trees.length > 0) {
-      this.addTrees(group, msg.trees);
+      const t = this.addTrees(group, msg.trees);
+      if (t) { group.userData.treesNear = t.near; group.userData.treesFar = t.far; }
     }
 
     if (msg.streetlights && msg.streetlights.length > 0) {
@@ -819,34 +782,99 @@ export class TileStreamer {
     }
   }
 
-  private addTrees(group: THREE.Group, trees: Float32Array): void {
-    const count = trees.length / 4;
-    const buckets: number[][] = [[], [], []];
-    for (let i = 0; i < count; i++) {
-      const hash = SeededRNG.hashString(`${trees[i * 4].toFixed(1)},${trees[i * 4 + 2].toFixed(1)}`);
-      buckets[hash % 3].push(i);
-    }
+  /**
+   * Trees: one InstancedMesh per species for the near representation, plus one blob
+   * InstancedMesh for distance. Which one shows is decided per tile by camera distance
+   * in updateDetailAndTrees, so a tile costs at most six tree draws up close and one far.
+   * Worker layout: x, y, z, scale, kind (5 floats per tree).
+   */
+  private addTrees(group: THREE.Group, trees: Float32Array): { near: THREE.Object3D[]; far: THREE.Object3D } | null {
+    const count = Math.floor(trees.length / 5);
+    if (count === 0) return null;
+    const buckets: number[][] = Array.from({ length: SPECIES_COUNT }, () => []);
+    const hashOf = (i: number) => {
+      const h = Math.sin(trees[i * 5] * 12.9898 + trees[i * 5 + 2] * 78.233) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    for (let i = 0; i < count; i++) buckets[pickSpecies(trees[i * 5 + 4], hashOf(i))].push(i);
 
     const dummy = new THREE.Object3D();
-    for (let b = 0; b < 3; b++) {
+    const tint = new THREE.Color();
+    const frac = (v: number) => v - Math.floor(v);
+    const place = (inst: THREE.InstancedMesh, j: number, i: number) => {
+      const h = hashOf(i);
+      const s = (trees[i * 5 + 3] || 1) * (0.85 + h * 0.3);
+      dummy.position.set(trees[i * 5], trees[i * 5 + 1], trees[i * 5 + 2]);
+      dummy.scale.set(s * (0.9 + frac(h * 7) * 0.2), s * (0.85 + frac(h * 13) * 0.3), s * (0.9 + frac(h * 3) * 0.2));
+      dummy.rotation.set(0, h * Math.PI * 2, 0);
+      dummy.updateMatrix();
+      inst.setMatrixAt(j, dummy.matrix);
+      // Individual tint: health, dust and leaf age (multiplying a green crown by a warm
+      // "flowering" colour only turns it brown, so no flowering tints).
+      tint.setRGB(0.88 + frac(h * 31) * 0.22, 0.92 + frac(h * 17) * 0.18, 0.84 + frac(h * 23) * 0.2);
+      inst.setColorAt(j, tint);
+    };
+
+    const near: THREE.Object3D[] = [];
+    const castShadow = getDeviceProfile().quality === 'high';
+    for (let b = 0; b < SPECIES_COUNT; b++) {
       const idx = buckets[b];
       if (idx.length === 0) continue;
-      const inst = new THREE.InstancedMesh(this.treeGeometries[b], this.treeMaterials[b], idx.length);
+      const inst = new THREE.InstancedMesh(this.treeGeometries[b], this.treeMaterial, idx.length);
       inst.name = 'trees';
-      inst.castShadow = false;
-      inst.receiveShadow = false;
-      for (let j = 0; j < idx.length; j++) {
-        const i = idx[j];
-        const hash = SeededRNG.hashString(`${trees[i * 4].toFixed(2)},${trees[i * 4 + 2].toFixed(2)}`);
-        const s = (trees[i * 4 + 3] || 1) * (0.8 + ((hash % 100) / 100) * 0.55);
-        dummy.position.set(trees[i * 4], trees[i * 4 + 1], trees[i * 4 + 2]);
-        dummy.scale.set(s, s * (0.9 + ((hash >> 3) % 40) / 100), s);
-        dummy.rotation.set(0, ((hash % 360) * Math.PI) / 180, 0);
-        dummy.updateMatrix();
-        inst.setMatrixAt(j, dummy.matrix);
-      }
+      inst.castShadow = castShadow;
+      for (let j = 0; j < idx.length; j++) place(inst, j, idx[j]);
       inst.instanceMatrix.needsUpdate = true;
+      if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+      inst.computeBoundingSphere();
+      inst.visible = false;
       group.add(inst);
+      near.push(inst);
+    }
+    const far = new THREE.InstancedMesh(this.treeGeometries[SPECIES.FAR], this.treeMaterial, count);
+    far.name = 'trees';
+    for (let i = 0; i < count; i++) place(far, i, i);
+    far.instanceMatrix.needsUpdate = true;
+    if (far.instanceColor) far.instanceColor.needsUpdate = true;
+    far.computeBoundingSphere();
+    group.add(far);
+    return { near, far };
+  }
+
+  /**
+   * Per tick: request/retire near-range building detail, and swap each tile's trees
+   * between the species meshes and the far blob by 3D distance to the camera.
+   */
+  private updateDetailAndTrees(camera: THREE.PerspectiveCamera, altitude: number): void {
+    const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
+    const detailOn = this.detailRadius > 0 && altitude < DETAIL_MAX_ALT;
+    for (const [id, c] of this.loadedTiles) {
+      const box = this.tileBoxes.get(id);
+      if (!box) continue;
+      const tx = (box.min.x + box.max.x) / 2, tz = (box.min.z + box.max.z) / 2;
+      const d2 = Math.hypot(tx - cx, tz - cz);
+      const d3 = Math.hypot(d2, cy);
+      if (c.treesFar) {
+        const parks = this.layerVisibility.parks;
+        const nearOn = d3 < this.treeNearRadius;
+        for (const m of c.treesNear ?? []) m.visible = parks && nearOn;
+        c.treesFar.visible = parks && !nearOn;
+      }
+      if (detailOn && d2 < this.detailRadius && !c.detail && !c.detailPending) {
+        const tile = this.manifestIndex.get(id);
+        if (tile && (tile.bldgsLOD2 ?? 0) > 0) {
+          c.detailPending = true;
+          this.enqueue({ ...tile, id: `${id}#d` } as TileManifestItem, CONTENT_TIER, d2 * 0.5);
+        }
+      }
+      if (c.detail) {
+        c.detail.visible = detailOn && this.layerVisibility.buildings && d2 < this.detailRadius * 1.25;
+        if (d2 > this.detailRadius * 1.6 || altitude > DETAIL_MAX_ALT * 1.5) {
+          c.group.remove(c.detail);
+          c.detail.geometry.dispose();
+          c.detail = undefined;
+        }
+      }
     }
   }
 
@@ -910,46 +938,32 @@ export class TileStreamer {
     const night = this.isNight;
     const cyber = this.skylineStyle === 'cyberpunk';
 
-    const roadColors = night ? ROAD_COLORS_NIGHT : ROAD_COLORS_DAY;
     for (const cat of Object.keys(this.roadMaterials) as RoadClass[]) {
-      const mat = this.roadMaterials[cat];
-      mat.color.setHex(roadColors[cat]);
-      mat.emissive.setHex(night ? ROAD_EMISSIVE_NIGHT[cat] : 0x000000);
-      mat.emissiveIntensity = night ? 1 : 0;
+      applyRoadPalette(this.roadMaterials[cat], cat, night);
     }
+    roadUniforms.uRoadNight.value = night ? 1 : 0;
     this.overlay.setNightMode(night);
+    this.ground.setNightMode(night, cyber);
 
     if (night) {
-      this.groundMaterial.color.setHex(0x161c24);
-      this.parkMaterial.color.setHex(0x132a17);
+      this.parkMaterial.color.setHex(0x16241a);
       this.waterMaterial.color.setHex(0x14293d);
       this.lampHeadMat.emissiveIntensity = LAMP_EMISSIVE_NIGHT;
       this.setLampGlow(LAMP_GLOW_NIGHT, LAMP_POOL_NIGHT);
-      this.treeMaterials[0].color.setHex(0x101d15);
-      this.treeMaterials[1].color.setHex(0x142218);
-      this.treeMaterials[2].color.setHex(0x0e1a13);
+      this.treeMaterial.color.setHex(0x3a4640);
     } else if (cyber) {
-      // Dark desaturated slate so the cyan key reads as light falling on a
-      // surface rather than as the surface's own colour.
-      this.groundMaterial.color.setHex(0x2b3247);
       this.parkMaterial.color.setHex(0x1f3a3a);
       this.waterMaterial.color.setHex(0x16304a);
       this.lampHeadMat.emissiveIntensity = 0.0;
       this.setLampGlow(0, 0);
-      this.treeMaterials[0].color.setHex(0x1d3a34);
-      this.treeMaterials[1].color.setHex(0x244440);
-      this.treeMaterials[2].color.setHex(0x18322e);
+      this.treeMaterial.color.setHex(0x9fd0c8);
     } else {
-      // Warm neutral earth and vibrant landscaped emerald parkland and campus lawns
-      this.groundMaterial.color.setHex(0x7c8276);
-      this.parkMaterial.color.setHex(0x3ea844);
-      this.waterMaterial.color.setHex(0x5c7d86);
-      // Lamps are off in daylight — the head reads as a dark fitting.
+      // Lawns close to the baked ground's park tone, not a saturated sheet of green.
+      this.parkMaterial.color.setHex(0x627f48);
+      this.waterMaterial.color.setHex(0x55767a);
       this.lampHeadMat.emissiveIntensity = 0.0;
       this.setLampGlow(0, 0);
-      this.treeMaterials[0].color.setHex(0x286324);
-      this.treeMaterials[1].color.setHex(0x32752c);
-      this.treeMaterials[2].color.setHex(0x21521d);
+      this.treeMaterial.color.setHex(0xffffff);
     }
   }
 
@@ -960,6 +974,7 @@ export class TileStreamer {
   public setLayerVisibility(v: { buildings: boolean; roads: boolean; parks: boolean; water: boolean }): void {
     this.layerVisibility = v;
     this.hlod.setVisible(v.buildings);
+    this.landmarkMesh.visible = v.buildings;
     this.overlay.setLayerVisibility({ roads: v.roads, parks: v.parks, water: v.water });
     for (const container of this.loadedTiles.values()) {
       applyLayerVisibility(container.group, v);
@@ -1000,8 +1015,12 @@ export class TileStreamer {
     this.workers = [];
     for (const [id, c] of this.loadedTiles) this.retireTile(id, c);
     this.hlod.dispose();
+    this.landmarkMesh.geometry.dispose();
+    this.landmarkMesh.removeFromParent();
     this.overlay.dispose();
     for (const g of this.treeGeometries) g.dispose();
+    this.treeMaterial.dispose();
+    this.ground.dispose();
     this.lampMastGeo.dispose();
     this.lampHeadGeo.dispose();
     this.lampMastMat.dispose();
@@ -1010,7 +1029,6 @@ export class TileStreamer {
     this.lampGlowMat.dispose();
     this.lampPoolGeo.dispose();
     this.lampPoolMat.dispose();
-    for (const m of this.treeMaterials) m.dispose();
   }
 }
 
@@ -1023,10 +1041,11 @@ function applyLayerVisibility(
   for (const child of group.children) {
     switch (child.name) {
       case 'buildings': child.visible = v.buildings; break;
+      case 'buildingDetail': child.visible = v.buildings; break;
       case 'roads': child.visible = v.roads; break;
       case 'parks': child.visible = v.parks; break;
       case 'water': child.visible = v.water; break;
-      case 'trees': child.visible = v.parks; break; // trees ride with the parks layer
+      case 'trees': break; // parks layer; the near/far swap in updateDetailAndTrees owns visibility
       case 'streetlights': child.visible = v.roads; break;
     }
   }

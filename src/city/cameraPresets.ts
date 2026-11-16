@@ -55,35 +55,37 @@ export const CINEMATIC_PRESETS: Record<string, CinematicPreset> = {
   /** Bara Imambara and Rumi Darwaza in one frame. */
   oldlucknow: {
     label: 'Old Lucknow',
-    x: -4109, z: -2423,
+    // Midway between the Bara Imambara and Rumi Darwaza models (landmarkSites.ts).
+    x: -3735, z: -2222,
     azimuth: 2.4, pitch: 0.34, distance: 900,
   },
 
   /** Rumi Darwaza close architectural framing. */
   rumi: {
     label: 'Rumi Darwaza',
-    x: -3839, z: -2401,
-    azimuth: 1.57, pitch: 0.25, distance: 320,
+    x: -3760, z: -2365,
+    azimuth: 1.27, pitch: 0.25, distance: 320,
   },
 
   /** Hussainabad Clock Tower hero perspective. */
   clocktower: {
     label: 'Clock Tower',
-    x: -4306, z: -2390,
+    // The Husainabad Clock Tower footprint (Overture 0c0f3b55), where the model stands.
+    x: -4176, z: -2675,
     azimuth: 0.8, pitch: 0.28, distance: 380,
   },
 
   /** Vidhan Sabha (Legislative Assembly). */
   vidhansabha: {
     label: 'Vidhan Sabha',
-    x: -703, z: 634,
+    x: -594, z: 700,
     azimuth: 0.1, pitch: 0.32, distance: 680,
   },
 
   /** Ambedkar Memorial Park complex, Gomti Nagar. */
   ambedkar: {
     label: 'Ambedkar Memorial',
-    x: 2447, z: 212,
+    x: 2425, z: 139,
     azimuth: 1.75, pitch: 0.36, distance: 950,
   },
 

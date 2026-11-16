@@ -1,0 +1,35 @@
+{
+ "version": 1,
+ "size": 4096,
+ "cell": 11.0,
+ "originX": -22528.0,
+ "originZ": -22528.0,
+ "note": "row 0 = north (min z). u = (x - originX)/(size*cell), v = (z - originZ)/(size*cell).",
+ "classes": {
+  "0": "bare_soil",
+  "1": "built_ground",
+  "2": "tree_canopy",
+  "3": "scrub",
+  "4": "grassland",
+  "5": "cropland",
+  "6": "water",
+  "7": "wetland",
+  "8": "park_lawn",
+  "9": "paved_plaza",
+  "10": "industrial_yard",
+  "11": "campus",
+  "12": "residential",
+  "13": "sand_bank",
+  "14": "farmland",
+  "15": "earthworks"
+ },
+ "sources": {
+  "worldcover": "ESA WorldCover 10m 2021 v200 (CC BY 4.0) ESA_WorldCover_10m_2021_v200_N24E078_Map.tif, ESA_WorldCover_10m_2021_v200_N24E081_Map.tif, ESA_WorldCover_10m_2021_v200_N27E078_Map.tif, ESA_WorldCover_10m_2021_v200_N27E081_Map.tif",
+  "dem": "Copernicus DEM GLO-30 (DSM, smoothed ~330 m, shading only) Copernicus_DSM_COG_10_N26_00_E080_00_DEM.tif, Copernicus_DSM_COG_10_N26_00_E081_00_DEM.tif, Copernicus_DSM_COG_10_N27_00_E080_00_DEM.tif, Copernicus_DSM_COG_10_N27_00_E081_00_DEM.tif",
+  "overture": "Overture Maps 2026-10-21.0 land_use + water (ODbL/CDLA per theme)"
+ },
+ "demRange": [
+  106.76612854003906,
+  129.67892456054688
+ ]
+}

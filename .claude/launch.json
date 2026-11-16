@@ -4,8 +4,24 @@
     {
       "name": "lucknow-lens",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3000
+    },
+    {
+      "name": "lucknow-lens-3d",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "tsx",
+        "server.ts",
+        "--dev"
+      ],
+      "env": {
+        "PORT": "3100"
+      },
+      "port": 3100
     }
   ]
 }

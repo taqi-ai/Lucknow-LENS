@@ -114,6 +114,11 @@ export default function MapApp({ entryPreset = 'hero', onProgress, released = tr
   // Airplane-window treatment: vignette, glass glare and grain over the map. Cheap CSS, no extra GPU passes.
   const [windowView, setWindowView] = useState<boolean>(prefs.windowView);
   useEffect(() => { savePrefs({ theme, night: nightMode, showLabels, labelSettings, windowView }); }, [theme, nightMode, showLabels, labelSettings, windowView]);
+  // DEV ONLY: lets scripts/visual_harness.mjs switch day/night through the real state path.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    (window as unknown as { __LENS_setNight?: (n: boolean) => void }).__LENS_setNight = setNightMode;
+  }, []);
 
   // GTA GPS Navigation State
   const pathfinderRef = useRef<Pathfinder>(new Pathfinder());
@@ -442,6 +447,11 @@ export default function MapApp({ entryPreset = 'hero', onProgress, released = tr
       />
 
       <div aria-hidden className="pointer-events-none absolute inset-0 z-[2] transition-opacity ease-in-out" style={{ opacity: theme === 'warm' && !nightMode ? 1 : 0, transitionDuration: '2600ms', background: 'linear-gradient(180deg, rgba(246,196,128,.22), rgba(232,170,100,.14))', mixBlendMode: 'soft-light' }} />
+      {/* Data attribution required by ODbL / CC BY 4.0 sources (docs/3d-revamp/DATA_SOURCES.md). */}
+      <div className="pointer-events-auto absolute bottom-1 right-2 z-[5] max-w-[70vw] truncate text-[9.5px] leading-tight text-white/55 [text-shadow:0_1px_2px_rgba(0,0,0,.6)] max-sm:hidden"
+        title="Footprints, roads, land use and water: OpenStreetMap contributors (ODbL), Overture Maps Foundation, Google Open Buildings (CC BY 4.0), Microsoft ML Buildings (ODbL). Heights: Google Open Buildings 2.5D Temporal (CC BY 4.0, model estimates). Land cover: ESA WorldCover 2021 (CC BY 4.0). Elevation shading: Copernicus DEM GLO-30. Buildings beyond the data are procedural reconstructions.">
+        © OpenStreetMap contributors · Overture Maps · Google Open Buildings 2.5D · ESA WorldCover · Copernicus DEM
+      </div>
       {windowView && <WindowOverlay />}
       {/* UI Overlay */}
       <CityUI

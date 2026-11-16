@@ -49,6 +49,18 @@ export default function App() {
     window.scrollTo(0, 0);
   }, [scale, fade]);
 
+  // DEV ONLY: `?harness` boards the map straight away so the screenshot harness
+  // (scripts/visual_harness.mjs) can drive the camera without clicking through.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    if (!new URLSearchParams(window.location.search).has('harness')) return;
+    enter();
+  }, [enter]);
+  useEffect(() => {
+    if (!import.meta.env.DEV || stage !== 'ready') return;
+    if (new URLSearchParams(window.location.search).has('harness')) setStage('map');
+  }, [stage]);
+
   /** Back to the site: pull out through the cabin window (the dive in reverse), then the window fades into the page. */
   const [exiting, setExiting] = useState(false);
   const leave = useCallback(async () => {

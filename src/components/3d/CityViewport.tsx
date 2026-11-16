@@ -18,6 +18,7 @@ import { NavigationRoute, RouteWaypoint, GPSTheme } from '../../navigation/types
 import { EmergencyVisualManager } from '../../city/emergencyVisuals';
 import { loadEmergencyFacilities, EmergencyFacility } from '../../city/emergencyServices';
 import { CampusAmbienceManager } from '../../city/campusAmbience';
+import { getDeviceProfile } from '../../city/deviceProfile';
 
 /**
  * Aircraft geometry and materials are created once at module scope and shared by
@@ -136,6 +137,10 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     if (!mountRef.current) return;
 
     const container = mountRef.current;
+    // Fresh scene objects start in their default (night) state. Under StrictMode this
+    // effect runs twice and the ref kept the first mount's value, so the second mount's
+    // objects never received the user's day/night choice. Force the next pass to snap.
+    nightAppliedRef.current = null;
     const cityRenderer = new CityRenderer(container, mapDataRef.current);
     rendererRef.current = cityRenderer;
 
@@ -222,6 +227,89 @@ export const CityViewport: React.FC<CityViewportProps> = ({
         extent.maxZ - boundaryBuffer,
       );
     });
+
+    // DEV INSTRUMENTATION HOOK (window.__LENS) for scripts/visual_harness.mjs:
+    // drive the camera, wait for streaming to settle, sample real render stats.
+    if (import.meta.env.DEV) {
+      (window as unknown as { __LENS?: unknown }).__LENS = {
+        setShot(s: { t: [number, number]; az: number; pi: number; d: number; night: boolean; hour?: number }) {
+          // Through React state, so the night effect does not revert it; the
+          // harness waits longer than DAY_NIGHT_SECONDS before shooting.
+          (window as unknown as { __LENS_setNight?: (n: boolean) => void }).__LENS_setNight?.(s.night);
+          controls.transitionTo(new THREE.Vector3(s.t[0], 0, s.t[1]), s.az, s.pi, s.d, 10);
+        },
+        debug(v: number, hideHlod = false) {
+          const u = (materials.solid as unknown as { uniforms: Record<string, { value: number }> }).uniforms;
+          u.uDebug.value = v;
+          cityRenderer.scene.traverse((o) => { if (o.name === 'HLODLayer') o.visible = !hideHlod; });
+        },
+        state() {
+          const u = (materials.solid as unknown as { uniforms: Record<string, { value: unknown }> }).uniforms;
+          const lights: Record<string, unknown> = {};
+          cityRenderer.scene.traverse((o) => {
+            const l = o as THREE.Light;
+            if (l.isLight) lights[l.type + ':' + o.id] = { i: +l.intensity.toFixed(2), c: l.color.getHexString() };
+          });
+          const fog = cityRenderer.scene.fog as THREE.FogExp2 | null;
+          return {
+            uNight: u.uNight.value, uDetail: u.uDetail.value, skyBlend: sky.blend,
+            exposure: cityRenderer.renderer.toneMappingExposure, lights,
+            fog: fog ? { c: fog.color.getHexString(), d: fog.density } : null,
+            tween: tweenRef.current?.debug(),
+            quality: getDeviceProfile().quality,
+            gpu: getDeviceProfile().gpu,
+          };
+        },
+        waitSettled(timeoutMs = 20000) {
+          return new Promise<void>((resolve) => {
+            const start = performance.now();
+            let quiet = 0;
+            const poll = () => {
+              const st = streamer.getStats();
+              quiet = st.pendingLoads === 0 ? quiet + 1 : 0;
+              if (quiet >= 4 || performance.now() - start > timeoutMs) resolve();
+              else setTimeout(poll, 250);
+            };
+            setTimeout(poll, 500);
+          });
+        },
+        measure(durationMs = 2000) {
+          return new Promise<Record<string, unknown>>((resolve) => {
+            const frames: number[] = [];
+            let last = performance.now();
+            const start = last;
+            const tick = () => {
+              const now = performance.now();
+              frames.push(now - last);
+              last = now;
+              if (now - start < durationMs) requestAnimationFrame(tick);
+              else {
+                frames.sort((a, b) => a - b);
+                const r = cityRenderer.getRenderStats();
+                const st = streamer.getStats();
+                const mem = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory;
+                resolve({
+                  fps: Math.round(1000 / (frames.reduce((a, b) => a + b, 0) / frames.length)),
+                  frameMsP50: +frames[Math.floor(frames.length * 0.5)].toFixed(2),
+                  frameMsP95: +frames[Math.floor(frames.length * 0.95)].toFixed(2),
+                  drawCalls: r.drawCalls,
+                  triangles: r.triangles,
+                  geometries: r.geometries,
+                  textures: r.textures,
+                  programs: cityRenderer.renderer.info.programs?.length ?? 0,
+                  tiles: st.loadedTiles,
+                  buildings: st.totalBuildings,
+                  lod: st.currentLOD,
+                  scale: st.zoomScaleName,
+                  jsHeapMB: mem ? Math.round(mem.usedJSHeapSize / 1048576) : null,
+                });
+              }
+            };
+            requestAnimationFrame(tick);
+          });
+        },
+      };
+    }
 
     // Render Loop
     let animId: number;

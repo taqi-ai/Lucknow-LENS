@@ -42,7 +42,7 @@ page.on('console', m => { if (m.type() === 'error') errors.push(m.text().slice(0
 page.on('pageerror', e => errors.push('PAGEERROR ' + String(e).slice(0, 300)));
 
 // The app streams tiles forever, so `networkidle` never fires — wait for DOM only.
-await page.goto('http://127.0.0.1:3000/', { waitUntil: 'domcontentloaded', timeout: 120000 });
+await page.goto(process.env.LENS_URL || 'http://127.0.0.1:3100/?harness', { waitUntil: 'domcontentloaded', timeout: 120000 });
 await page.waitForSelector('canvas', { timeout: 180000 });
 
 // Expose debug handles from the app
@@ -57,10 +57,18 @@ const glInfo = await page.evaluate(() => {
   return { renderer: e ? gl.getParameter(e.UNMASKED_RENDERER_WEBGL) : 'n/a', ver: gl.getParameter(gl.VERSION) };
 });
 
+// Let the entry fly-in (fired once tiles settle) finish before taking control.
+await page.evaluate(() => window.__LENS && window.__LENS.waitSettled ? window.__LENS.waitSettled(30000) : null);
+await new Promise(r => setTimeout(r, 9000));
 const results = [];
 for (const s of SHOTS) {
   await page.evaluate((s) => window.__LENS && window.__LENS.setShot(s), s);
+  // The app's entry camera preset can still be animating on the first shot; re-apply.
+  await new Promise(r => setTimeout(r, 1500));
+  await page.evaluate((s) => window.__LENS && window.__LENS.setShot(s), s);
+  await page.evaluate((s) => window.__LENS && window.__LENS.debug && window.__LENS.debug(s.debug || 0, !!s.hideHlod), s);
   // let tiles stream in
+  await new Promise(r => setTimeout(r, 3500)); // day/night tween is 2.6 s
   await page.evaluate(() => window.__LENS && window.__LENS.waitSettled ? window.__LENS.waitSettled(20000) : new Promise(r => setTimeout(r, 8000)));
   const m = await page.evaluate(() => window.__LENS ? window.__LENS.measure(2000) : null);
   await page.screenshot({ path: path.join(OUT, s.n + '.png') });
@@ -68,7 +76,8 @@ for (const s of SHOTS) {
   console.log(s.n, JSON.stringify(m));
 }
 
-fs.writeFileSync(path.join(OUT, 'metrics.json'), JSON.stringify({ glInfo, results, errors: errors.slice(0, 30) }, null, 2));
+const appState = await page.evaluate(() => window.__LENS && window.__LENS.state ? window.__LENS.state() : null);
+fs.writeFileSync(path.join(OUT, 'metrics.json'), JSON.stringify({ glInfo, quality: appState && appState.quality, appGpu: appState && appState.gpu, results, errors: errors.slice(0, 30) }, null, 2));
 console.log('GL:', JSON.stringify(glInfo));
 if (errors.length) console.log('ERRORS:', errors.slice(0, 10).join('\n'));
 await browser.close();

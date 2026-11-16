@@ -14,6 +14,8 @@
  */
 
 export type DeviceTier = 'desktop' | 'mobile' | 'low';
+/** Visual quality tier. Low: massing + ground; medium: roof detail, selective shadows; high: everything. */
+export type QualityTier = 'low' | 'medium' | 'high';
 
 export interface DeviceProfile {
   tier: DeviceTier;
@@ -33,7 +35,49 @@ export interface DeviceProfile {
   lampGlow: boolean;
   /** Adaptive shadows are off below this tier. */
   allowShadows: boolean;
+  quality: QualityTier;
+  /** Radius (m) around the camera that gets rooftop/facade detail meshes. 0 = never. */
+  detailRadius: number;
+  /** Trees use full species models within this 3D distance (m); farther tiles use one blob mesh. */
+  treeNearRadius: number;
+  /** Shadow map resolution when shadows are on. */
+  shadowMapSize: number;
+  /** Altitude (m) below which sun shadows are enabled. */
+  shadowMaxAltitude: number;
+  /** GPU renderer string, for the QA report. */
+  gpu: string;
 }
+
+function detectGpu(): string {
+  try {
+    const c = document.createElement('canvas');
+    const gl = (c.getContext('webgl2') || c.getContext('webgl')) as WebGLRenderingContext | null;
+    if (!gl) return 'unknown';
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    const s = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : String(gl.getParameter(gl.RENDERER));
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return s;
+  } catch { return 'unknown'; }
+}
+
+function detectQuality(tier: DeviceTier, gpu: string): QualityTier {
+  if (typeof window !== 'undefined') {
+    const q = new URLSearchParams(window.location.search).get('quality')
+      ?? (() => { try { return localStorage.getItem('lens.quality'); } catch { return null; } })();
+    if (q === 'low' || q === 'medium' || q === 'high') return q;
+  }
+  if (tier === 'low') return 'low';
+  if (tier === 'mobile') return 'medium';
+  // Integrated / software GPUs get the medium budget on desktop.
+  if (/intel|uhd|iris|swiftshader|llvmpipe|microsoft basic|mali|adreno|apple m1(?! (pro|max|ultra))/i.test(gpu)) return 'medium';
+  return 'high';
+}
+
+const QUALITY: Record<QualityTier, Pick<DeviceProfile, 'detailRadius' | 'treeNearRadius' | 'shadowMapSize' | 'shadowMaxAltitude'>> = {
+  low: { detailRadius: 0, treeNearRadius: 700, shadowMapSize: 1024, shadowMaxAltitude: 0 },
+  medium: { detailRadius: 750, treeNearRadius: 1200, shadowMapSize: 2048, shadowMaxAltitude: 1600 },
+  high: { detailRadius: 1100, treeNearRadius: 1700, shadowMapSize: 4096, shadowMaxAltitude: 3200 },
+};
 
 function detectTier(): { tier: DeviceTier; isTouch: boolean } {
   if (typeof window === 'undefined') {
@@ -61,6 +105,9 @@ function detectTier(): { tier: DeviceTier; isTouch: boolean } {
 
 function build(): DeviceProfile {
   const { tier, isTouch } = detectTier();
+  const gpu = typeof document !== 'undefined' ? detectGpu() : 'unknown';
+  const quality = detectQuality(tier, gpu);
+  const q = { quality, gpu, ...QUALITY[quality] };
   const cores = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4;
   const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
 
@@ -76,6 +123,7 @@ function build(): DeviceProfile {
       lampDensityScale: 0.55,
       lampGlow: false,
       allowShadows: false,
+      ...q,
     };
   }
 
@@ -88,7 +136,8 @@ function build(): DeviceProfile {
       streamRadiusScale: 0.7,
       lampDensityScale: 0.7,
       lampGlow: true,
-      allowShadows: false,
+      allowShadows: quality !== 'low',
+      ...q,
     };
   }
 
@@ -100,7 +149,8 @@ function build(): DeviceProfile {
     streamRadiusScale: 1,
     lampDensityScale: 1,
     lampGlow: true,
-    allowShadows: true,
+    allowShadows: quality !== 'low',
+    ...q,
   };
 }
 

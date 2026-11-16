@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { loadJSON } from '../data/resourceCache';
 import { BuildingMaterialSystem } from './buildingMaterial';
+import { BUILDING_FORMAT_VERSION } from './buildingTypes';
+import { getDeviceProfile } from './deviceProfile';
 
 /**
  * HLODLayer — city-scale building representation built entirely from real Overture
@@ -90,7 +92,7 @@ export class HLODLayer {
   private frustumMatrix = new THREE.Matrix4();
 
   /** Beyond this the relief stream is dropped and fabric alone represents the city. */
-  private reliefRadius = 9000;
+  private reliefRadius = getDeviceProfile().quality === 'low' ? 4500 : getDeviceProfile().quality === 'medium' ? 7000 : 9000;
   /** Fabric covers the whole city, so this is effectively "everything in frustum". */
   private fabricRadius = 60000;
 
@@ -109,6 +111,11 @@ export class HLODLayer {
     try {
       // Shared cache — StrictMode constructs this layer twice.
       this.manifest = await loadJSON<HLODManifest>('/hlod/hlod_manifest.json');
+      if ((this.manifest as unknown as { buildingFormat?: number }).buildingFormat !== BUILDING_FORMAT_VERSION) {
+        console.warn('[HLOD] manifest is from an older bake; run `npm run bake`. City-scale buildings disabled.');
+        this.manifest = null;
+        return null;
+      }
       this.cacheBust = this.manifest?.generatedAt
         ? `?v=${encodeURIComponent(this.manifest.generatedAt)}`
         : '';
@@ -264,6 +271,18 @@ export class HLODLayer {
       const header = new DataView(buf);
       if (header.getUint32(0, true) !== MAGIC) {
         console.warn(`[HLOD] bad magic in s_${key}.${kind}.bin`);
+        return;
+      }
+      // Outdated or corrupted bakes are refused: a v1 buffer would be decoded with the
+      // wrong pack layout and draw a city that disagrees with the streamed tiles.
+      const ver = header.getUint32(4, true);
+      if (ver !== BUILDING_FORMAT_VERSION) {
+        console.warn(`[HLOD] s_${key}.${kind}.bin is format v${ver}, expected v${BUILDING_FORMAT_VERSION} - run npm run bake`);
+        return;
+      }
+      const expected = (((HEADER_BYTES + header.getUint32(24, true) * 6 + 3) & ~3) + header.getUint32(24, true) * 4);
+      if (buf.byteLength < expected) {
+        console.warn(`[HLOD] s_${key}.${kind}.bin is truncated (${buf.byteLength} < ${expected})`);
         return;
       }
       const originX = header.getFloat32(8, true);

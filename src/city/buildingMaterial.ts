@@ -1,493 +1,475 @@
 import * as THREE from 'three';
+import { loadBuffer, loadJSON } from '../data/resourceCache';
 
 /**
- * BuildingMaterialSystem — one shared material for every building in Lucknow.
+ * BuildingMaterialSystem — one shared material family for every building in Lucknow.
  *
- * The previous approach allocated five wall + five roof MeshStandardMaterials and
- * bucketed geometry into them, which capped variation at ten flavours and forced ten
- * merge buckets per tile. Instead, every building vertex now carries a packed
- * attribute (`aPack`, 4 x uint8, produced by scripts/bake_hlod.ts and by the tile
- * worker) and the shader derives all variation from it:
+ * Geometry carries a packed `aPack` (Uint8 x4, BUILDING_FORMAT_VERSION 2, see
+ * buildingGeometry.ts):
+ *   x hash | y eave height (0.5 m) | z AO<<4 | surface | w typology<<5 | orientation
  *
- *   x  hash    deterministic per-building seed -> palette, tint jitter, windows
- *   y  height  normalised (height / 80 m)      -> weathering, window density
- *   z  ao      baked contact occlusion         -> ground contact, canyon depth
- *   w  flags   bit0 isRoof, bits1-2 class, bits3-7 orientation
+ * Spatially coherent attributes come from a world-space DISTRICT MAP
+ * (public/ground/district.bin, written by scripts/build_buildings.ts) sampled by
+ * position, so HLOD fabric, HLOD relief and streamed tiles agree by construction:
+ *   R palette family   G night-light density   B commercial share   A old/dense fabric
  *
- * Geometry deliberately carries no normal attribute. Buildings are hard-edged, so
- * flat normals are reconstructed per-fragment from screen-space derivatives. That
- * halves vertex bandwidth and sidesteps the smoothed-normal artefact produced by
- * calling computeVertexNormals() on merged extrusions.
+ * The per-building hash only picks within the family and adds a little jitter, so
+ * neighbours share a regional stock (lime-washed old city, cream planned colonies,
+ * exposed-brick periphery...) instead of reading as confetti.
+ *
+ * Facades are procedural per typology (window rhythm, storey height, plinth, bazaar
+ * shopfronts with signage bands, arched heritage openings, apartment grids, industrial
+ * strip glazing). Roof furniture surfaces (tanks, solar, tin, stair cabins) each get
+ * their own albedo/roughness. Normals are flat, from screen-space derivatives.
  */
 
-/**
- * Restrained Lucknow wall palette — enhanced with crisp modern facades,
- * warm sandstone, and municipal brick accents for distinct building silhouettes.
- */
-const WALL_PALETTE_DAY = [
-  0xfafbfd, // modern bright white facade / crisp glass-tower frame
-  0xeae2d5, // warm lucknow sandstone
-  0xdcd3c4, // pale limestone / civic plaster
-  0xcfd4dc, // modern blue-grey architectural concrete / commercial
-  0xe6ded0, // elegant cream residential
-  0xb87b64, // traditional red-brick / municipal render (like Charbagh / police / civic)
-  0xcac3b7, // weathered pale sandstone
-  0xa89988, // darker stone base / masonry
-];
-
-/**
- * High-contrast roofs inspired by aerial urban photography and SimCity:
- * dark charcoal slate, deep membrane, gravel decks, and rich terracotta tile.
- */
-const ROOF_PALETTE_DAY = [
-  0x323842, // dark slate / charcoal asphalt membrane (modern high-rise)
-  0x8a462b, // vibrant heritage terracotta / red clay tile
-  0x3d4550, // deep blue-grey gravel roof deck
-  0x995337, // warm brick/terracotta tile (Lucknow vernacular)
-  0x4a5360, // industrial weathered zinc / dark sheet metal
-  0x2a2f38, // deep charcoal tar & gravel roof
-  0x616a75, // mid-grey mechanical service roof
-  0x7c4936, // deep terracotta clay / municipal red roof
-];
-
-/**
- * Night walls are cool and dark but not black. At the previous values buildings
- * lost all massing and the city read as a void with floating windows; these keep
- * facades separable from the sky and from each other.
- */
-const WALL_PALETTE_NIGHT = [
-  0x3f4854, 0x3a434e, 0x434c58, 0x353d47,
-  0x3c4551, 0x373f4a, 0x414a56, 0x323a44,
-];
-
-/**
- * Roofs are the surface you actually see from altitude, so they set how the night
- * city reads. Kept dark on purpose: with aerial perspective disabled there is
- * nothing else attenuating distant buildings, and a lighter roof value turned the
- * whole city into a field of cool white speckle that drowned the warm window glow.
- */
-const ROOF_PALETTE_NIGHT = [
-  0x232a33, 0x20262e, 0x262d36, 0x1d232b,
-  0x222831, 0x1f252d, 0x252b34, 0x1b2129,
-];
-
-/** User-selectable skyline looks. Day palette + night palette + light colour. */
 export type SkylineStyle = 'warm' | 'clear' | 'cyberpunk';
 
-/** Neutral, cooler daytime stone — the "clear white Lucknow" look with crisp contrasting roofs. */
-const WALL_PALETTE_CLEAR = [
-  0xfbfcfd, 0xf0f3f6, 0xe4e9ee, 0xd8e0e6,
-  0xcfd7de, 0xc2cbd3, 0xb4bec8, 0xa6b2bc,
-];
-const ROOF_PALETTE_CLEAR = [
-  0x2c333d, 0x363f4b, 0x414b59, 0x242a32,
-  0x3a4452, 0x485363, 0x303844, 0x505d6e,
-];
-
-/** Neon night city. Deep indigo stock, saturated cyan/magenta light. */
-const WALL_PALETTE_CYBER = [
-  0x1b1f3a, 0x181b33, 0x1f2340, 0x15182d,
-  0x1d2138, 0x171a30, 0x212545, 0x131629,
-];
-const ROOF_PALETTE_CYBER = [
-  0x101430, 0x0e1129, 0x131734, 0x0c0f24,
-  0x11142e, 0x0f1228, 0x141838, 0x0a0d20,
-];
-/**
- * Cyberpunk DAY stock. Mid-tone cool steel, not the night indigo.
- *
- * These were the night values (0x2a3050 and darker), which under a low-key cyan
- * environment left every building a black silhouette on a flooded cyan ground —
- * no massing, no readable city. Cyberpunk is a lighting mood; the buildings
- * still have to be legible surfaces.
- */
-const WALL_PALETTE_CYBER_DAY = [
-  0x5a6490, 0x525c86, 0x616b99, 0x4b5480,
-  0x5c6693, 0x545e8a, 0x646e9d, 0x47507a,
+/** 8 palette families x 4 wall colours (sRGB), indexed family*4 + k. */
+const WALL_FAMILIES = [
+  // 0 old-city: lime cream, ochre, weathered grey plaster, faded rose
+  0xd8c9a6, 0xc8a877, 0xb7b0a2, 0xcfb2a0,
+  // 1 bazaar: mixed dusty plaster, signage-stained
+  0xcdc2ad, 0xb4a48b, 0xd6c49d, 0xa79e92,
+  // 2 planned colonies: off-white, warm cream, pale beige, light buff
+  0xe6e0d3, 0xe0d4bc, 0xd6d0c6, 0xe7dbc2,
+  // 3 modern: neutral grey, putty, concrete, off-white
+  0xd6d5d0, 0xc3c1bb, 0xb6b2a8, 0xe1ded6,
+  // 4 periphery: exposed brick, darker brick, plastered, brick-orange
+  0xa6694f, 0x985d46, 0xc5b59d, 0xae7858,
+  // 5 village: earth, whitewash, mud-brown, sand
+  0xbea886, 0xd6cebe, 0xa58868, 0xbcab8f,
+  // 6 institutional: Dholpur buff, Lucknow red, sandstone, light ochre
+  0xc6996b, 0xaf6c51, 0xd5c39f, 0xc9b08b,
+  // 7 generic urban: pastel cream, peach, pale grey-green, sand
+  0xd9d0be, 0xd2c5ae, 0xc6ccc4, 0xdccbb4,
 ];
 
-/** Matching roof stock. Roofs are what you see from altitude in this mode. */
-const ROOF_PALETTE_CYBER_DAY = [
-  0x424b73, 0x3c446a, 0x49527d, 0x363e60,
-  0x444d75, 0x3e466c, 0x4b5480, 0x333b5c,
-];
+/** Roof terraces seen from above: RCC grey-beige, brick dust, white-washed, grimy. */
+const ROOF_PALETTE = [0xa19c91, 0x938d83, 0xb2a997, 0x898680, 0x9d9183, 0xc4bdae, 0x7d7a74, 0xa6a095];
 
-function paletteToVec3Array(hexes: number[]): THREE.Vector3[] {
-  return hexes.map((h) => {
-    const c = new THREE.Color(h);
-    c.convertSRGBToLinear();
-    return new THREE.Vector3(c.r, c.g, c.b);
-  });
-}
+/** Heritage lime-and-lakhori stock, industrial greys. */
+const HERITAGE_WALL = [0xdccdaa, 0xd0b585, 0xc8b089, 0xe3d8bf];
+const INDUSTRIAL_WALL = [0xa8a9a5, 0x9ca2a4, 0xb1aca1, 0x8e9395];
 
+const toLinear = (hexes: number[]) => hexes.map((h) => {
+  const c = new THREE.Color(h); return new THREE.Vector3(c.r, c.g, c.b);
+});
+
+// Byte 2 packs AO (high nibble, varies between a wall's bottom and top vertices) with
+// the surface kind (low nibble, constant per primitive). Interpolating that byte across a
+// face scrambles the low nibble, so the surface kind is decoded per vertex and passed
+// FLAT, while AO is read from the smoothly interpolated byte.
 const VERT_PARS = /* glsl */ `
 attribute vec4 aPack;
 varying vec4 vPack;
 varying vec3 vWorldPos;
+flat varying float vSurf;
 `;
-
 const VERT_MAIN = /* glsl */ `
 vPack = aPack;
+vSurf = mod(floor(aPack.z * 255.0 + 0.5), 16.0);
 vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
 `;
 
 const FRAG_PARS = /* glsl */ `
 varying vec4 vPack;
 varying vec3 vWorldPos;
+flat varying float vSurf;
 
-uniform vec3 uWallPalette[8];
-uniform vec3 uRoofPalette[8];
+uniform vec3 uWallFam[32];
+uniform vec3 uRoofPal[8];
+uniform vec3 uHeritagePal[4];
+uniform vec3 uIndustrialPal[4];
 uniform float uNight;
-uniform vec3 uHorizonColor;
-uniform float uAerialStrength;
-uniform float uDetail;      // 0 at city scale -> 1 at street scale
+uniform float uDetail;
 uniform vec3 uCameraPos;
-uniform float uCyber;   // 0 = normal, 1 = cyberpunk
+uniform float uCyber;
+uniform float uClear;
+uniform float uDebug;
+uniform sampler2D uDistrict;
+uniform vec4 uDistrictXform; // originX, originZ, 1/size(m), unused
 
-/**
- * Mean coverage of the window pane function over one cell, integrated
- * analytically: the x factor is on for 0.28 of the cell plus half of its two
- * 0.10 smoothstep ramps (0.38), the y factor for 0.20 plus the same (0.30).
- * This is the value the grid converges to once a cell falls below one pixel.
- */
-#define PANE_MEAN 0.114
+// Sine-free hashes (Hoskins): sin() of city-scale coordinates loses float precision
+// and turns into visible banding.
+float lensHash(float n) { n = fract(n * 0.1031); n *= n + 33.33; n *= n + n; return fract(n); }
+float lensHash2(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+float vnoise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+  return mix(mix(lensHash2(i),lensHash2(i+vec2(1,0)),f.x), mix(lensHash2(i+vec2(0,1)),lensHash2(i+vec2(1,1)),f.x), f.y); }
 
-float lensHash(float n) {
-  return fract(sin(n * 127.1) * 43758.5453);
+float floorH(float typ) {
+  if (typ < 0.5) return 3.1; if (typ < 1.5) return 3.3; if (typ < 2.5) return 3.6; if (typ < 3.5) return 4.8;
+  if (typ < 4.5) return 3.0; if (typ < 5.5) return 3.9; if (typ < 6.5) return 6.5; return 3.15;
 }
 
-float lensHash2(vec2 p) {
-  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+// Decoded per-fragment building state, shared by colour and output stages.
+float bHash, bHeight, bAO, bSurf, bTyp, bOrient;
+vec4 bDistrict;
+void decodePack() {
+  bHash = vPack.x;
+  bHeight = floor(vPack.y * 255.0 + 0.5) * 0.5;
+  bAO = clamp(vPack.z * 255.0 / 256.0 + 0.03, 0.0, 1.0);
+  bSurf = vSurf;
+  float b3 = floor(vPack.w * 255.0 + 0.5);
+  bTyp = floor(b3 / 32.0);
+  bOrient = mod(b3, 32.0) / 32.0;
+  // Sample the district map with a per-building offset so zone edges dither by
+  // building instead of following the 176 m grid.
+  vec2 jit = (vec2(lensHash(bHash * 31.7), lensHash(bHash * 53.3)) - 0.5) * 140.0;
+  vec2 duv = (vWorldPos.xz + jit - uDistrictXform.xy) * uDistrictXform.z;
+  bDistrict = texture2D(uDistrict, clamp(duv, 0.0, 1.0));
+}
+
+// Facade-local coordinates: u along the wall, v up. Summing both orientation axes keeps
+// u varying on walls parallel AND perpendicular to the building's longest edge.
+vec2 facadeUV() {
+  float ang = bOrient * 6.2831853 - 3.1415927;
+  vec2 d = vec2(cos(ang), sin(ang));
+  vec2 n = vec2(-d.y, d.x);
+  return vec2(dot(vWorldPos.xz, d) + dot(vWorldPos.xz, n), vWorldPos.y);
+}
+
+// Window mask for a typology. Returns (pane, frame) in 0..1 and writes the cell id.
+vec2 windowMask(vec2 fuv, float fh, float typ, out vec2 cell, out float bay) {
+  float spacing = 3.2; float ww = 0.36; float sill = 0.30; float head = 0.78;
+  if (typ < 0.5) { spacing = 3.4; ww = 0.34; }
+  else if (typ < 1.5) { spacing = 2.6; ww = 0.30; sill = 0.32; head = 0.74; }
+  else if (typ < 2.5) { spacing = 3.0; ww = 0.40; }
+  else if (typ < 3.5) { spacing = 3.8; ww = 0.30; sill = 0.18; head = 0.86; }
+  else if (typ < 4.5) { spacing = 2.9; ww = 0.48; sill = 0.28; head = 0.80; }
+  else if (typ < 5.5) { spacing = 2.2; ww = 0.70; sill = 0.32; head = 0.72; }
+  else if (typ < 6.5) { spacing = 4.0; ww = 0.80; sill = 0.80; head = 0.92; }
+  else { spacing = 3.3; ww = 0.40; }
+  float u = fuv.x / spacing + lensHash(bHash * 7.1);
+  float v = fuv.y / fh;
+  cell = vec2(floor(u), floor(v));
+  bay = lensHash2(cell + bHash * 13.0);
+  vec2 f = fract(vec2(u, v));
+  // Old-city windows jitter in size and position from bay to bay.
+  float jw = typ > 0.5 && typ < 1.5 ? (bay - 0.5) * 0.12 : 0.0;
+  float hx = ww * 0.5 + jw;
+  float aa = max(fwidth(u), 1e-4) * 0.8;
+  float aav = max(fwidth(v), 1e-4) * 0.8;
+  float px = smoothstep(0.5 - hx - aa, 0.5 - hx + aa, f.x) * (1.0 - smoothstep(0.5 + hx - aa, 0.5 + hx + aa, f.x));
+  float top = head;
+  // Heritage: arched heads.
+  if (typ > 2.5 && typ < 3.5) { float dx = (f.x - 0.5) / max(hx, 0.01); top = head - 0.10 + 0.10 * sqrt(max(0.0, 1.0 - dx * dx)); }
+  float py = smoothstep(sill - aav, sill + aav, f.y) * (1.0 - smoothstep(top - aav, top + aav, f.y));
+  float pane = px * py;
+  float fx = smoothstep(0.5 - hx - 0.06 - aa, 0.5 - hx - 0.06 + aa, f.x) * (1.0 - smoothstep(0.5 + hx + 0.06 - aa, 0.5 + hx + 0.06 + aa, f.x));
+  float fy = smoothstep(sill - 0.05 - aav, sill - 0.05 + aav, f.y) * (1.0 - smoothstep(top + 0.04 - aav, top + 0.04 + aav, f.y));
+  return vec2(pane, max(0.0, fx * fy - pane));
 }
 `;
 
-/**
- * Replaces the whole diffuse-colour stage. Runs before lighting so the result feeds
- * the standard PBR pipeline rather than being pasted on top of it.
- */
 const FRAG_COLOR = /* glsl */ `
-  float packHash   = vPack.x;
-  float heightNorm = vPack.y;
-  float bakedAO    = vPack.z;
-  float flags      = floor(vPack.w * 255.0 + 0.5);
+  decodePack();
+  float isRoofLike = (bSurf == 1.0 || bSurf == 6.0 || bSurf == 7.0) ? 1.0 : 0.0;
+  float fam = floor(bDistrict.r * 255.0 + 0.5);
+  float pick = floor(lensHash(bHash * 3.7 + 0.31) * 4.0 * 0.999);
+  // 12% of buildings borrow from the generic family so districts are not uniform.
+  if (lensHash(bHash * 9.1) < 0.12) fam = 7.0;
+  if (bTyp > 3.5 && bTyp < 4.5 && fam > 3.5 && fam < 5.5) fam = 3.0; // apartments are not exposed brick
+  int wi = int(fam * 4.0 + pick);
+  vec3 wallCol = uWallFam[0];
+  for (int i = 1; i < 32; i++) { if (i == wi) wallCol = uWallFam[i]; }
+  int pk = int(pick);
+  if (bTyp > 2.5 && bTyp < 3.5) { for (int i = 0; i < 4; i++) if (i == pk) wallCol = uHeritagePal[i]; }
+  if (bTyp > 5.5 && bTyp < 6.5) { for (int i = 0; i < 4; i++) if (i == pk) wallCol = uIndustrialPal[i]; }
+  int ri = int(floor(lensHash(bHash * 5.3 + 0.7) * 8.0 * 0.999));
+  vec3 roofCol = uRoofPal[0];
+  for (int i = 1; i < 8; i++) { if (i == ri) roofCol = uRoofPal[i]; }
+  // Old fabric roofs are grimier; planned/modern roofs cleaner.
+  roofCol *= mix(1.0, 0.86, bDistrict.a);
 
-  float isRoof = mod(flags, 2.0);
-  float cls    = mod(floor(flags / 2.0), 4.0);
-  float orient = floor(flags / 8.0) / 32.0;
+  float jitter = (lensHash(bHash * 71.3) - 0.5) * 0.07;
+  wallCol *= 1.0 + jitter;
+  vec3 baseCol = wallCol;
+  float rough = 0.86; float metal = 0.0;
 
-  int paletteIdx = int(floor(packHash * 8.0 * 0.999));
+  vec2 fuv = facadeUV();
+  float fh = floorH(bTyp);
+  float near = uDetail;
 
-  vec3 wallCol = uWallPalette[0];
-  vec3 roofCol = uRoofPalette[0];
-  for (int i = 1; i < 8; i++) {
-    if (i == paletteIdx) { wallCol = uWallPalette[i]; roofCol = uRoofPalette[i]; }
+  if (bSurf == 0.0 || bSurf == 2.0 || bSurf == 3.0) {
+    // ---- walls, parapets, stair cabins ----
+    float y = vWorldPos.y;
+    // Rain streaks and plaster weathering, strongest on old fabric.
+    float streak = vnoise(vec2(fuv.x * 1.3, y * 0.08)) * vnoise(vec2(fuv.x * 0.21, y * 0.5));
+    baseCol *= 1.0 - (0.10 + 0.14 * bDistrict.a) * streak * (0.4 + 0.6 * near);
+    baseCol *= 1.0 - exp(-max(y, 0.0) / 1.8) * 0.20;     // splash grime at the plinth
+    if (bSurf == 0.0) {
+      // Plinth band.
+      float plinth = 1.0 - smoothstep(0.55, 0.62, y);
+      baseCol = mix(baseCol, baseCol * vec3(0.78, 0.76, 0.74), plinth);
+      // Storey slab lines.
+      float sl = fract(y / fh);
+      float slab = (1.0 - smoothstep(0.0, 0.06, sl)) * step(1.0, y / fh);
+      baseCol *= 1.0 - 0.10 * slab * near;
+      // Windows (not on parapets / cabins, not on the ground floor of shops).
+      vec2 cell; float bay;
+      vec2 wm = windowMask(fuv, fh, bTyp, cell, bay);
+      float storeys = bHeight / fh;
+      float inFloors = step(0.85, y / fh) * (1.0 - step(storeys - 0.25, y / fh));
+      bool shop = bTyp > 1.5 && bTyp < 2.5 && y < fh;
+      if (shop) {
+        // Bazaar ground floor: dark open bays between piers, rolling shutters, signboards.
+        float bayU = fract(fuv.x / 3.4 + lensHash(bHash));
+        float open = smoothstep(0.10, 0.14, bayU) * (1.0 - smoothstep(0.86, 0.90, bayU)) * (1.0 - smoothstep(2.55, 2.62, y));
+        float shutter = step(0.55, lensHash2(vec2(floor(fuv.x / 3.4), bHash * 17.0)));
+        vec3 inside = mix(vec3(0.10, 0.09, 0.08), vec3(0.42, 0.44, 0.45) * (0.85 + 0.15 * step(0.5, fract(y * 6.0))), shutter);
+        baseCol = mix(baseCol, inside, open * (0.4 + 0.6 * near));
+        float sign = smoothstep(2.62, 2.68, y) * (1.0 - smoothstep(3.25, 3.31, y));
+        vec3 signCol = mix(vec3(0.70, 0.18, 0.12), mix(vec3(0.95, 0.80, 0.25), vec3(0.15, 0.35, 0.60), step(0.5, lensHash(floor(fuv.x / 6.0) + bHash * 3.0))), step(0.33, lensHash(floor(fuv.x / 6.0) * 1.3 + bHash)));
+        baseCol = mix(baseCol, signCol, sign * 0.85 * near);
+      } else {
+        float wAmt = wm.x * inFloors;
+        // Glass: dark interior with a cool sky reflection, kept subtle.
+        vec3 glass = mix(vec3(0.07, 0.08, 0.09), vec3(0.30, 0.36, 0.42), 0.35 + 0.3 * bay);
+        if (bTyp > 4.5 && bTyp < 5.5) glass = mix(glass, vec3(0.20, 0.30, 0.34), 0.5);
+        float blend = mix(0.35, 0.95, near);
+        baseCol = mix(baseCol, glass, wAmt * blend);
+        baseCol = mix(baseCol, baseCol * 1.06 + 0.02, wm.y * inFloors * near * 0.5); // frames / lintels
+        // Roughness stays constant: glossy sub-pixel window bands alias into stripes
+        // under a low sun. Glass reads through colour alone.
+      }
+    } else if (bSurf == 2.0) {
+      baseCol *= 0.94;
+    } else {
+      baseCol *= 0.97;
+    }
+  } else if (bSurf == 1.0) {
+    // ---- flat RCC terrace ----
+    float g = vnoise(vWorldPos.xz * 0.9) * 0.5 + vnoise(vWorldPos.xz * 0.17) * 0.5;
+    baseCol = roofCol * (0.90 + 0.18 * g);
+    float stain = smoothstep(0.55, 0.8, vnoise(vWorldPos.xz * 0.35 + bHash * 40.0));
+    baseCol *= 1.0 - 0.12 * stain * near;
+    rough = 0.92;
+  } else if (bSurf == 4.0) { baseCol = vec3(0.035, 0.036, 0.038); rough = 0.45; }
+  else if (bSurf == 5.0) { baseCol = vec3(0.70, 0.66, 0.58); rough = 0.5; }
+  else if (bSurf == 6.0) {
+    vec2 sp = fract(vWorldPos.xz * vec2(1.0, 0.55));
+    float cellLine = step(0.94, max(sp.x, sp.y));
+    baseCol = mix(vec3(0.045, 0.07, 0.13), vec3(0.55, 0.57, 0.6), cellLine * near);
+    rough = 0.18; metal = 0.3;
+  } else if (bSurf == 7.0) {
+    // corrugated sheet: galvanised to rusty
+    float corr = 0.5 + 0.5 * sin(dot(vWorldPos.xz, vec2(cos(bOrient * 6.283), sin(bOrient * 6.283))) * 9.0);
+    vec3 galv = vec3(0.56, 0.58, 0.58); vec3 rust = vec3(0.45, 0.30, 0.22); vec3 blue = vec3(0.28, 0.40, 0.55);
+    float t = lensHash(bHash * 2.9);
+    baseCol = t < 0.55 ? galv : (t < 0.8 ? rust : blue);
+    baseCol *= 0.88 + 0.12 * corr * near + 0.1 * vnoise(vWorldPos.xz * 0.3);
+    rough = 0.55; metal = t < 0.55 ? 0.45 : 0.1;
+  } else if (bSurf == 8.0) { baseCol = mix(wallCol, vec3(0.62, 0.60, 0.56), 0.5); }
+  else if (bSurf == 9.0) { baseCol = vec3(0.72, 0.72, 0.70); rough = 0.6; }
+  else if (bSurf == 10.0) {
+    // landmark stone: lime plaster over lakhori brick, with mouldings every ~1.6 m
+    float mould = smoothstep(0.0, 0.06, abs(fract(vWorldPos.y / 1.6) - 0.5) - 0.44);
+    baseCol = vec3(0.80, 0.71, 0.52) * (0.92 + 0.12 * vnoise(vWorldPos.xz * 0.5 + vWorldPos.y * 0.3)) * (1.0 - 0.10 * mould);
+    baseCol *= 1.0 - 0.15 * vnoise(vec2(fuv.x * 0.8, vWorldPos.y * 0.15));
+    rough = 0.88;
+  }
+  else if (bSurf == 11.0) { baseCol = vec3(0.86, 0.83, 0.76) * (0.95 + 0.08 * vnoise(vWorldPos.xz * 0.6)); rough = 0.7; }
+  else if (bSurf == 12.0) { baseCol = vec3(0.78, 0.60, 0.25); rough = 0.35; metal = 0.8; }
+  else if (bSurf == 13.0) {
+    // Glass on modern blocks; on heritage fabric the same surface is a deep arch opening.
+    baseCol = (bTyp > 2.5 && bTyp < 3.5) ? vec3(0.075, 0.065, 0.055) : vec3(0.18, 0.25, 0.30);
+    rough = 0.6;
+  }
+  else if (bSurf == 14.0) { baseCol = vec3(0.90, 0.86, 0.78); rough = 0.8; }
+  else if (bSurf == 15.0) {
+    // red sandstone / brick with coursing
+    float course = smoothstep(0.0, 0.08, abs(fract(vWorldPos.y / 0.45) - 0.5) - 0.40);
+    baseCol = vec3(0.56, 0.27, 0.19) * (0.90 + 0.14 * vnoise(vWorldPos.xz * 0.7 + vWorldPos.y)) * (1.0 - 0.10 * course * near);
+    rough = 0.85;
   }
 
-  vec3 baseCol = mix(wallCol, roofCol, isRoof);
+  if (uDebug > 0.5) { baseCol = wallCol * (bSurf == 1.0 ? 0.6 : 1.0); rough = 0.9; metal = 0.0; }
+  // Baked contact AO.
+  float aoStrength = mix(0.45 + 0.25 * near, 0.15, uNight);
+  baseCol *= mix(1.0, bAO, aoStrength);
 
-  // Subtle deterministic tint jitter so neighbours differ without the city
-  // turning into confetti. +/-4% only.
-  float jitter = (lensHash(packHash * 71.3) - 0.5) * 0.08;
-  baseCol *= (1.0 + jitter);
-
-  // Taller buildings skew slightly cooler and cleaner; low-rise skews warmer and
-  // more weathered. Reads as a real material gradient across the skyline.
-  baseCol = mix(baseCol * vec3(1.03, 1.005, 0.96), baseCol * vec3(0.97, 0.99, 1.04), heightNorm);
-
-  // --- Vertical weathering on walls -----------------------------------------
-  // Grime accumulates near the ground; upper storeys stay cleaner.
-  float storeyY = max(vWorldPos.y, 0.0);
-  float grime = exp(-storeyY / 6.0) * 0.22 * (1.0 - isRoof);
-  baseCol *= (1.0 - grime);
-
-  // --- Facade banding --------------------------------------------------------
-  // Floor lines at ~3.2 m, aligned to the building's own longest edge. Faded out
-  // at city scale where it would alias, and never applied to roofs.
-  float bandPhase = storeyY / 3.2 + lensHash(packHash * 13.7);
-  float band = smoothstep(0.02, 0.10, abs(fract(bandPhase) - 0.5));
-  float bandAmt = (1.0 - isRoof) * uDetail * 0.20;
-  baseCol *= mix(1.0, 0.75 + 0.25 * band, bandAmt);
-
-  // --- Roof surface texture & edge definition -------------------------------
-  // Gives rooftops subtle variation and gravel grain instead of completely flat fills
-  if (isRoof > 0.5) {
-    float roofGrain = (lensHash2(vWorldPos.xz * 0.15) - 0.5) * 0.08 * uDetail;
-    baseCol *= (1.0 + roofGrain);
-  }
-
-  // --- Baked ambient occlusion ----------------------------------------------
-  // Ground contact and street-canyon darkening. Kept gentle so the city never
-  // goes muddy; strengthened slightly as you descend. At night there is very
-  // little indirect light to occlude in the first place, and a full-strength AO
-  // term pushed facades to black, so it is dialled back.
-  float aoStrength = mix(0.55 + 0.25 * uDetail, 0.10, uNight);
-  baseCol *= mix(1.0, bakedAO, aoStrength);
-
-  // Grime is a daylight read; at night it just removes what little value is left.
-  baseCol = mix(baseCol, baseCol / max(1.0 - grime, 0.5), uNight * 0.3);
+  // Style looks: "clear" = cooler, cleaner; "cyberpunk" = steel-blue stock.
+  float lum = dot(baseCol, vec3(0.299, 0.587, 0.114));
+  baseCol = mix(baseCol, mix(baseCol, vec3(lum) * vec3(0.96, 0.99, 1.04), 0.45), uClear);
+  baseCol = mix(baseCol, vec3(lum) * vec3(0.55, 0.62, 0.95), uCyber * 0.85);
+  // Night: surfaces read darker so emitted light carries the scene.
+  baseCol *= mix(1.0, 0.5, uNight);
 
   diffuseColor.rgb *= baseCol;
+  float bRough = rough; float bMetal = metal;
 `;
 
-/**
- * Night windows + aerial perspective, applied after lighting so emissive windows
- * survive tone mapping and haze desaturates the far city as a whole.
- */
+const FRAG_ROUGH = /* glsl */ `
+  roughnessFactor = bRough;
+`;
+const FRAG_METAL = /* glsl */ `
+  metalnessFactor = bMetal;
+`;
+
+/** Emissive city light, applied after lighting so windows survive tone mapping. */
 const FRAG_OUTPUT = /* glsl */ `
-  float nFlags  = floor(vPack.w * 255.0 + 0.5);
-  float nIsRoof = mod(nFlags, 2.0);
-  float nCls    = mod(floor(nFlags / 2.0), 4.0);
-  float nOrient = floor(nFlags / 8.0) / 32.0;
-  float nHash   = vPack.x;
-
-  float dist = length(vWorldPos - uCameraPos);
-
-  // --- Aerial perspective ----------------------------------------------------
-  // Distance haze that desaturates toward the horizon colour. This is what makes
-  // the city read as enormous; FogExp2 alone only darkens.
-  // Applied to the SURFACE only. City lights are added afterwards, because light
-  // emitted toward the camera is exactly what stays visible through haze — folding
-  // them in before this mix pushed the whole night skyline to black.
-  // Aerial perspective haze removed entirely per user request.
-  float haze = 0.0;
-
-  // --- Night city lights -----------------------------------------------------
   if (uNight > 0.01) {
-    // Haze still dims lights, just far less aggressively than it dims surfaces.
-    float lightHaze = 1.0 - haze * 0.45;
+    float dist = length(vWorldPos - uCameraPos);
+    float density = bDistrict.g;                 // 0..1 district light density
+    float commercial = bDistrict.b;
+    // Building-level occupancy: denser and more commercial districts burn more lights.
+    float occ = 0.30 + 0.45 * density + 0.20 * commercial;
+    if (bTyp > 1.5 && bTyp < 2.5) occ += 0.25;          // bazaars
+    if (bTyp > 3.5 && bTyp < 4.5) occ += 0.10;          // apartments
+    if (bTyp > 4.5 && bTyp < 5.5) occ *= 0.55;          // offices empty at night
+    if (bTyp > 5.5 && bTyp < 6.5) occ *= 0.35;          // industrial
+    float litBldg = step(1.0 - clamp(occ, 0.05, 0.95), lensHash(bHash * 17.3 + 4.1));
+    // Lamp colours: warm incandescent/LED, neutral, and the cool tube lights common in Indian homes.
+    float lt = lensHash(bHash * 37.0);
+    vec3 warm = vec3(1.0, 0.76, 0.48), neutral = vec3(1.0, 0.90, 0.76), cool = vec3(0.84, 0.94, 1.0);
+    vec3 lampCol = lt < 0.45 ? warm : (lt < 0.70 ? neutral : cool);
+    lampCol = mix(lampCol, mix(vec3(0.30, 0.97, 1.0), vec3(1.0, 0.38, 0.92), step(0.5, lensHash(bHash * 5.7))), uCyber);
+    float fh = floorH(bTyp);
 
-    // Per-building state. Constant over the whole building, so nothing derived
-    // from it can shimmer when the camera moves.
-    float litBldg    = step(0.42, lensHash(nHash * 17.3 + 4.1));
-    float commercial = nCls > 0.5 ? 1.45 : 1.0;
-
-    // ONE light colour for the whole night model, and a desaturated one.
-    //
-    // The old far term used saturated sodium (1.0, 0.74, 0.44). At range it was
-    // driven so hard that it clipped to white, which is the only reason the city
-    // ever looked white from altitude. As soon as the exposure came down through
-    // the mid distances that same value stopped clipping and showed its real hue,
-    // so the city passed through a gold band on every zoom. A single desaturated
-    // lamp colour holds one hue at every distance, and never needs to clip to
-    // look right.
-    vec3 lampWarm = mix(vec3(1.0, 0.94, 0.84), vec3(1.0, 0.88, 0.72), lensHash(nHash * 37.0));
-    lampWarm = mix(lampWarm, mix(vec3(0.30, 0.97, 1.0), vec3(1.0, 0.38, 0.92),
-                                 step(0.5, lensHash(nHash * 5.7))), uCyber);
-
-    // --- Windows ---------------------------------------------------------------
-    // No distance fade. The grid is filtered analytically instead: once a window
-    // cell shrinks below a pixel the pattern collapses to its own average rather
-    // than being point-sampled. Point-sampling a sub-pixel grid is exactly what
-    // made the zoomed-out city crawl and flicker while the camera moved and sit
-    // still when it stopped, and fading it out was what forced a second lighting
-    // model to exist at all.
-    if (nIsRoof < 0.5) {
-      float ang = nOrient * 6.2831853;
-      vec2 dir = vec2(cos(ang), sin(ang));
-      float u = dot(vWorldPos.xz, dir) / 3.6;
-      float v = vWorldPos.y / 3.2;
-
-      // Screen-space footprint of one cell, in cells.
-      float foot = max(fwidth(u), fwidth(v));
+    if (bSurf == 0.0) {
+      vec2 fuv = facadeUV();
+      vec2 cell; float bay;
+      vec2 wm = windowMask(fuv, fh, bTyp, cell, bay);
+      float storeys = bHeight / fh;
+      float v = vWorldPos.y / fh;
+      float inFloors = step(0.85, v) * (1.0 - step(storeys - 0.25, v));
+      // Floor-coherent occupancy: a household lights a run of adjacent windows.
+      float floorOn = step(0.45, lensHash2(vec2(cell.y, floor(cell.x / 3.0)) + bHash * 7.0));
+      float on = step(1.0 - clamp(occ * 0.8, 0.0, 0.85), bay) * floorOn * mix(0.25, 1.0, litBldg);
+      vec3 winCol = mix(lampCol, lt < 0.7 ? cool : warm, step(0.8, lensHash2(cell * 1.7 + bHash)));
+      float foot = max(fwidth(fuv.x / 3.0), fwidth(v));
       float blur = smoothstep(0.30, 1.10, foot);
-
-      // Most windows stay dark. Commercial stock keeps more lights on, which is
-      // what builds the district-level brightness hierarchy.
-      float litChance  = nCls > 0.5 ? 0.70 : 0.40;
-      float storeyMask = step(1.0, v) * (1.0 - step(vPack.y * 80.0 / 3.2 - 1.0, v));
-
-      vec2  cell = vec2(floor(u), floor(v));
-      float lit  = lensHash2(cell + nHash * 91.0);
-      float on   = step(1.0 - litChance, lit) * storeyMask;
-
-      vec2  f = fract(vec2(u, v));
-      float pane = smoothstep(0.26, 0.36, f.x) * (1.0 - smoothstep(0.64, 0.74, f.x))
-                 * smoothstep(0.30, 0.40, f.y) * (1.0 - smoothstep(0.60, 0.70, f.y));
-
-      // Converge to the analytic means of each factor.
-      float onF   = mix(on,   litChance * storeyMask, blur);
-      float paneF = mix(pane, PANE_MEAN,              blur);
-
-      gl_FragColor.rgb += lampWarm * onF * paneF * uNight * lightHaze * 2.9;
+      float paneF = mix(wm.x, 0.12, blur);
+      float onF = mix(on, (occ * 0.6) * mix(0.25, 1.0, litBldg), blur);
+      gl_FragColor.rgb += winCol * onF * paneF * inFloors * uNight * 0.95;
+      // Bazaar shopfronts glow along the whole ground floor.
+      if (bTyp > 1.5 && bTyp < 2.5 && vWorldPos.y < fh) {
+        float bayU = fract(fuv.x / 3.4 + lensHash(bHash));
+        float open = smoothstep(0.10, 0.14, bayU) * (1.0 - smoothstep(0.86, 0.90, bayU)) * (1.0 - smoothstep(2.55, 2.62, vWorldPos.y));
+        float shopOn = step(0.25, lensHash2(vec2(floor(fuv.x / 3.4), bHash * 17.0)));
+        gl_FragColor.rgb += vec3(1.0, 0.82, 0.55) * open * shopOn * uNight * 0.9;
+        float sign = smoothstep(2.62, 2.68, vWorldPos.y) * (1.0 - smoothstep(3.25, 3.31, vWorldPos.y));
+        gl_FragColor.rgb += vec3(1.0, 0.93, 0.80) * sign * shopOn * uNight * 0.55;
+      }
+      // Warm street spill on lower storeys, stronger in commercial districts.
+      float nearness = 1.0 - smoothstep(250.0, 1400.0, dist);
+      gl_FragColor.rgb += vec3(0.20, 0.14, 0.08) * (0.4 + commercial) * nearness * exp(-max(vWorldPos.y, 0.0) / 9.0) * uNight;
     }
-
-    // Street-level bounce. Up close the window grid is the only thing emitting,
-    // which left facades reading as black cutouts with floating panes. Real
-    // streets are lit from below by spill off the carriageway, so lower storeys
-    // pick up a warm wash that decays with height.
-    float nearness = 1.0 - smoothstep(300.0, 1400.0, dist);
-    float bounce = (1.0 - nIsRoof) * nearness * exp(-max(vWorldPos.y, 0.0) / 16.0);
-    gl_FragColor.rgb += vec3(0.13, 0.11, 0.085) * bounce * uNight;
-
-    // --- Ambient block spill ---------------------------------------------------
-    // From the air you are looking at roofs and at the light standing over each
-    // block, not at facades. A per-building constant ramped purely by distance:
-    // it cannot alias, and weighting it toward roofs keeps it from washing walls
-    // warm at mid range, which is what produced the gold band.
-    // The ramp is deliberately long and starts late. smoothstep is very flat near
-    // its lower edge, so neighbourhood range stays as dark as street range — the
-    // two now differ in window density rather than in overall brightness, which is
-    // what removes the visible "stage" between them — and the city only lifts to
-    // its full lit-from-altitude value once buildings are genuinely small.
-    float spill     = smoothstep(800.0, 5000.0, dist);
-    float spillSurf = mix(0.35, 1.0, nIsRoof);
-    gl_FragColor.rgb += lampWarm * litBldg * commercial * spill * spillSurf
-                      * uNight * lightHaze * 1.3;
-  }
-
-  // --- Daytime Architectural Glazing & Window Specular ----------------------
-  // In daylight, windows reflect sky and sunlight rather than emitting yellow sodium.
-  // We compute crisp window apertures that glint with cool sky and sun specular,
-  // matching SimCity BuildIt and modern digital twin visuals.
-  if (uNight < 0.98 && nIsRoof < 0.5) {
-    float dayAng = nOrient * 6.2831853;
-    vec2 dayDir = vec2(cos(dayAng), sin(dayAng));
-    float dayU = dot(vWorldPos.xz, dayDir) / 3.4;
-    float dayV = vWorldPos.y / 3.0;
-
-    // Filter sub-pixel window grid smoothly at distance to prevent aliasing moire
-    float dayFoot = max(fwidth(dayU), fwidth(dayV));
-    float dayBlur = smoothstep(0.35, 1.20, dayFoot);
-
-    // Window pane geometry
-    vec2 dayF = fract(vec2(dayU, dayV));
-    float dayPane = smoothstep(0.24, 0.34, dayF.x) * (1.0 - smoothstep(0.66, 0.76, dayF.x))
-                  * smoothstep(0.28, 0.38, dayF.y) * (1.0 - smoothstep(0.62, 0.72, dayF.y));
-    float paneEffect = mix(dayPane, PANE_MEAN * 1.8, dayBlur);
-
-    // Storey mask: avoid ground-floor and roof line overflow
-    float dayStoreyMask = step(0.8, dayV) * (1.0 - step(vPack.y * 80.0 / 3.0 - 0.5, dayV));
-
-    // Commercial / high-rise buildings have cooler blue reflective glass; residential has tinted glass
-    vec3 glassSkyColor = mix(vec3(0.55, 0.72, 0.88), vec3(0.42, 0.58, 0.76), lensHash(nHash * 23.1));
-    float glassReflectivity = (nCls > 0.5 ? 0.38 : 0.22) * uDetail * (1.0 - uNight) * dayStoreyMask;
-
-    // Apply specular window glint to fragment color
-    gl_FragColor.rgb = mix(gl_FragColor.rgb, glassSkyColor * 1.15, paneEffect * glassReflectivity);
+    // Heritage fabric is floodlit from below.
+    if (bTyp > 2.5 && bTyp < 3.5 && (bSurf == 0.0 || bSurf >= 10.0)) {
+      float flood = exp(-max(vWorldPos.y, 0.0) / 14.0) * 0.65 + 0.12;
+      gl_FragColor.rgb += vec3(1.0, 0.72, 0.40) * flood * uNight * 0.55;
+    }
+    // From altitude you see roofs and the light standing over each block: a per-building
+    // constant ramped by distance, weighted to the district's light density.
+    float spill = smoothstep(900.0, 6000.0, dist);
+    float roofW = (bSurf == 1.0 || bSurf == 7.0) ? 1.0 : 0.4;
+    vec3 spillCol = mix(lampCol, warm, 0.6);
+    gl_FragColor.rgb += spillCol * litBldg * (0.25 + 0.75 * density) * spill * roofW * uNight * 0.45;
   }
 `;
-
 
 export interface BuildingMaterialUniforms {
+  [k: string]: { value: unknown };
   uNight: { value: number };
-  uHorizonColor: { value: THREE.Color };
-  uAerialStrength: { value: number };
   uDetail: { value: number };
   uCameraPos: { value: THREE.Vector3 };
   uCyber: { value: number };
-  uWallPalette: { value: THREE.Vector3[] };
-  uRoofPalette: { value: THREE.Vector3[] };
+  uClear: { value: number };
+  uDebug: { value: number };
+  uWallFam: { value: THREE.Vector3[] };
+  uRoofPal: { value: THREE.Vector3[] };
+  uHeritagePal: { value: THREE.Vector3[] };
+  uIndustrialPal: { value: THREE.Vector3[] };
+  uDistrict: { value: THREE.Texture };
+  uDistrictXform: { value: THREE.Vector4 };
 }
 
 export class BuildingMaterialSystem {
-  /** Full-detail material for the streamed tiles. */
+  /** Full-detail material for the streamed tiles (base + detail streams). */
   public readonly solid: THREE.MeshStandardMaterial;
   /**
-   * Full-detail material for the HLOD relief stream.
-   *
-   * A SEPARATE instance from `solid`, and that separation is the whole point.
-   * Relief and the streamed tiles extrude the same buildings from the same
-   * source, so inside the streamed radius the two draw identical geometry at
-   * identical depth. Sharing one material meant identical fragments with
-   * identical depth values, which z-fights: stable while the camera is still,
-   * and shimmering the moment it moves.
-   *
-   * The fix is a depth bias, not a cull. Pushing relief fractionally behind the
-   * tiles makes the tiles win that depth test everywhere the two coincide, which
-   * settles the fight deterministically and needs no knowledge of what the
-   * streamer has loaded. Discarding relief inside a "covered" disc was tried and
-   * reverted: coverage is genuinely hard to know (in-frustum tiles, tiles with no
-   * buildings, tiles mid-load), and a fragment discard does not affect the shadow
-   * pass, so culled buildings kept casting shadows onto ground that no longer had
-   * anything standing on it.
+   * HLOD relief material — a separate instance with a depth bias so the streamed tiles
+   * win wherever both extrude the same building (otherwise they z-fight).
    */
   public readonly hlodSolid: THREE.MeshStandardMaterial;
-  /** Flat roof-cap material for the city-scale fabric layer — cheaper lighting. */
+  /** Roof-cap-only fabric layer for city scale. */
   public readonly fabric: THREE.MeshStandardMaterial;
 
   private uniforms: BuildingMaterialUniforms;
   private isNight = true;
-
   private style: SkylineStyle = 'warm';
 
-  private clearWall = paletteToVec3Array(WALL_PALETTE_CLEAR);
-  private clearRoof = paletteToVec3Array(ROOF_PALETTE_CLEAR);
-  private cyberWall = paletteToVec3Array(WALL_PALETTE_CYBER);
-  private cyberRoof = paletteToVec3Array(ROOF_PALETTE_CYBER);
-  private cyberDayWall = paletteToVec3Array(WALL_PALETTE_CYBER_DAY);
-  private cyberDayRoof = paletteToVec3Array(ROOF_PALETTE_CYBER_DAY);
-
-  private dayWall = paletteToVec3Array(WALL_PALETTE_DAY);
-  private dayRoof = paletteToVec3Array(ROOF_PALETTE_DAY);
-  private nightWall = paletteToVec3Array(WALL_PALETTE_NIGHT);
-  private nightRoof = paletteToVec3Array(ROOF_PALETTE_NIGHT);
-
   constructor() {
+    const fallback = new THREE.DataTexture(new Uint8Array([7, 110, 40, 60]), 1, 1, THREE.RGBAFormat);
+    fallback.needsUpdate = true;
     this.uniforms = {
       uNight: { value: 1 },
-      uHorizonColor: { value: new THREE.Color(0x0c1628).convertSRGBToLinear() },
-      uAerialStrength: { value: 0.000045 },
       uDetail: { value: 0 },
       uCameraPos: { value: new THREE.Vector3() },
       uCyber: { value: 0 },
-      uWallPalette: { value: this.nightWall },
-      uRoofPalette: { value: this.nightRoof },
+      uClear: { value: 0 },
+      uDebug: { value: 0 },
+      uWallFam: { value: toLinear(WALL_FAMILIES) },
+      uRoofPal: { value: toLinear(ROOF_PALETTE) },
+      uHeritagePal: { value: toLinear(HERITAGE_WALL) },
+      uIndustrialPal: { value: toLinear(INDUSTRIAL_WALL) },
+      uDistrict: { value: fallback },
+      uDistrictXform: { value: new THREE.Vector4(-22528, -22528, 1 / 45056, 0) },
     };
 
-    this.solid = this.build({ roughness: 0.82, metalness: 0.02 });
-    // Same look, pushed fractionally away from the eye so the streamed tiles win
-    // wherever both extrude the same building.
+    this.solid = this.build({ roughness: 0.86, metalness: 0.0 }, 'solid');
     this.hlodSolid = this.build({
-      roughness: 0.82,
-      metalness: 0.02,
-      polygonOffset: true,
-      polygonOffsetFactor: 1,
-      polygonOffsetUnits: 2,
-    });
-    // The fabric layer is viewed from far above and almost edge-on to the sun;
-    // flat shading with a touch more roughness keeps it calm and alias-free.
-    // Polygon offset pushes it fractionally behind the relief stream so the two
-    // can be drawn together without z-fighting on shared roof caps.
+      roughness: 0.86, metalness: 0.0,
+      polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 2,
+    }, 'hlod');
     this.fabric = this.build({
-      roughness: 0.95,
-      metalness: 0.0,
-      polygonOffset: true,
-      polygonOffsetFactor: 2,
-      polygonOffsetUnits: 4,
-    });
+      roughness: 0.95, metalness: 0.0,
+      polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 4,
+    }, 'fabric');
+
+    void this.loadDistrictMap();
   }
 
-  private build(params: THREE.MeshStandardMaterialParameters): THREE.MeshStandardMaterial {
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      // Buildings are hard-edged, so normals come from screen-space derivatives via
-      // three's own FLAT_SHADED path. That means the geometry carries no normal
-      // attribute at all — half the vertex bandwidth, and it sidesteps the smoothed
-      // normals that computeVertexNormals() produced on merged extrusions.
-      flatShading: true,
-      ...params,
-    });
+  /** Load the district map baked by scripts/build_buildings.ts. */
+  private async loadDistrictMap(): Promise<void> {
+    try {
+      const meta = await loadJSON<{ size: number; cell: number; originX: number; originZ: number }>('/ground/district_meta.json');
+      const buf = await loadBuffer('/ground/district.bin');
+      if (buf.byteLength !== meta.size * meta.size * 4) throw new Error('district.bin size mismatch');
+      const tex = new THREE.DataTexture(new Uint8Array(buf), meta.size, meta.size, THREE.RGBAFormat);
+      tex.magFilter = THREE.NearestFilter;
+      tex.minFilter = THREE.NearestFilter;
+      tex.generateMipmaps = false;
+      tex.needsUpdate = true;
+      this.uniforms.uDistrict.value = tex;
+      this.uniforms.uDistrictXform.value.set(meta.originX, meta.originZ, 1 / (meta.size * meta.cell), 0);
+    } catch (e) {
+      console.warn('[Buildings] district map unavailable, using neutral defaults:', e);
+    }
+  }
 
+  private build(params: THREE.MeshStandardMaterialParameters, key: string): THREE.MeshStandardMaterial {
+    const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, flatShading: true, ...params });
     mat.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, this.uniforms);
-
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', `#include <common>\n${VERT_PARS}`)
         .replace('#include <project_vertex>', `${VERT_MAIN}\n#include <project_vertex>`);
-
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>\n${FRAG_PARS}`)
         .replace('#include <color_fragment>', `#include <color_fragment>\n${FRAG_COLOR}`)
+        .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>\n${FRAG_ROUGH}`)
+        .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>\n${FRAG_METAL}`)
         .replace('#include <fog_fragment>', `${FRAG_OUTPUT}\n#include <fog_fragment>`);
     };
-
-    // Force a distinct program per material instance so the two variants don't
-    // collide in three's shader cache.
-    mat.customProgramCacheKey = () => `lens-bldg-${params.roughness}`;
+    mat.customProgramCacheKey = () => `lens-bldg-v2-${key}`;
+    // Exposed so SceneTween can interpolate uNight, palettes and style mixes.
+    (mat as unknown as { uniforms: BuildingMaterialUniforms }).uniforms = this.uniforms;
     return mat;
   }
 
-  /** Per-frame: camera position drives aerial perspective. */
   public updateCamera(pos: THREE.Vector3): void {
     this.uniforms.uCameraPos.value.copy(pos);
   }
@@ -497,47 +479,30 @@ export class BuildingMaterialSystem {
     this.uniforms.uDetail.value = THREE.MathUtils.clamp(t, 0, 1);
   }
 
-  /** Keep haze matched to whatever the sky is currently showing at the horizon. */
-  public setHorizon(color: THREE.Color, strength: number): void {
-    this.uniforms.uHorizonColor.value.copy(color).convertSRGBToLinear();
-    this.uniforms.uAerialStrength.value = strength;
-  }
+  /** Kept for API compatibility; haze is now scene fog (renderer.ts). */
+  public setHorizon(_color: THREE.Color, _strength: number): void { /* no-op */ }
 
   public setNightMode(night: boolean): void {
     this.isNight = night;
     this.uniforms.uNight.value = night ? 1 : 0;
-    this.applyPalette();
   }
 
-  /** Switch the skyline look. Purely a palette + light-colour swap, no rebuild. */
   public setSkylineStyle(style: SkylineStyle): void {
     this.style = style;
     this.uniforms.uCyber.value = style === 'cyberpunk' ? 1 : 0;
-    this.applyPalette();
+    this.uniforms.uClear.value = style === 'clear' ? 1 : 0;
   }
 
   public getSkylineStyle(): SkylineStyle { return this.style; }
-
-  private applyPalette(): void {
-    const night = this.isNight;
-    let wall: THREE.Vector3[];
-    let roof: THREE.Vector3[];
-    if (this.style === 'cyberpunk') {
-      wall = night ? this.cyberWall : this.cyberDayWall;
-      roof = night ? this.cyberRoof : this.cyberDayRoof;
-    } else if (this.style === 'clear') {
-      wall = night ? this.nightWall : this.clearWall;
-      roof = night ? this.nightRoof : this.clearRoof;
-    } else {
-      wall = night ? this.nightWall : this.dayWall;
-      roof = night ? this.nightRoof : this.dayRoof;
-    }
-    this.uniforms.uWallPalette.value = wall;
-    this.uniforms.uRoofPalette.value = roof;
+  /** Shared district map uniforms, so the ground glow samples the same texture. */
+  public getDistrictUniforms(): { tex: { value: THREE.Texture }; xform: { value: THREE.Vector4 } } {
+    return { tex: this.uniforms.uDistrict, xform: this.uniforms.uDistrictXform };
   }
+  public getNight(): boolean { return this.isNight; }
 
   public dispose(): void {
     this.solid.dispose();
+    this.hlodSolid.dispose();
     this.fabric.dispose();
   }
 }

@@ -12,8 +12,9 @@
  * work, not a data migration.
  */
 
-import { buildBuildings, triangulate, type BuildingInput } from './buildingGeometry';
-import { appendRibbon, buildElevationProfiles, classifyRoad, ROAD_HALF_WIDTH, type Pt } from './ribbon';
+import { buildBuildings, triangulate, prepareBuilding, emitDetail, FloatSink, type BuildingInput } from './buildingGeometry';
+import { isLandmarkSite } from './landmarkSites';
+import { appendRibbon, buildElevationProfiles, classifyRoad, roadHalfWidth, ROAD_HALF_WIDTH, type Pt } from './ribbon';
 
 export interface TileWorkerRequest {
   id: string;
@@ -22,11 +23,15 @@ export interface TileWorkerRequest {
   lod: number;
   originX: number;
   originZ: number;
+  /** 'detail' builds only the near-range rooftop/facade stream for an already-loaded tile. */
+  kind?: 'full' | 'detail';
 }
 
 export interface RoadStrip {
   category: string;
   pos: Float32Array;
+  /** u across (-1..1), v along (metres) — drives lane markings and asphalt in the road shader. */
+  uv: Float32Array;
 }
 
 export interface TileWorkerResponse {
@@ -35,7 +40,9 @@ export interface TileWorkerResponse {
   error?: string;
   originX: number;
   originZ: number;
+  kind?: 'full' | 'detail';
   buildings?: { pos: Float32Array; pack: Uint8Array; count: number; ids: string[] };
+  detail?: { pos: Float32Array; pack: Uint8Array; count: number };
   roads?: RoadStrip[];
   parks?: Float32Array;
   water?: Float32Array;
@@ -68,6 +75,7 @@ const SEAM_TOL = 1.5;
 
 function buildRoadRibbons(roads: RoadIn[], originX: number, originZ: number): RoadStrip[] {
   const byCat = new Map<string, number[]>();
+  const uvCat = new Map<string, number[]>();
 
   // Elevated roads get a real ramp-hold-ramp profile rather than a flat 6.8 m
   // slab. Features are cut at tile borders, so an endpoint sitting on a seam is
@@ -89,16 +97,16 @@ function buildRoadRibbons(roads: RoadIn[], originX: number, originZ: number): Ro
     if (cls === 'railway') continue;
     // Source width wins where present, but never below the class floor so the
     // motorway/footway hierarchy stays legible.
-    const half = Math.max(ROAD_HALF_WIDTH[cls], (road.width ?? 0) / 2);
+    const half = roadHalfWidth(cls, road.type, road.id);
     let arr = byCat.get(cls);
-    if (!arr) { arr = []; byCat.set(cls, arr); }
-    appendRibbon(arr, profiles.get(road) ?? road.points, { half, originX, originZ, y: 0 });
+    if (!arr) { arr = []; byCat.set(cls, arr); uvCat.set(cls, []); }
+    appendRibbon(arr, profiles.get(road) ?? road.points, { half, originX, originZ, y: 0, uvOut: uvCat.get(cls) });
   }
 
   const out: RoadStrip[] = [];
   for (const [category, verts] of byCat) {
     if (verts.length === 0) continue;
-    out.push({ category, pos: new Float32Array(verts) });
+    out.push({ category, pos: new Float32Array(verts), uv: new Float32Array(uvCat.get(category)!) });
   }
   return out;
 }
@@ -136,7 +144,7 @@ function buildStreetlights(roads: RoadIn[], originX: number, originZ: number): F
     const spacing = LIT_ROAD_SPACING[cls];
     if (!spacing) continue;
 
-    const half = Math.max(ROAD_HALF_WIDTH[cls], (road.width ?? 0) / 2) + 1.2;
+    const half = roadHalfWidth(cls, road.type, road.id) + 1.2;
     // Only genuine dual-carriageway classes are lit from both sides. Primary used
     // to be included, which doubled the mast count on ordinary city avenues that
     // in reality carry a single staggered row.
@@ -221,14 +229,33 @@ self.onmessage = async (e: MessageEvent<TileWorkerRequest>) => {
     }
     const data = await resp.json();
 
+    if (data.buildingsVersion !== 2) {
+      // Outdated tile data: refuse rather than draw a mixed old/new city.
+      throw new Error(`tile ${id} buildingsVersion ${data.buildingsVersion} (expected 2) - run npm run data:city`);
+    }
     const src = lod >= 2 ? data.lod2 : (data.lod1 || data.lod2);
     const bldgList: BuildingInput[] = src?.buildings || [];
     const roadList: RoadIn[] = src?.roads || [];
     const waterList: AreaIn[] = (data.lod2?.waterways || data.lod1?.waterways || []).filter((w: any) => w.isPolygon);
     const parkList: AreaIn[] = data.lod2?.greenAreas || data.lod1?.greenAreas || [];
-    const treeList: Array<{ x: number; y: number; z: number; scale: number }> = data.lod2?.trees || [];
+    const treeList: Array<{ x: number; y: number; z: number; scale: number; k?: number }> = data.lod2?.trees || [];
 
-    const built = buildBuildings(bldgList, originX, originZ);
+    if (req.kind === 'detail') {
+      const sink = new FloatSink(Math.max(4096, bldgList.length * 120));
+      for (const b of bldgList) {
+        const p = prepareBuilding(b);
+        if (!p || isLandmarkSite(p.cx, p.cz)) continue;
+        emitDetail(sink, p, originX, originZ);
+      }
+      const d = sink.finish();
+      (self as unknown as Worker).postMessage(
+        { id, ok: true, originX, originZ, kind: 'detail', detail: d } as TileWorkerResponse,
+        [d.pos.buffer, d.pack.buffer],
+      );
+      return;
+    }
+
+    const built = buildBuildings(bldgList, originX, originZ, isLandmarkSite).base;
     const ids = bldgList.map((b) => b.id);
 
     const roads = buildRoadRibbons(roadList, originX, originZ);
@@ -241,14 +268,15 @@ self.onmessage = async (e: MessageEvent<TileWorkerRequest>) => {
     const parks = buildAreas(parkList, originX, originZ, 0.05);
     const water = buildAreas(waterList, originX, originZ, -0.15);
 
-    // Trees: x, y, z, scale packed flat.
-    const trees = new Float32Array(treeList.length * 4);
+    // Trees: x, y, z, scale, planting kind (0 park, 1 verge, 2 open, 3 yard, 4 orchard).
+    const trees = new Float32Array(treeList.length * 5);
     for (let i = 0; i < treeList.length; i++) {
       const t = treeList[i];
-      trees[i * 4] = t.x - originX;
-      trees[i * 4 + 1] = t.y || 0;
-      trees[i * 4 + 2] = t.z - originZ;
-      trees[i * 4 + 3] = t.scale || 1;
+      trees[i * 5] = t.x - originX;
+      trees[i * 5 + 1] = t.y || 0;
+      trees[i * 5 + 2] = t.z - originZ;
+      trees[i * 5 + 3] = t.scale || 1;
+      trees[i * 5 + 4] = t.k ?? 0;
     }
 
     const response: TileWorkerResponse = {
@@ -267,6 +295,7 @@ self.onmessage = async (e: MessageEvent<TileWorkerRequest>) => {
       built.pos.buffer, built.pack.buffer,
       parks.buffer, water.buffer, trees.buffer, streetlights.buffer,
       ...roads.map((r) => r.pos.buffer),
+      ...roads.map((r) => r.uv.buffer),
     ];
     (self as unknown as Worker).postMessage(response, transfer);
   } catch (err) {

@@ -46,11 +46,11 @@ interface Corridor {
   half: number;
 }
 
-function writeFileRetry(file: string, data: string, attempts = 5): void {
+function writeFileRetry(file: string, data: string, attempts = 40): void {
   for (let i = 0; ; i++) {
     try { fs.writeFileSync(file, data); return; } catch (err) {
       if (i >= attempts - 1) throw err;
-      const until = Date.now() + 60 * (i + 1);
+      const until = Date.now() + Math.min(2000, 100 * (i + 1));
       while (Date.now() < until) { /* backoff */ }
     }
   }

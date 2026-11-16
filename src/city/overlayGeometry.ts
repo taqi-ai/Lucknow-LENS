@@ -14,7 +14,7 @@
 
 import {
   appendRailway, appendRibbon, buildElevationProfiles, classifyRoad, railGaugeFor,
-  ROAD_HALF_WIDTH, ROAD_LAYER_Y, type Pt, type RailSinks, type RoadClass,
+  ROAD_HALF_WIDTH, ROAD_LAYER_Y, roadHalfWidth, type Pt, type RailSinks, type RoadClass,
 } from './ribbon';
 import { triangulate } from './buildingGeometry';
 import { METRO_STATIONS } from './metroStations';
@@ -46,6 +46,8 @@ export interface OverlaySource {
 export interface OverlayBuild {
   /** Road ribbon positions keyed by class. */
   roads: Record<string, Float32Array>;
+  /** Per-vertex (u across -1..1, v metres along) for each road class buffer. */
+  roadsUv: Record<string, Float32Array>;
   water: Float32Array;
   parks: Float32Array;
   bridgeDeck: Float32Array;
@@ -212,7 +214,7 @@ function findCrossings(roads: OverlayRoad[], waterways: OverlayWater[]): Crossin
     // An elevated feature already carries a deck from its elevation profile;
     // synthesising a river bridge under it too would double the geometry.
     if (road.isElevated || (road.level ?? 0) > 0) continue;
-    const half = Math.max(ROAD_HALF_WIDTH[cls], (road.width ?? 0) / 2);
+    const half = roadHalfWidth(cls, road.type, (road as { id?: string }).id);
 
     for (let i = 0; i < road.points.length - 1; i++) {
       const a = road.points[i];
@@ -364,7 +366,8 @@ function buildElevatedSupports(
 
     const cls = classifyRoad(road.type, road.subtype, road.level, road.isElevated);
     const isRail = cls === 'railway';
-    const half = isRail ? 2.6 : Math.max(ROAD_HALF_WIDTH[cls], (road.width ?? 0) / 2);
+    // Same width as the deck ribbon (roadHalfWidth), or barriers float beside link ramps.
+    const half = isRail ? 2.6 : roadHalfWidth(cls, road.type, (road as { id?: string }).id);
 
     let carry = 0;
     for (let i = 0; i < prof.length - 1; i++) {
@@ -556,17 +559,18 @@ export function buildOverlay(src: OverlaySource): OverlayBuild {
 
   // ── Roads ────────────────────────────────────────────────────────────────
   const byClass = new Map<RoadClass, number[]>();
+  const uvByClass = new Map<RoadClass, number[]>();
   const railways: OverlayRoad[] = [];
   for (const road of roads) {
     if (!road?.points || road.points.length < 2) continue;
     const cls = classifyRoad(road.type, road.subtype, road.level, road.isElevated);
     if (cls === 'railway') { railways.push(road); continue; }
-    const half = Math.max(ROAD_HALF_WIDTH[cls], (road.width ?? 0) / 2);
+    const half = roadHalfWidth(cls, road.type, (road as { id?: string }).id);
     let arr = byClass.get(cls);
-    if (!arr) { arr = []; byClass.set(cls, arr); }
+    if (!arr) { arr = []; byClass.set(cls, arr); uvByClass.set(cls, []); }
     // A profiled polyline carries per-vertex y, which overrides the class offset.
     // Class Y offset is baked in so the client needs no per-class mesh offset.
-    appendRibbon(arr, profiles.get(road) ?? road.points, { half, y: ROAD_LAYER_Y[cls] });
+    appendRibbon(arr, profiles.get(road) ?? road.points, { half, y: ROAD_LAYER_Y[cls], uvOut: uvByClass.get(cls) });
   }
 
   // ── Railway ──────────────────────────────────────────────────────────────
@@ -582,8 +586,9 @@ export function buildOverlay(src: OverlaySource): OverlayBuild {
   }
 
   const roadsOut: Record<string, Float32Array> = {};
+  const roadsUv: Record<string, Float32Array> = {};
   for (const [cls, verts] of byClass) {
-    if (verts.length) roadsOut[cls] = new Float32Array(verts);
+    if (verts.length) { roadsOut[cls] = new Float32Array(verts); roadsUv[cls] = new Float32Array(uvByClass.get(cls)!); }
   }
 
   // ── Water ────────────────────────────────────────────────────────────────
@@ -639,7 +644,7 @@ export function buildOverlay(src: OverlaySource): OverlayBuild {
     const def = matchStructure(road.name);
     if (!def) continue;
     const cls = classifyRoad(road.type, road.subtype, road.level, road.isElevated);
-    const half = cls === 'railway' ? 2.6 : Math.max(ROAD_HALF_WIDTH[cls], (road.width ?? 0) / 2);
+    const half = cls === 'railway' ? 2.6 : roadHalfWidth(cls, road.type, (road as { id?: string }).id);
     const list = byLabel.get(def.label) ?? [];
     list.push({ name: road.name, half, prof });
     byLabel.set(def.label, list);
@@ -661,6 +666,7 @@ export function buildOverlay(src: OverlaySource): OverlayBuild {
 
   return {
     roads: roadsOut,
+    roadsUv,
     water: new Float32Array(water),
     parks: new Float32Array(parks),
     bridgeDeck: new Float32Array(deck),

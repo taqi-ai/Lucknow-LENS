@@ -21,3 +21,8 @@ dist_bak/
 
 .vercel
 deploy-data/
+
+# 3D realism upgrade: raw downloads and local snapshots (regenerate per docs/3d-revamp/LOCAL_IMPLEMENTATION_REPORT.md)
+data/raw/
+data/derived/
+data/backup/

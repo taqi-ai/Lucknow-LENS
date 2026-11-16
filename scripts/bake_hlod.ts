@@ -41,8 +41,10 @@
 
 import fs from 'fs';
 import path from 'path';
-import * as THREE from 'three';
 import { buildOverlay, ROAD_CLASS_ORDER } from '../src/city/overlayGeometry';
+import { prepareBuilding, emitBase, type BuildingInput, type Prepared, type VertexSink } from '../src/city/buildingGeometry';
+import { BUILDING_FORMAT_VERSION, TYPOLOGY } from '../src/city/buildingTypes';
+import { isLandmarkSite } from '../src/city/landmarkSites';
 
 const TILES_DIR = path.join(process.cwd(), 'public/overture_tiles_full');
 const OUT_DIR = path.join(process.cwd(), 'public/hlod');
@@ -61,94 +63,37 @@ const SCALE_Y = Y_RANGE / 32767;
  * qualified and the relief stream ballooned to 270 MB, most of it walls that are
  * sub-pixel whenever the relief layer is the active representation.
  */
-const RELIEF_MIN_HEIGHT = 21;
-const RELIEF_MIN_AREA = 1600;
+const RELIEF_MIN_HEIGHT = 9;
+const RELIEF_MIN_AREA = 300;
 
-const MAGIC = 0x304c484c; // 'LHL0'
-const VERSION = 1;
+const MAGIC = 0x304c484c; // 'LHL0' container magic; the payload format is VERSION
+/** v2 = BUILDING_FORMAT_VERSION 2 packs (surface/typology) from the shared generator. */
+const VERSION = BUILDING_FORMAT_VERSION;
 const HEADER_BYTES = 32;
 
-interface Pt { x: number; z: number }
-interface Bldg { id: string; points: Pt[]; height: number }
-
 /**
- * Must stay byte-identical to SeededRNG.hashString in src/city/rng.ts. A building
- * baked into the HLOD and the same building streamed at LOD 2/3 have to resolve to
- * the same palette entry, or its colour changes as you zoom in.
+ * Growable Int16/Uint8 sink implementing the shared VertexSink: positions arrive in
+ * super-tile-local metres from buildingGeometry and are quantised here.
  */
-function hashString(str: string): number {
-  let hash = 0;
-  if (str.length === 0) return hash;
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) - hash) + str.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash);
-}
-
-/** Shoelace area over (x, z). Negative means clockwise viewed from +Y. */
-function signedArea(pts: Pt[]): number {
-  let a = 0;
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-    a += pts[j].x * pts[i].z - pts[i].x * pts[j].z;
-  }
-  return a / 2;
-}
-
-/** Drop repeated points and any duplicated closing vertex. */
-function cleanRing(points: Pt[]): Pt[] {
-  const out: Pt[] = [];
-  for (const p of points) {
-    if (!Number.isFinite(p.x) || !Number.isFinite(p.z)) continue;
-    const last = out[out.length - 1];
-    if (last && Math.abs(p.x - last.x) < 0.05 && Math.abs(p.z - last.z) < 0.05) continue;
-    out.push(p);
-  }
-  const first = out[0];
-  const last = out[out.length - 1];
-  if (out.length > 1 && first && last && Math.abs(first.x - last.x) < 0.05 && Math.abs(first.z - last.z) < 0.05) {
-    out.pop();
-  }
-  return out;
-}
-
-/**
- * Growable interleaved vertex sink. Positions and packs are kept in parallel
- * typed arrays and doubled on demand — far cheaper than pushing onto JS arrays
- * when we are emitting hundreds of millions of components.
- */
-class VertexSink {
+class QuantSink implements VertexSink {
   pos: Int16Array;
   pack: Uint8Array;
   count = 0;
-
   constructor(initial = 1 << 16) {
     this.pos = new Int16Array(initial * 3);
     this.pack = new Uint8Array(initial * 4);
   }
-
   private grow(): void {
-    const cap = this.pos.length / 3;
-    const next = cap * 2;
-    const p = new Int16Array(next * 3);
-    p.set(this.pos);
-    this.pos = p;
-    const k = new Uint8Array(next * 4);
-    k.set(this.pack);
-    this.pack = k;
+    const next = (this.pos.length / 3) * 2;
+    const p = new Int16Array(next * 3); p.set(this.pos); this.pos = p;
+    const k = new Uint8Array(next * 4); k.set(this.pack); this.pack = k;
   }
-
-  push(qx: number, qy: number, qz: number, b0: number, b1: number, b2: number, b3: number): void {
+  push(x: number, y: number, z: number, b0: number, b1: number, b2: number, b3: number): void {
     if (this.count >= this.pos.length / 3) this.grow();
     const i3 = this.count * 3;
-    this.pos[i3] = qx;
-    this.pos[i3 + 1] = qy;
-    this.pos[i3 + 2] = qz;
+    this.pos[i3] = qXZ(x); this.pos[i3 + 1] = qY(y); this.pos[i3 + 2] = qXZ(z);
     const i4 = this.count * 4;
-    this.pack[i4] = b0;
-    this.pack[i4 + 1] = b1;
-    this.pack[i4 + 2] = b2;
-    this.pack[i4 + 3] = b3;
+    this.pack[i4] = b0; this.pack[i4 + 1] = b1; this.pack[i4 + 2] = b2; this.pack[i4 + 3] = b3;
     this.count++;
   }
 }
@@ -159,9 +104,10 @@ interface SuperTile {
   sz: number;
   originX: number;
   originZ: number;
-  fabric: VertexSink;
-  relief: VertexSink;
+  fabric: QuantSink;
+  relief: QuantSink;
   buildings: number;
+  reliefBuildings: number;
 }
 
 const superTiles = new Map<string, SuperTile>();
@@ -176,9 +122,10 @@ function getSuperTile(x: number, z: number): SuperTile {
       key, sx, sz,
       originX: sx * SUPER + SUPER / 2,
       originZ: sz * SUPER + SUPER / 2,
-      fabric: new VertexSink(),
-      relief: new VertexSink(),
+      fabric: new QuantSink(),
+      relief: new QuantSink(),
       buildings: 0,
+      reliefBuildings: 0,
     };
     superTiles.set(key, st);
   }
@@ -188,136 +135,37 @@ function getSuperTile(x: number, z: number): SuperTile {
 const qXZ = (v: number) => Math.max(-32768, Math.min(32767, Math.round(v / SCALE_XZ)));
 const qY = (v: number) => Math.max(0, Math.min(32767, Math.round(v / SCALE_Y)));
 
-/** Emit one building's geometry into its super-tile. */
-function emitBuilding(b: Bldg): void {
-  const ring = cleanRing(b.points);
-  if (ring.length < 3) return;
+/**
+ * Relief = buildings that read as massing from district altitude. With real heights
+ * (citywide median ~5 m) the old `height >= 21 || area >= 1600` rule kept almost
+ * nothing, so selection is by prominence: tall, large, or mid-rise with real bulk.
+ */
+function isProminent(p: Prepared): boolean {
+  return p.height >= RELIEF_MIN_HEIGHT
+    || p.area >= RELIEF_MIN_AREA
+    || (p.height >= 5.5 && p.area >= 100)
+    || (p.typ === TYPOLOGY.HERITAGE && p.area >= 200);
+}
 
-  const height = Math.max(2, Math.min(Y_RANGE - 1, b.height || 8));
-
-  // Centroid + bbox drive super-tile assignment, area and orientation.
-  let cx = 0, cz = 0;
-  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-  for (const p of ring) {
-    cx += p.x; cz += p.z;
-    if (p.x < minX) minX = p.x;
-    if (p.x > maxX) maxX = p.x;
-    if (p.z < minZ) minZ = p.z;
-    if (p.z > maxZ) maxZ = p.z;
-  }
-  cx /= ring.length;
-  cz /= ring.length;
-
-  const area = Math.abs(signedArea(ring));
-  if (area < 8) return; // sub-shed noise, invisible at every scale we render
-
-  const st = getSuperTile(cx, cz);
+/** Emit one building into its super-tile through the shared generator. */
+function emitBuilding(b: BuildingInput): void {
+  const p = prepareBuilding(b);
+  if (!p) return;
+  if (isLandmarkSite(p.cx, p.cz)) return;
+  const st = getSuperTile(p.cx, p.cz);
   st.buildings++;
-
-  const hash = hashString(b.id) & 0xff;
-  const hNorm = Math.round(Math.min(1, height / 80) * 255);
-
-  // Class is derived from real footprint size + height, not invented:
-  // 0 = small/residential, 1 = large-footprint commercial, 2 = tall commercial.
-  let cls = 0;
-  if (height >= 25) cls = 2;
-  else if (area >= 1200) cls = 1;
-
-  // Longest-edge orientation, quantised to 32 steps. Lets the shader align
-  // facade banding and window grids with the building instead of world axes.
-  let bestLen = -1, bestAng = 0;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const dx = ring[i].x - ring[j].x;
-    const dz = ring[i].z - ring[j].z;
-    const l = dx * dx + dz * dz;
-    if (l > bestLen) { bestLen = l; bestAng = Math.atan2(dz, dx); }
-  }
-  const orient = Math.round(((bestAng + Math.PI) / (Math.PI * 2)) * 31) & 0x1f;
-
-  const flagsRoof = 1 | (cls << 1) | (orient << 3);
-  const flagsWall = 0 | (cls << 1) | (orient << 3);
-
-  const ox = st.originX;
-  const oz = st.originZ;
-
-  // ── Roof cap (triangulated real footprint) ────────────────────────────────
-  // Wound so the surface faces +Y. THREE's triangulator is winding-agnostic, so
-  // each output triangle is checked and flipped individually.
-  const contour = ring.map((p) => new THREE.Vector2(p.x, p.z));
-  let tris: number[][] = [];
-  try {
-    tris = THREE.ShapeUtils.triangulateShape(contour, []);
-  } catch {
-    return; // self-intersecting footprint — skip rather than emit garbage
-  }
-
-  const roofY = qY(height);
-  for (const t of tris) {
-    let [a, bIdx, c] = t;
-    const pa = ring[a], pb = ring[bIdx], pc = ring[c];
-    if (!pa || !pb || !pc) continue;
-    // Cross product z-component in (x,z); negative => faces +Y.
-    const cross = (pb.x - pa.x) * (pc.z - pa.z) - (pb.z - pa.z) * (pc.x - pa.x);
-    const order = cross > 0 ? [a, c, bIdx] : [a, bIdx, c];
-    for (const idx of order) {
-      const p = ring[idx];
-      st.fabric.push(qXZ(p.x - ox), roofY, qXZ(p.z - oz), hash, hNorm, 255, flagsRoof);
-    }
-  }
-
-  // ── Relief walls (prominent buildings only) ───────────────────────────────
-  if (height < RELIEF_MIN_HEIGHT && area < RELIEF_MIN_AREA) return;
-
-  // Baked contact AO: dark where the wall meets the ground, clean at the top.
-  // This is the cheap substitute for a screen-space AO pass and is what gives
-  // buildings their ground contact and street-canyon depth.
-  const aoBase = 96;
-  const aoTop = 255;
-
-  // Walls need the ring wound consistently so outward faces are front-facing.
-  const ringCW = signedArea(ring) > 0 ? [...ring].reverse() : ring;
-
-  for (let i = 0; i < ringCW.length; i++) {
-    const p1 = ringCW[i];
-    const p2 = ringCW[(i + 1) % ringCW.length];
-
-    const x1 = qXZ(p1.x - ox), z1 = qXZ(p1.z - oz);
-    const x2 = qXZ(p2.x - ox), z2 = qXZ(p2.z - oz);
-    const y0 = 0, y1 = roofY;
-
-    const push = (qx: number, qy: number, qz: number, ao: number) =>
-      st.relief.push(qx, qy, qz, hash, hNorm, ao, flagsWall);
-
-    // Two triangles per wall quad.
-    push(x1, y0, z1, aoBase);
-    push(x2, y0, z2, aoBase);
-    push(x2, y1, z2, aoTop);
-
-    push(x1, y0, z1, aoBase);
-    push(x2, y1, z2, aoTop);
-    push(x1, y1, z1, aoTop);
-  }
-
-  // Relief buildings also get their roof in the relief stream so that at close
-  // range the fabric layer can be hidden entirely without losing roof surfaces.
-  for (const t of tris) {
-    let [a, bIdx, c] = t;
-    const pa = ring[a], pb = ring[bIdx], pc = ring[c];
-    if (!pa || !pb || !pc) continue;
-    const cross = (pb.x - pa.x) * (pc.z - pa.z) - (pb.z - pa.z) * (pc.x - pa.x);
-    const order = cross > 0 ? [a, c, bIdx] : [a, bIdx, c];
-    for (const idx of order) {
-      const p = ring[idx];
-      st.relief.push(qXZ(p.x - ox), roofY, qXZ(p.z - oz), hash, hNorm, 255, flagsRoof);
-    }
-  }
+  // Fabric: roof caps of every building at its real height (city scale).
+  emitBase(st.fabric, p, st.originX, st.originZ, { walls: false, roofs: true });
+  if (!isProminent(p)) return;
+  st.reliefBuildings++;
+  emitBase(st.relief, p, st.originX, st.originZ, { walls: true, roofs: true });
 }
 
 /**
  * Fabric and relief are written to separate files. Full City only ever needs the
  * fabric stream, so bundling both would force it to download ~4x the bytes it uses.
  */
-function writeStream(st: SuperTile, sink: VertexSink, suffix: 'f' | 'r'): number {
+function writeStream(st: SuperTile, sink: QuantSink, suffix: 'f' | 'r'): number {
   const n = sink.count;
   if (n === 0) return 0;
 
@@ -377,7 +225,10 @@ async function main(): Promise<void> {
     }
 
     // lod2 carries the complete footprint set; lod1 is a 10% subset of the same data.
-    const list: Bldg[] = data?.lod2?.buildings || [];
+    if (data?.buildingsVersion !== 2) {
+      throw new Error(`${file} has buildingsVersion ${data?.buildingsVersion}; run \`npm run buildings\` first`);
+    }
+    const list: BuildingInput[] = data?.lod2?.buildings || [];
     for (const b of list) {
       if (!b?.points || b.points.length < 3) continue;
       emitBuilding(b);
@@ -417,6 +268,7 @@ async function main(): Promise<void> {
       buildings: st.buildings,
       fabricVerts: st.fabric.count,
       reliefVerts: st.relief.count,
+      reliefBuildings: st.reliefBuildings,
       fabricBytes,
       reliefBytes,
     });
@@ -427,10 +279,11 @@ async function main(): Promise<void> {
 
   const manifest = {
     version: VERSION,
+    buildingFormat: BUILDING_FORMAT_VERSION,
     generatedAt: new Date().toISOString(),
     superTileSize: SUPER,
     quantisation: { scaleXZ: SCALE_XZ, scaleY: SCALE_Y },
-    reliefThreshold: { minHeight: RELIEF_MIN_HEIGHT, minArea: RELIEF_MIN_AREA },
+    reliefThreshold: { minHeight: RELIEF_MIN_HEIGHT, minArea: RELIEF_MIN_AREA, rule: 'h>=9 | area>=300 | (h>=5.5 & area>=100) | heritage & area>=200' },
     spatialExtent: {
       minX: Number.isFinite(minX) ? minX : -20000,
       maxX: Number.isFinite(maxX) ? maxX : 20000,
@@ -511,7 +364,11 @@ function bakeOverlay(): void {
   const sections: OverlaySection[] = [];
   for (const cls of ROAD_CLASS_ORDER) {
     const arr = built.roads[cls];
-    if (arr && arr.length) sections.push({ name: `road:${cls}`, data: arr });
+    if (arr && arr.length) {
+      sections.push({ name: `road:${cls}`, data: arr });
+      const uv = built.roadsUv[cls];
+      if (uv && uv.length) sections.push({ name: `roaduv:${cls}`, data: uv });
+    }
   }
   if (built.water.length) sections.push({ name: 'water', data: built.water });
   if (built.parks.length) sections.push({ name: 'parks', data: built.parks });

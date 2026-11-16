@@ -18,7 +18,7 @@ import { LANDMARK_SITES, PRECINCTS, AIRPORT, type LandmarkSite } from './landmar
  */
 
 type V3 = [number, number, number];
-const S = SURFACE;
+const S = { ...SURFACE, /** pale lime plaster: SURFACE.TANK_WHITE slot re-read as plaster on heritage typology */ LIME: SURFACE.TANK_WHITE };
 const site = (k: string) => LANDMARK_SITES.find((s) => s.key === k);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -300,27 +300,27 @@ function baraImambara(k: Kit, g: Grounds, s: LandmarkSite): void {
   for (let u = -40; u <= 40; u += 10) { g.tree(u, -255, 7, false, seed++); }
   // Perimeter walls with openings at the gates.
   const wallH = 6;
-  k.box(-116, -114, 0, wallH, -260, 46, S.STONE); k.box(114, 116, 0, wallH, -260, 46, S.STONE);
-  k.box(-116, 116, 0, wallH, 44, 46, S.STONE);
-  for (const [u0, u1] of [[-116, -24], [24, 116]]) { k.box(u0, u1, 0, wallH, -260, -258, S.STONE); k.box(u0, u1, 0, wallH, -214, -212, S.STONE); k.box(u0, u1, 0, wallH, -166, -164, S.STONE); }
+  k.box(-116, -114, 0, wallH, -260, 46, S.LIME); k.box(114, 116, 0, wallH, -260, 46, S.LIME);
+  k.box(-116, 116, 0, wallH, 44, 46, S.LIME);
+  for (const [u0, u1] of [[-116, -24], [24, 116]]) { k.box(u0, u1, 0, wallH, -260, -258, S.LIME); k.box(u0, u1, 0, wallH, -214, -212, S.LIME); k.box(u0, u1, 0, wallH, -166, -164, S.LIME); }
   k.merlons(-116, 116, -260, 46, wallH);
   // Gateways: outer (with Naubat Khana gallery above) and inner.
   const gate = (v: number, h: number, gallery: boolean) => {
-    k.box(-24, 24, 0, h, v - 6, v + 6, S.STONE);
+    k.box(-24, 24, 0, h, v - 6, v + 6, S.LIME);
     k.arcade('v0', v - 6, -6, 6, 0, 9, h - 3, 1, S.GLASS, true); k.arcade('v1', v + 6, -6, 6, 0, 9, h - 3, 1, S.GLASS, true);
     for (const sgn of [-1, 1]) { k.arcade('v0', v - 6, sgn * 15 - 6, sgn * 15 + 6, 1, 2.8, 6, 2); k.arcade('v1', v + 6, sgn * 15 - 6, sgn * 15 + 6, 1, 2.8, 6, 2); }
-    if (gallery) { k.box(-20, 20, h, h + 5, v - 5, v + 5, S.STONE); k.arcade('v0', v - 5, -18, 18, h + 0.6, 1.8, 3.6, 9); k.arcade('v1', v + 5, -18, 18, h + 0.6, 1.8, 3.6, 9); }
+    if (gallery) { k.box(-20, 20, h, h + 5, v - 5, v + 5, S.LIME); k.arcade('v0', v - 5, -18, 18, h + 0.6, 1.8, 3.6, 9); k.arcade('v1', v + 5, -18, 18, h + 0.6, 1.8, 3.6, 9); }
     const top = gallery ? h + 5 : h;
     k.merlons(-24, 24, v - 6, v + 6, top);
-    for (const su of [-21, 21]) { k.cylinder(su, v, 2.2, 1.8, 0, top + 4, 8, S.STONE); k.chhatri(su, v, 3, top + 4); }
+    for (const su of [-21, 21]) { k.cylinder(su, v, 2.2, 1.8, 0, top + 4, 8, S.LIME); k.chhatri(su, v, 3, top + 4); }
     k.chhatri(0, v, 3.2, top);
   };
   gate(-259, 15, true);
   gate(-213, 13, false);
   gate(-165, 12, false);
   // Raised platform, steps and the main hall.
-  k.box(-66, 66, 0, 2.4, -26, 34, S.STONE);
-  for (let i = 0; i < 4; i++) k.box(-22, 22, 0, 2.4 - i * 0.6, -26 - (i + 1) * 0.9, -26 - i * 0.9, S.STONE);
+  k.box(-66, 66, 0, 2.4, -26, 34, S.LIME);
+  for (let i = 0; i < 4; i++) k.box(-22, 22, 0, 2.4 - i * 0.6, -26 - (i + 1) * 0.9, -26 - i * 0.9, S.LIME);
   k.box(-60, 60, 2.4, 15, -20, 28, S.DOME);
   k.box(-24, 24, 15, 19.5, -18, 26, S.DOME);                    // central raised hall (vaulted roof)
   k.arcade('v0', -20, -58, 58, 2.6, 4.6, 8.6, 13, S.GLASS, true);
@@ -335,8 +335,8 @@ function baraImambara(k: Kit, g: Grounds, s: LandmarkSite): void {
   // Asafi Masjid (NMA: 11 arches on the east facade, taller central arch, tapering
   // multi-storey minarets, THREE pear-shaped domes, parapet domelets; ~25.13 m).
   const mu = -76, mv = -88;
-  k.box(mu - 14, mu + 26, 0, 3.2, mv - 34, mv + 34, S.STONE);                      // plinth + forecourt
-  for (let i = 0; i < 4; i++) k.box(mu + 26 + i * 0.9, mu + 27 + i * 0.9, 0, 3.2 - (i + 1) * 0.75, mv - 12, mv + 12, S.STONE);
+  k.box(mu - 14, mu + 26, 0, 3.2, mv - 34, mv + 34, S.LIME);                      // plinth + forecourt
+  for (let i = 0; i < 4; i++) k.box(mu + 26 + i * 0.9, mu + 27 + i * 0.9, 0, 3.2 - (i + 1) * 0.75, mv - 12, mv + 12, S.LIME);
   g.color(C.paveSand).rect(mu - 14, mu + 26, mv - 34, mv + 34, 3.25);
   k.box(mu - 12, mu + 6, 3.2, 15.5, mv - 27, mv + 27, S.DOME);                    // prayer hall
   k.arcade('u1', mu + 6, mv - 26, mv + 26, 3.3, 3.1, 8.0, 11, S.GLASS, true);
@@ -351,7 +351,7 @@ function baraImambara(k: Kit, g: Grounds, s: LandmarkSite): void {
   for (const dv of [-29, 29]) k.minaret(mu + 6, mv + dv, 1.6, 26, 4, S.DOME, 3.2);
   // Shahi Baoli (stepped well) on the east side.
   const bu = 80, bv = -92;
-  k.box(bu - 17, bu + 17, 0, 7.5, bv - 17, bv + 17, S.STONE, S.ROOF);
+  k.box(bu - 17, bu + 17, 0, 7.5, bv - 17, bv + 17, S.LIME, S.ROOF);
   k.arcadeAll(bu - 17, bu + 17, bv - 17, bv + 17, 0.4, 2.6, 5.5, 4.2);
   for (let i = 0; i < 5; i++) { const r = 11 - i * 2; g.color(i % 2 ? C.paveSand : C.paveGrey).rect(bu - r, bu + r, bv - r, bv + r, 7.55 - i * 1.4); }
   g.color(C.waterDeep).rect(bu - 2.5, bu + 2.5, bv - 2.5, bv + 2.5, 1.2);
@@ -622,19 +622,19 @@ function rumiDarwaza(k: Kit, s: LandmarkSite): void {
   k.begin(s, 18, 11);
   const L = Math.max(s.ext[0], s.ext[1]);
   const half = Math.min(36, L / 2);
-  k.box(-10, 10, 0, 17, -6, 6, S.STONE);
+  k.box(-10, 10, 0, 17, -6, 6, S.LIME);
   k.arcade('v0', -6, -7, 7, 0, 10, 15, 1, S.GLASS, true);
   k.arcade('v1', 6, -7, 7, 0, 10, 15, 1, S.GLASS, true);
-  k.box(-7, 7, 17, 19, -4, 4, S.STONE);
-  k.lathe(0, 0, [[3.2, 19], [3.2, 23.5], [0.01, 23.5]], 8, S.STONE, Math.PI / 8);
+  k.box(-7, 7, 17, 19, -4, 4, S.LIME);
+  k.lathe(0, 0, [[3.2, 19], [3.2, 23.5], [0.01, 23.5]], 8, S.LIME, Math.PI / 8);
   k.onion(0, 0, 2.6, 23.5, 3.2, S.DOME, 0.1);
   for (const sgn of [-1, 1]) {
     const u0 = sgn > 0 ? 10 : -half, u1 = sgn > 0 ? half : -10;
-    k.box(u0, u1, 0, 10, -3.5, 3.5, S.STONE);
+    k.box(u0, u1, 0, 10, -3.5, 3.5, S.LIME);
     k.arcade('v0', -3.5, u0 + 1, u1 - 1, 0.6, 2.2, 4.6, 5); k.arcade('v1', 3.5, u0 + 1, u1 - 1, 0.6, 2.2, 4.6, 5);
     k.arcade('v0', -3.5, u0 + 1, u1 - 1, 5.6, 1.6, 3.4, 7); k.arcade('v1', 3.5, u0 + 1, u1 - 1, 5.6, 1.6, 3.4, 7);
     const tu = sgn * (half - 1.5);
-    k.cylinder(tu, 0, 2.0, 1.6, 0, 14, 8, S.STONE); k.chhatri(tu, 0, 2.4, 14);
+    k.cylinder(tu, 0, 2.0, 1.6, 0, 14, 8, S.LIME); k.chhatri(tu, 0, 2.4, 14);
     for (let i = 1; i <= 3; i++) k.chhatri(sgn * (10 + (half - 12) * i / 4), 0, 1.4, 10);
   }
 }

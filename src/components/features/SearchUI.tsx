@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useId } from 'react';
 import { SearchResult, OSMMapData } from '../../types';
-import { SearchIndex } from '../../search/SearchIndex';
+import { SearchIndex, unproject } from '../../search/SearchIndex';
+import { DESTINATIONS, searchDestinations, type Destination } from '../../city/destinations';
 import { Search, MapPin, Hospital, Utensils, Hotel, ShoppingBag, Landmark, Train, Plane, TreePine, Building2, GraduationCap, X, Navigation, Loader2 } from 'lucide-react';
 
 interface SearchUIProps {
@@ -38,6 +39,13 @@ const kindOf = (category: string, name: string): [string, React.ElementType] => 
   return ['Place', MapPin];
 };
 
+const toResult = (d: Destination): SearchResult => {
+  const ll = unproject(d.x, d.z);
+  return { id: `dest:${d.id}`, name: d.name, category: d.category === 'heritage' ? 'landmark' : d.category === 'parks' ? 'park' : d.category === 'transport' ? 'station' : 'landmark',
+    latitude: ll.lat, longitude: ll.lon, x: d.x, z: d.z, importance: 10, presetId: `dest:${d.id}` };
+};
+const FEATURED = DESTINATIONS.filter((d) => d.tier !== 'C' || d.category === 'parks').slice(0, 8).map(toResult);
+
 export const SearchUI: React.FC<SearchUIProps> = ({ mapData, onSelectResult, onSetDestinationWaypoint }) => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -60,7 +68,11 @@ export const SearchUI: React.FC<SearchUIProps> = ({ mapData, onSelectResult, onS
   useEffect(() => {
     const q = query.trim();
     if (!indexRef.current || !q || !ready) { setResults([]); return; }
-    const t = window.setTimeout(() => { setResults(indexRef.current!.search(q, mapData)); setActive(0); }, 90);
+    const t = window.setTimeout(() => { {
+      const dest = searchDestinations(q).map(toResult);
+      const ids = new Set(dest.map((r) => r.name.toLowerCase()));
+      setResults([...dest, ...indexRef.current!.search(q, mapData).filter((r) => !ids.has(r.name.toLowerCase()))]);
+    } setActive(0); }, 90);
     return () => window.clearTimeout(t);
   }, [query, mapData, ready]);
 
@@ -72,7 +84,9 @@ export const SearchUI: React.FC<SearchUIProps> = ({ mapData, onSelectResult, onS
 
   const pick = (r: SearchResult) => { onSelectResult(r); setQuery(r.name); setOpen(false); (document.activeElement as HTMLElement | null)?.blur(); };
 
-  const showList = open && query.trim().length > 0;
+  const featuredMode = open && query.trim().length === 0;
+  const list = featuredMode ? FEATURED : results;
+  const showList = open && (query.trim().length > 0 || featuredMode);
 
   return (
     <div ref={boxRef} className="w-full">
@@ -83,16 +97,16 @@ export const SearchUI: React.FC<SearchUIProps> = ({ mapData, onSelectResult, onS
           role="combobox"
           aria-expanded={showList}
           aria-controls={listId}
-          aria-activedescendant={showList && results[active] ? `${listId}-${active}` : undefined}
+          aria-activedescendant={showList && list[active] ? `${listId}-${active}` : undefined}
           placeholder="Search places, roads, landmarks"
           value={query}
           onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
           onFocus={() => setOpen(true)}
           onKeyDown={(e) => {
-            if (!showList || results.length === 0) { if (e.key === 'Escape') setOpen(false); return; }
-            if (e.key === 'ArrowDown') { e.preventDefault(); setActive((i) => (i + 1) % results.length); }
-            else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((i) => (i - 1 + results.length) % results.length); }
-            else if (e.key === 'Enter') { e.preventDefault(); pick(results[active]); }
+            if (!showList || list.length === 0) { if (e.key === 'Escape') setOpen(false); return; }
+            if (e.key === 'ArrowDown') { e.preventDefault(); setActive((i) => (i + 1) % list.length); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((i) => (i - 1 + list.length) % list.length); }
+            else if (e.key === 'Enter') { e.preventDefault(); pick(list[active]); }
             else if (e.key === 'Escape') setOpen(false);
           }}
           className="w-full min-w-0 border-none bg-transparent text-[13px] font-medium text-paper outline-none placeholder:text-paper/40 [&::-webkit-search-cancel-button]:hidden"
@@ -107,13 +121,14 @@ export const SearchUI: React.FC<SearchUIProps> = ({ mapData, onSelectResult, onS
       {/* In normal flow, not absolutely positioned: the left column scrolls, and an absolute list was being clipped out of sight. */}
       {showList && (
         <div className="glass-panel mt-2 overflow-hidden rounded-2xl">
-          {!ready ? (
+          {!ready && !featuredMode ? (
             <p className="flex items-center gap-2 px-4 py-3.5 text-[12.5px] text-paper/60"><Loader2 className="h-3.5 w-3.5 animate-spin" />Loading 48,000 places…</p>
-          ) : results.length === 0 ? (
+          ) : list.length === 0 ? (
             <p className="px-4 py-3.5 text-[12.5px] leading-[1.5] text-paper/60">Nothing called “{query.trim()}”. Try a landmark like Rumi Darwaza, or a road like Shaheed Path.</p>
           ) : (
             <ul id={listId} role="listbox" className="max-h-[320px] overflow-y-auto p-1.5 no-scrollbar">
-              {results.map((r, i) => {
+              {featuredMode && <li className="px-2.5 pb-1 pt-1 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-sand/70">Featured places</li>}
+              {list.map((r, i) => {
                 const [kind, Icon] = kindOf(r.category, r.name);
                 return (
                   <li key={r.id} id={`${listId}-${i}`} role="option" aria-selected={i === active} onMouseEnter={() => setActive(i)}

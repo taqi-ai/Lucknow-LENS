@@ -246,7 +246,16 @@ const FRAG_COLOR = /* glsl */ `
     baseCol *= 1.0 - 0.12 * stain * near;
     rough = 0.92;
   } else if (bSurf == 4.0) { baseCol = vec3(0.035, 0.036, 0.038); rough = 0.45; }
-  else if (bSurf == 5.0) { baseCol = vec3(0.70, 0.66, 0.58); rough = 0.5; }
+  else if (bSurf == 5.0) {
+    if (bTyp > 2.5 && bTyp < 3.5) {
+      // Heritage lime plaster (Bara Imambara, Rumi Darwaza): pale warm ivory, lightly weathered,
+      // with faint moulding bands. Deliberately not pure white and not the tan landmark stone.
+      float mould = smoothstep(0.0, 0.06, abs(fract(vWorldPos.y / 1.6) - 0.5) - 0.44);
+      baseCol = vec3(0.84, 0.79, 0.69) * (0.93 + 0.10 * vnoise(vWorldPos.xz * 0.5 + vWorldPos.y * 0.3)) * (1.0 - 0.08 * mould);
+      baseCol *= 1.0 - 0.10 * vnoise(vec2(fuv.x * 0.8, vWorldPos.y * 0.15));
+      rough = 0.9;
+    } else { baseCol = vec3(0.70, 0.66, 0.58); rough = 0.5; }
+  }
   else if (bSurf == 6.0) {
     vec2 sp = fract(vWorldPos.xz * vec2(1.0, 0.55));
     float cellLine = step(0.94, max(sp.x, sp.y));

@@ -555,8 +555,24 @@ function buildMetroStationsGeom(
 }
 
 export function buildOverlay(src: OverlaySource): OverlayBuild {
-  const roads = src.majorRoads ?? [];
-  const waterways = src.waterways ?? [];
+  // Deterministic feature identity: one physical carriageway, one surface. Overture
+  // occasionally ships the same polyline twice under different ids; identical
+  // quantised endpoints + vertex count + level + class are the same road.
+  const seenRoad = new Set<string>();
+  const roads = (src.majorRoads ?? []).filter((r) => {
+    const p = r?.points;
+    if (!p || p.length < 2) return true;
+    const a = p[0], b = p[p.length - 1];
+    const ka = `${Math.round(a.x)},${Math.round(a.z)}`, kb = `${Math.round(b.x)},${Math.round(b.z)}`;
+    const key = `${ka < kb ? ka + '|' + kb : kb + '|' + ka}|${p.length}|${r.level ?? 0}|${r.type}`;
+    if (seenRoad.has(key)) return false;
+    seenRoad.add(key);
+    return true;
+  });
+  // Sewage lagoons and treatment basins are not open water; they read as false
+  // blue patches. Genuine rivers, canals, lakes, reservoirs and ponds remain.
+  const NOT_OPEN_WATER = new Set(['wastewater', 'basin']);
+  const waterways = (src.waterways ?? []).filter((w) => !(w as { cls?: string }).cls || !NOT_OPEN_WATER.has((w as { cls?: string }).cls!));
   const greenAreas = src.greenAreas ?? [];
 
   // ── Elevation ────────────────────────────────────────────────────────────

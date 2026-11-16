@@ -14,7 +14,7 @@
 
 import { buildBuildings, triangulate, prepareBuilding, emitDetail, FloatSink, type BuildingInput } from './buildingGeometry';
 import { isLandmarkSite } from './landmarkSites';
-import { appendRibbon, buildElevationProfiles, classifyRoad, roadHalfWidth, ROAD_HALF_WIDTH, type Pt } from './ribbon';
+import { overlayOwnsRoad, appendRibbon, buildElevationProfiles, classifyRoad, roadHalfWidth, ROAD_HALF_WIDTH, type Pt } from './ribbon';
 
 export interface TileWorkerRequest {
   id: string;
@@ -60,6 +60,7 @@ interface RoadIn {
   subtype?: string;
   level?: number;
   isElevated?: boolean;
+  isMajor?: boolean;
 }
 interface AreaIn { id: string; points: Pt[] }
 
@@ -73,7 +74,8 @@ const TILE_SIZE = 500;
 /** A cut end this close to a tile edge is a seam, not the end of the structure. */
 const SEAM_TOL = 1.5;
 
-function buildRoadRibbons(roads: RoadIn[], originX: number, originZ: number): RoadStrip[] {
+function buildRoadRibbons(allRoads: RoadIn[], originX: number, originZ: number): RoadStrip[] {
+  const roads = allRoads.filter((r) => !overlayOwnsRoad(r));
   const byCat = new Map<string, number[]>();
   const uvCat = new Map<string, number[]>();
 
@@ -140,6 +142,7 @@ function buildStreetlights(roads: RoadIn[], originX: number, originZ: number): F
 
   for (const road of roads) {
     if (!road?.points || road.points.length < 2) continue;
+    if (road.isElevated || (road.level ?? 0) > 0) continue; // no lamps on the ground under a deck
     const cls = classifyRoad(road.type);
     const spacing = LIT_ROAD_SPACING[cls];
     if (!spacing) continue;

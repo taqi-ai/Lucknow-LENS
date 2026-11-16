@@ -620,3 +620,15 @@ export function appendRailway(
     }
   }
 }
+
+/**
+ * RENDER OWNERSHIP (round 3). CityOverlay owns every major, elevated or
+ * grade-separated carriageway: it has one continuous elevation profile per
+ * feature and the matching piers. Tiles only draw the local network. Drawing a
+ * feature in both layers produced two decks (the tile copy sat 6.8 m higher
+ * and had per-tile ramps), so this predicate is the single source of truth.
+ */
+export function overlayOwnsRoad(r: { isMajor?: boolean; isElevated?: boolean; level?: number }): boolean {
+  return Boolean(r.isMajor || r.isElevated || (r.level ?? 0) > 0);
+}
+

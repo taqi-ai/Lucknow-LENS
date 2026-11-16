@@ -16,7 +16,9 @@ export interface CinematicPreset {
   distance: number;
 }
 
-export const CINEMATIC_PRESETS: Record<string, CinematicPreset> = {
+import { DESTINATIONS } from './destinations';
+
+const LEGACY_PRESETS: Record<string, CinematicPreset> = {
   /** High oblique over the whole city with the Gomti crossing frame. */
   /** What you see through the cabin window while the map loads: low, oblique, the way a city looks from a descending flight. */
   window: {
@@ -48,7 +50,7 @@ export const CINEMATIC_PRESETS: Record<string, CinematicPreset> = {
   /** Stadium hero shot. */
   ekana: {
     label: 'Ekana Stadium',
-    x: 2723, z: 8446,
+    x: 6630, z: 4310,
     azimuth: 1.15, pitch: 0.42, distance: 850,
   },
 
@@ -92,7 +94,15 @@ export const CINEMATIC_PRESETS: Record<string, CinematicPreset> = {
   /** Railway district. */
   charbagh: {
     label: 'Charbagh',
-    x: -1499, z: 1574,
+    x: -2599, z: 2111,
     azimuth: 0.35, pitch: 0.36, distance: 1000,
   },
+};
+
+/** Round 3: every registry destination is a preset named `dest:<id>`; legacy ids keep working. */
+export const CINEMATIC_PRESETS: Record<string, CinematicPreset> = {
+  ...LEGACY_PRESETS,
+  ...Object.fromEntries(DESTINATIONS.map((d) => [`dest:${d.id}`, {
+    label: d.name, x: d.x, z: d.z, azimuth: d.azimuth, pitch: d.pitch, distance: d.distance,
+  }])),
 };

@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Compass, Layers, Tag, Palette, Sparkles, MoreHorizontal, X, FileText, Presentation, Maximize2, RotateCcw, ArrowRight, Video } from 'lucide-react';
 import type { CameraPreset, AIAction } from '../../types';
+import { DESTINATIONS, HIGHLIGHT_TOUR, destinationById, type DestCategory } from '../../city/destinations';
 import type { LabelSettings } from '../../city/labelManager';
 import { DEFAULT_LABEL_SETTINGS } from '../../city/labelManager';
 import { LayerControl, Switch, type LayerState } from '../features/LayerControl';
@@ -23,17 +24,9 @@ const TITLES: Record<PanelId, string> = {
   explore: 'Explore Lucknow', layers: 'Layers', labels: 'Labels', look: 'Look and feel', camera: 'Camera', ask: 'Ask the city', more: 'Tools',
 };
 
-const PLACES: { id: CameraPreset; name: string; note: string }[] = [
-  { id: 'rumi', name: 'Rumi Darwaza', note: 'The 1784 gateway' },
-  { id: 'oldlucknow', name: 'Bara Imambara', note: 'Old Lucknow' },
-  { id: 'clocktower', name: 'Clock Tower', note: 'Hussainabad' },
-  { id: 'hazratganj', name: 'Hazratganj', note: 'The promenade' },
-  { id: 'vidhansabha', name: 'Vidhan Sabha', note: 'Legislative Assembly' },
-  { id: 'gomti', name: 'Gomti riverfront', note: 'Low flight along the river' },
-  { id: 'ambedkar', name: 'Ambedkar Park', note: 'Gomti Nagar' },
-  { id: 'charbagh', name: 'Charbagh station', note: 'Railway hub' },
-  { id: 'ekana', name: 'Ekana Stadium', note: 'Cricket ground' },
-];
+const CAT_TITLE: Record<DestCategory, string> = { heritage: 'Heritage', parks: 'Parks', transport: 'Transport', popular: 'Popular destinations' };
+const CATS: DestCategory[] = ['heritage', 'parks', 'transport', 'popular'];
+const TOUR_DWELL_MS = 9000;
 
 const VIEWS: { id: CameraPreset; name: string }[] = [
   { id: 'hero', name: 'Skyline' },
@@ -103,23 +96,51 @@ export const MapControls: React.FC<MapControlsProps> = (p) => {
   const set = (patch: Partial<LabelSettings>) => p.onLabelSettings({ ...p.labelSettings, ...patch });
   const fly = (id: CameraPreset) => { p.onCameraSignal(id); if (p.compact) setOpen(null); };
 
+  // Highlights tour: registry scenes in order, one flight per dwell. Replayable.
+  const [tour, setTour] = useState<number | null>(null);
+  const tourTimer = useRef<number | null>(null);
+  const stopTour = () => { if (tourTimer.current) window.clearTimeout(tourTimer.current); tourTimer.current = null; setTour(null); };
+  const startTour = (i: number) => {
+    if (tourTimer.current) window.clearTimeout(tourTimer.current);
+    setTour(i);
+    p.onCameraSignal(`dest:${HIGHLIGHT_TOUR[i]}` as CameraPreset);
+    tourTimer.current = window.setTimeout(() => {
+      if (i + 1 < HIGHLIGHT_TOUR.length) startTour(i + 1); else { tourTimer.current = null; setTour(null); }
+    }, TOUR_DWELL_MS);
+  };
+  useEffect(() => () => { if (tourTimer.current) window.clearTimeout(tourTimer.current); }, []);
+
   const body = (() => {
     switch (open) {
       case 'explore': return (
         <div className="space-y-6">
           <Field title="View"><Seg label="Camera view" value={'' as CameraPreset} options={VIEWS} onChange={fly} /></Field>
-          <Field title="Places">
-            <ul className="-mx-1">
-              {PLACES.map((x) => (
-                <li key={x.id}>
-                  <button onClick={() => fly(x.id)} className="group flex w-full items-center justify-between rounded-xl px-2.5 py-2.5 text-left hover:bg-white/5">
-                    <span><span className="block text-[13.5px] font-medium text-paper/90">{x.name}</span><span className="block text-[11.5px] text-paper/45">{x.note}</span></span>
-                    <ArrowRight className="h-4 w-4 text-sand/0 transition-all group-hover:translate-x-0.5 group-hover:text-sand" />
-                  </button>
-                </li>
-              ))}
-            </ul>
+          <Field title="Explore Lucknow: Highlights" hint="A guided flight through the finest-modelled places. Pause at any time; the camera is yours again.">
+            <div className="flex items-center gap-2">
+              <button onClick={() => (tour === null ? startTour(0) : stopTour())}
+                className="flex-1 rounded-xl bg-sand px-3 py-2.5 text-[13px] font-semibold text-terrain hover:opacity-90">
+                {tour === null ? 'Play highlights' : `Stop (${tour + 1} of ${HIGHLIGHT_TOUR.length})`}
+              </button>
+              {tour !== null && (
+                <button onClick={() => startTour((tour + 1) % HIGHLIGHT_TOUR.length)} className="rounded-xl bg-white/[0.08] px-3 py-2.5 text-[13px] font-semibold text-paper/80 hover:bg-white/[0.14]">Next</button>
+              )}
+            </div>
+            {tour !== null && <p className="mt-2 px-0.5 text-[12px] text-paper/60">Now: {destinationById(HIGHLIGHT_TOUR[tour])?.name}</p>}
           </Field>
+          {CATS.map((cat) => (
+            <Field key={cat} title={CAT_TITLE[cat]}>
+              <ul className="-mx-1">
+                {DESTINATIONS.filter((d) => d.category === cat).map((x) => (
+                  <li key={x.id}>
+                    <button onClick={() => { stopTour(); fly(`dest:${x.id}` as CameraPreset); }} title={x.status} className="group flex w-full items-center justify-between rounded-xl px-2.5 py-2.5 text-left hover:bg-white/5">
+                      <span><span className="block text-[13.5px] font-medium text-paper/90">{x.name}</span><span className="block text-[11.5px] text-paper/45">{x.note}</span></span>
+                      <ArrowRight className="h-4 w-4 text-sand/0 transition-all group-hover:translate-x-0.5 group-hover:text-sand" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </Field>
+          ))}
         </div>
       );
       case 'layers': return (<div className="space-y-6"><LayerControl layers={p.layers} onToggleLayer={p.onToggleLayer} />{p.liveDetails}</div>);

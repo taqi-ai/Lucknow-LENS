@@ -129,8 +129,9 @@ export const CityUI: React.FC<CityUIProps> = ({
   }, []);
 
   const handleSearchResultClick = (result: SearchResult) => {
+    if (result.presetId) onCameraSignal(result.presetId as CameraPreset);
     if (cameraController) {
-      cameraController.flyTo(result.latitude, result.longitude, 350);
+      if (!result.presetId) cameraController.flyTo(result.latitude, result.longitude, 350);
       onSelectEntity({
         type: result.category === 'Road' ? 'poi' : (result.category === 'Building' ? 'building' : 'poi'),
         id: result.id,

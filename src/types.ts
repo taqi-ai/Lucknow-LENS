@@ -90,7 +90,9 @@ export type CameraPreset =
   | 'fullcity' | 'overview' | 'neighborhood' | 'street' | 'top' | 'frame'
   /** Cinematic framings over the same real city — see CINEMATIC_PRESETS. */
   | 'hero' | 'window' | 'gomti' | 'hazratganj' | 'ekana' | 'oldlucknow' | 'charbagh'
-  | 'rumi' | 'clocktower' | 'vidhansabha' | 'ambedkar';
+  | 'rumi' | 'clocktower' | 'vidhansabha' | 'ambedkar'
+  /** Registry destinations from city/destinations.ts, e.g. 'dest:charbagh'. */
+  | `dest:${string}`;
 
 export type LODLevel = 0 | 1 | 2 | 3;
 
@@ -184,6 +186,8 @@ export interface SearchResult {
   x: number;
   z: number;
   importance: number;
+  /** Registry destination: selecting it flies to this cinematic preset instead of a generic zoom. */
+  presetId?: string;
 }
 
 export type SelectedEntityType = 'building' | 'poi' | 'aircraft' | 'emergency';

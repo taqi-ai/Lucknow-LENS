@@ -171,7 +171,7 @@ class Kit {
 const C = {
   paveSand: 0xc9b99a, paveRed: 0xa86a52, paveGrey: 0xaaa59a, path: 0xbcae92, lawn: 0x5d7a3e, lawnDry: 0x7a8048,
   hedge: 0x34502a, bed: 0x6a4e34, water: 0x2f4a4f, waterDeep: 0x24393d, crown: 0x3f5a2c, crownDark: 0x2b4422,
-  trunk: 0x4a3a2c, bronze: 0x6b5a45, stoneEle: 0xb79a7c, steelRed: 0xb5402e, steelWhite: 0xd9d6cf, asphalt: 0x4c4c4c,
+  trunk: 0x4a3a2c, bronze: 0x6b5a45, stoneEle: 0xd2b6a0, steelRed: 0xb5402e, steelWhite: 0xd9d6cf, asphalt: 0x4c4c4c,
   runway: 0x3e3f40, mark: 0xe8e6df, markYellow: 0xd7b33c, grassAir: 0x7f8650, apron: 0x9a9890,
 };
 
@@ -261,14 +261,31 @@ class Grounds {
     try { faces = THREE.ShapeUtils.triangulateShape(r.map(([x, z]) => new THREE.Vector2(x, z)), []); } catch { return; }
     for (const f of faces) this.up([r[f[0]][0], y, r[f[0]][1]], [r[f[1]][0], y, r[f[1]][1]], [r[f[2]][0], y, r[f[2]][1]]);
   }
-  /** Simple elephant statue (body, legs, head, trunk) facing +u. */
+  /** Elephant statue facing +u (faceU = 1) or -u (-1): barrel body, four legs, domed head,
+   *  ears, tusks, a two-segment trunk curling down, tail and a blanket on the back. */
   elephant(u: number, v: number, y: number, s: number, faceU: number) {
-    this.color(C.stoneEle);
     const f = faceU;
-    this.box(u - 1.5 * s, u + 1.5 * s, y + 1.3 * s, y + 3.0 * s, v - 0.9 * s, v + 0.9 * s);
-    for (const du of [-1.1, 1.0]) for (const dv of [-0.55, 0.55]) this.box(u + du * s - 0.3 * s, u + du * s + 0.3 * s, y, y + 1.4 * s, v + dv * s - 0.3 * s, v + dv * s + 0.3 * s);
-    this.box(u + f * 1.5 * s - 0.1 * s, u + f * 2.4 * s, y + 2.0 * s, y + 3.2 * s, v - 0.65 * s, v + 0.65 * s);
-    this.box(u + f * 2.3 * s, u + f * 2.65 * s, y + 0.4 * s, y + 2.3 * s, v - 0.18 * s, v + 0.18 * s);
+    this.color(C.stoneEle);
+    this.box(u - 1.5 * s, u + 1.4 * s, y + 1.4 * s, y + 3.0 * s, v - 0.95 * s, v + 0.95 * s);          // body
+    this.box(u - 1.3 * s, u + 1.2 * s, y + 3.0 * s, y + 3.25 * s, v - 0.8 * s, v + 0.8 * s);           // back
+    for (const du of [-1.1, 1.0]) for (const dv of [-0.55, 0.55]) this.box(u + du * s - 0.3 * s, u + du * s + 0.3 * s, y, y + 1.45 * s, v + dv * s - 0.3 * s, v + dv * s + 0.3 * s);
+    // head with a domed forehead
+    this.box(u + f * 1.3 * s - 0.05 * s, u + f * 2.35 * s, y + 1.9 * s, y + 3.4 * s, v - 0.62 * s, v + 0.62 * s);
+    this.box(u + f * 1.55 * s - 0.2 * s, u + f * 2.2 * s, y + 3.4 * s, y + 3.75 * s, v - 0.42 * s, v + 0.42 * s);
+    // ears
+    for (const dv of [-1, 1]) this.box(u + f * 1.2 * s - 0.4 * s, u + f * 1.2 * s + 0.4 * s, y + 2.0 * s, y + 3.3 * s, v + dv * 0.75 * s - 0.06 * s, v + dv * 0.75 * s + 0.06 * s);
+    // trunk: two segments curling down and forward
+    this.color(C.stoneEle, -0.06);
+    this.box(u + f * 2.2 * s - 0.01, u + f * 2.55 * s, y + 1.1 * s, y + 2.5 * s, v - 0.2 * s, v + 0.2 * s);
+    this.box(u + f * 2.35 * s, u + f * 2.8 * s, y + 0.45 * s, y + 1.2 * s, v - 0.16 * s, v + 0.16 * s);
+    // tusks
+    this.color(0xe8e0d0);
+    for (const dv of [-1, 1]) this.box(u + f * 2.2 * s - 0.01, u + f * 2.75 * s, y + 1.35 * s, y + 1.55 * s, v + dv * 0.38 * s - 0.05 * s, v + dv * 0.38 * s + 0.05 * s);
+    // tail and a pink ceremonial blanket
+    this.color(C.stoneEle, -0.1);
+    this.box(u - f * 1.55 * s, u - f * 1.7 * s, y + 0.9 * s, y + 2.7 * s, v - 0.07 * s, v + 0.07 * s);
+    this.color(0xb77f6d);
+    this.box(u - 0.9 * s, u + 0.9 * s, y + 3.25 * s, y + 3.4 * s, v - 0.85 * s, v + 0.85 * s);
     this.color(C.stoneEle, -0.1).box(u - 1.8 * s, u + 1.8 * s, y - 0.01, y + 0.08 * s, v - 1.1 * s, v + 1.1 * s);
   }
 }
@@ -478,11 +495,16 @@ function ambedkarMemorial(k: Kit, g: Grounds, s: LandmarkSite): void {
       const ring2: number[][] = [];
       for (let t = 0; t < 28; t++) { const q = (t / 28) * Math.PI * 2; const w = k.w([lu + Math.cos(q) * R * 0.52, 0, lv + Math.sin(q) * R * 0.52]); ring2.push([w[0], w[2]]); }
       k.extrudeWorldRing(ring2, 0, 3.2, S.LIME, S.LIME);
-      for (let st = 0; st < 3; st++) {
-        const r3: number[][] = [];
-        for (let t = 0; t < 28; t++) { const q = (t / 28) * Math.PI * 2; const w = k.w([lu + Math.cos(q) * R * (0.45 - st * 0.12), 0, lv + Math.sin(q) * R * (0.45 - st * 0.12)]); r3.push([w[0], w[2]]); }
-        g.color(st % 2 ? WHITE : PINK).polyWorld(r3, 3.25 + st * 0.05);
+      // White sculpted surface with a pink inlaid band and a raised rim (no concentric rings).
+      const r3: number[][] = [], r4: number[][] = [];
+      for (let t = 0; t < 28; t++) {
+        const q = (t / 28) * Math.PI * 2;
+        const w = k.w([lu + Math.cos(q) * R * 0.5, 0, lv + Math.sin(q) * R * 0.5]); r3.push([w[0], w[2]]);
+        const w2 = k.w([lu + Math.cos(q) * R * 0.36, 0, lv + Math.sin(q) * R * 0.36]); r4.push([w2[0], w2[2]]);
       }
+      g.color(WHITE).polyWorld(r3, 3.25);
+      g.color(PINK).polyWorld(r4, 3.3);
+      for (const sg of [-1, 1]) k.box(lu - R * 0.28, lu + R * 0.28, 3.3, 4.1, lv + sg * R * 0.1 - 0.5, lv + sg * R * 0.1 + 0.5, S.LIME);
     }
     k.box(cu - 9, cu + 9, 0, 4, cv - 9, cv + 9, S.LIME);
     k.cylinder(cu, cv, 5.5, 5.5, 4, 8, 20, S.LIME);
@@ -495,6 +517,9 @@ function ambedkarMemorial(k: Kit, g: Grounds, s: LandmarkSite): void {
     const [u, v] = P(fx, fy);
     const r = R2 * W;
     k.box(u - r * 1.9, u + r * 1.9, 0, 5, v - r * 1.9, v + r * 1.9, S.LIME);
+    k.arcadeAll(u - r * 1.9, u + r * 1.9, v - r * 1.9, v + r * 1.9, 0.5, 3.2, 4, 7, S.GLASS);
+    k.merlons(u - r * 1.9, u + r * 1.9, v - r * 1.9, v + r * 1.9, 5, S.LIME);
+    for (const du of [-1, 1]) for (const dv of [-1, 1]) k.chhatri(u + du * r * 1.9, v + dv * r * 1.9, 3.2, 5, S.LIME);
     k.cylinder(u, v, r, r, 5, 9, 28, S.LIME);
     k.hemi(u, v, r * 0.98, 9, S.LIME, 0.8);
     k.cylinder(u, v, 1.1, 0.3, 9 + r * 0.78, 9 + r * 0.78 + 3.5, 8, S.GILT);
@@ -536,6 +561,14 @@ function ambedkarMemorial(k: Kit, g: Grounds, s: LandmarkSite): void {
       if (inside(u, v)) k.cylinder(u, v, 0.9, 0.8, 0, 9.5, 8, S.LIME);
     }
     k.extrudeWorldRing(sector(R + 3, R + 1), 9.5, 10.6, S.LIME, S.LIME);
+    // Heavy outer wall ring (pink sandstone) with four kiosks on its crown, and an inner
+    // raised semicircular seating bowl around the stage, after the dusk drone reference.
+    k.extrudeWorldRing(sector(R + 11, R + 3), 0, 5.5, S.STONE, S.STONE);
+    for (const t of [0.08, 0.36, 0.64, 0.92]) {
+      const a = Math.PI * 0.5 + t * Math.PI, p = arcPt(R + 7, a), [u, v] = k.local(p[0], p[1]);
+      k.chhatri(u, v, 4.6, 5.5, S.REDSTONE);
+    }
+    k.extrudeWorldRing(sector(rStage * 1.9, rStage * 1.45), 0, 4.2, S.LIME, S.LIME);
   }
 
   // 7. Elephant avenue: 62 elephants (2 x 31, documented) on pedestals along a long diagonal
@@ -573,6 +606,26 @@ function ambedkarMemorial(k: Kit, g: Grounds, s: LandmarkSite): void {
         if (!inside(u, v)) continue;
         k.cylinder(u, v, 0.4, 0.28, 0, 6.5, 6, S.LIME);
       }
+    }
+  }
+
+  // 7b. Rows of memorial pillars (obelisks) on both sides of the central court and a long
+  //     colonnaded gallery on the north edge, as in the references.
+  for (const [fx0, fx1, fy] of [[0.40, 0.66, 0.325], [0.40, 0.66, 0.475], [0.17, 0.30, 0.43]] as Array<[number, number, number]>) {
+    for (let i = 0; i <= 14; i++) {
+      const [u, v] = P(fx0 + (fx1 - fx0) * (i / 14), fy);
+      if (!inside(u, v)) continue;
+      k.box(u - 1.3, u + 1.3, 0, 1.2, v - 1.3, v + 1.3, S.LIME);
+      k.lathe(u, v, [[0.85, 1.2], [0.5, 11], [0, 12.2]], 6, S.LIME, 0);
+    }
+  }
+  {
+    const [gu0, gv0] = P(0.46, 0.035), [gu1, gv1] = P(0.80, 0.035);
+    const gw = (u: number, v: number): number[] => { const q = k.w([u, 0, v]); return [q[0], q[2]]; };
+    const pts = [gw(gu0, gv0), gw(gu1, gv1), gw(gu1, gv1 + 14), gw(gu0, gv0 + 14)];
+    if (inside(gu0, gv0 + 7) && inside(gu1, gv1 + 7)) {
+      k.extrudeWorldRing(pts, 0, 7.5, S.LIME, S.LIME);
+      for (let i = 0; i <= 40; i++) { const u = gu0 + (gu1 - gu0) * (i / 40), v = gv0 + (gv1 - gv0) * (i / 40); k.cylinder(u, v + 14.6, 0.6, 0.55, 0, 7.5, 6, S.LIME); }
     }
   }
 

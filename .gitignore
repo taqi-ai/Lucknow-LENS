@@ -26,3 +26,4 @@ deploy-data/
 data/raw/
 data/derived/
 data/backup/
+__pycache__/

@@ -372,7 +372,7 @@ const FRAG_OUTPUT = /* glsl */ `
       gl_FragColor.rgb += vec3(0.20, 0.14, 0.08) * (0.4 + commercial) * nearness * exp(-max(vWorldPos.y, 0.0) / 9.0) * uNight;
     }
     // Heritage fabric is floodlit from below.
-    if (bTyp > 2.5 && bTyp < 3.5 && (bSurf == 0.0 || bSurf >= 10.0)) {
+    if (bTyp > 2.5 && bTyp < 3.5 && (bSurf == 0.0 || bSurf >= 10.0 || bSurf == 5.0)) {
       float flood = exp(-max(vWorldPos.y, 0.0) / 14.0) * 0.65 + 0.12;
       gl_FragColor.rgb += vec3(1.0, 0.72, 0.40) * flood * uNight * 0.55;
     }

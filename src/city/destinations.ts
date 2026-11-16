@@ -59,7 +59,7 @@ export const DESTINATIONS: Destination[] = [
 
   D({ id: 'charbagh', name: 'Charbagh Railway Station', aliases: ['charbagh', 'char bagh', 'lucknow charbagh', 'nr station', 'railway station'], category: 'transport',
       note: 'Red-and-white heritage station, rail hub', key: 'charbagh', azimuth: 0.35, pitch: 0.42, distance: 900, tier: 'B',
-      status: 'Procedural station on Overture footprint. The dedicated chessboard-roof model, forecourt, Lucknow Junction separation and platform canopies are NOT built yet.', tour: false }),
+      status: 'Red-brick body on the Overture footprint with white cornice, arched verandah front and a turret/dome rhythm (stylised, not counted from a plan). Forecourt, platform canopies and a separate Lucknow Junction are NOT built.', tour: true }),
   D({ id: 'ccs_airport', name: 'CCS International Airport', aliases: ['airport', 'amausi', 'lucknow airport', 'ccsia'], category: 'transport', note: 'Amausi',
       ll: [26.7606, 80.8893], azimuth: 2.2, pitch: 0.38, distance: 3200, tier: 'B',
       status: 'Runway, taxiways and apron from Overture; markings and tower added. Terminal is generic.', tour: true }),

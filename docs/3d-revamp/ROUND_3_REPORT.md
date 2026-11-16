@@ -4,7 +4,7 @@
 
 ## Limitations of the inputs
 - The user's bug screenshots (overlapping roads, false water, Cantonment, Dariya Wali Masjid) were not in the repository. Diagnosis is from the data and the code, not from those images.
-- Reference images found in the repo root: Charbagh (front and overhead), Rumi Darwaza with Bara Imambara, Ambedkar Memorial, Janeshwar Mishra Park, and an aerial night photo of Gomti Nagar. They are catalogued in `references/round-3/REFERENCE_MANIFEST.md` (originals untouched). A second night image, `night view aerial lko.png`, appeared after the manifest was written and is not catalogued yet.
+- Reference images found in the repo root: Charbagh (front and overhead), Rumi Darwaza with Bara Imambara, Ambedkar Memorial, Janeshwar Mishra Park, and an aerial night photo of Gomti Nagar. They are catalogued in `references/round-3/REFERENCE_MANIFEST.md` (originals untouched). Later additions (a second night photo, Vidhan Sabha, Phoenix Palassio) are catalogued too.
 - No network research was done this session, so no new data or imagery sources were fetched.
 
 ## Stage 0: diagnosis (measured)
@@ -37,10 +37,10 @@
 - **Presets corrected** for Charbagh and Ekana.
 
 ## Highlights tour contents
-Five scenes: Husainabad, CCS Airport, Ambedkar Memorial, Ekana, and the Gomti riverfront with the Taj hotel. This is half of the ten requested. Charbagh, Janeshwar Mishra Park and Hazratganj are deliberately **excluded**, because their dedicated models do not exist yet. The tour is a timed sequence of the existing camera transition. Orbits and pans were not added. The camera framings in the registry were not individually reviewed in screenshots, except Husainabad, Bara Imambara, Rumi, Charbagh, Ambedkar and Ekana, which were captured.
+Six scenes: Husainabad, Charbagh, CCS Airport, Ambedkar Memorial, Ekana, and the Gomti riverfront with the Taj hotel. That is six of the ten requested. Janeshwar Mishra Park and Hazratganj are deliberately **excluded**, because their dedicated models do not exist yet. The tour is a timed sequence of the existing camera transition. Orbits and pans were not added. The camera framings in the registry were not individually reviewed in screenshots, except Husainabad, Bara Imambara, Rumi, Charbagh, Ambedkar and Ekana, which were captured.
 
 ## Not done
-- Charbagh dedicated station (chessboard roof, turrets, forecourt, platform canopies), separation of Lucknow Junction. The current model is still a plain long block (`charbagh_station.png`). Several roads there end abruptly at the rail yard.
+- Charbagh forecourt, platform canopies and a separate Lucknow Junction (none exists in the data I checked). Three roads at the yard still end at the station wall; they were not investigated.
 - Hussainabad corrections: gate count and arrangement from the NMA plan, Teele Wali Masjid, Dariya Wali Masjid (position unverified, no check of its overlap with roads), Chhota Imambara boundary check.
 - Janeshwar Mishra Park lakes, islands, tracks. Ambedkar Memorial still uses its schematic layout.
 - Hazratganj, Chowk, Aminabad, Kaiserbagh, La Martiniere and Residency district work; Taj hotel and TV tower rework; Ekana bowl detail; airport terminal.
@@ -58,3 +58,14 @@ npm run dev            # http://localhost:3000
 npx tsx scripts/validate_geo.ts
 ```
 Screenshots: `docs/3d-revamp/screenshots/round-3/`.
+
+## Update: later in the session
+- **Charbagh station rebuilt** (`charbaghStation()` in `src/city/landmarks.ts`): red-brick body on the real footprint, white cornice, arched verandah front on the city side, and alternating turret/dome and chhatri rhythm on the roof, with a central domed block and two flanking towers. Counts and spacing are stylised; no plan was available. Screenshots: `charbagh_aerial.png`, `charbagh_oblique.png`, `charbagh_front.png`. Charbagh is now in the tour.
+- **Night regression fixed.** The new plaster surface had dropped Bara Imambara out of the heritage night floodlight rule; it is restored (`night_bara.png`). The Rumi and Clock Tower night shot (`night_rumi_clock.png`) was captured but not reviewed.
+- **Checked:** `tsc`, `vite build`, full `npm run build`, `npm run validate:city` and `npm run smoke` all pass. In the real UI, searching "ambedkar" lists the registry entry first, and Enter flies to the preset (the first Enter, pressed before the results appeared, did nothing). Not clicked through in the UI: Play highlights, Next, Stop, and the category list.
+- **Data findings, no model change:**
+  - Dariya Wali Masjid has an Overture place at (-3186, -2212). Overlap with roads was NOT checked.
+  - The Overture place "Teele Wali Masjid,lucknow" is at (1642, -5890), far from Husainabad. It is probably a wrong place record; the real mosque's location was not established, so it was not modelled.
+  - Janeshwar Mishra Park: three pond polygons already exist within about 2 km of the park flag (one 1,336 m long). The remaining gap is landscaping and boundaries, and none was built.
+- **Known label noise.** A junk Overture place name ("iPhone 15 128GB price 5500 call me") shows next to the airport. Not filtered.
+- **Still unverified:** NMA site plan for the Bara Imambara gates was not fetched. The Bara gate arrangement is therefore unchanged.

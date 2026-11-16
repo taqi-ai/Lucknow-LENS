@@ -693,6 +693,59 @@ function ringMonument(k: Kit, s: LandmarkSite, h: number, wall: number, seed: nu
   decorate(k, Math.max(4, Math.min(hu, hv) * 0.9), Math.max(4, Math.min(hu, hv) * 0.9));
 }
 
+
+/**
+ * Charbagh station (round 3). The red-brick body follows the real Overture footprint.
+ * On top of it: a white cornice, arched verandah openings along the city-side (north)
+ * front, and the repeated turret-and-dome rhythm that gives the station its chessboard
+ * look from above (corner turrets with white domes alternating with open chhatris).
+ * Rhythm and counts are stylised; the heritage listing gives no countable plan.
+ */
+function charbaghStation(k: Kit, s: LandmarkSite): void {
+  k.begin(s, 26, 89);
+  const H = 13;
+  k.extrudeWorldRing(s.ring, 0, H, S.REDSTONE, S.ROOF);
+  const loc = s.ring.map(([x, z]) => k.local(x, z));
+  // Scanline: north-most (min v) and south-most (max v) edge of the footprint at u.
+  const span = (u: number): [number, number] | null => {
+    let lo = Infinity, hi = -Infinity;
+    for (let n = 0; n < loc.length - 1; n++) {
+      const [u0, v0] = loc[n], [u1, v1] = loc[n + 1];
+      if ((u0 - u) * (u1 - u) > 0 || u0 === u1) continue;
+      const t = (u - u0) / (u1 - u0), v = v0 + t * (v1 - v0);
+      lo = Math.min(lo, v); hi = Math.max(hi, v);
+    }
+    return lo === Infinity ? null : [lo, hi];
+  };
+  const hu = s.ext[0] / 2;
+  // Cornice and verandah arches on the city-side front.
+  for (let u = -hu + 6; u <= hu - 6; u += 7) {
+    const sp = span(u); if (!sp || sp[1] - sp[0] < 6) continue;
+    k.box(u - 3.5, u + 3.5, H, H + 0.8, sp[0] - 0.2, sp[0] + 0.6, S.DOME);
+    k.arcade('v0', sp[0] - 0.05, u - 2.8, u + 2.8, 1.0, 2.0, 4.6, 2, S.GLASS);
+    k.arcade('v0', sp[0] - 0.05, u - 2.8, u + 2.8, 7.2, 1.5, 3.4, 2, S.GLASS);
+  }
+  // Turret and dome rhythm along the roof, front row and back row offset (chessboard).
+  let n = 0;
+  for (let u = -hu + 10; u <= hu - 10; u += 14, n++) {
+    const sp = span(u); if (!sp || sp[1] - sp[0] < 8) continue;
+    const front = sp[0] + 2.2, back = sp[1] - 2.2;
+    if (n % 2 === 0) { k.cylinder(u, front, 1.6, 1.5, H, H + 5.5, 8, S.DOME); k.onion(u, front, 1.9, H + 5.5, 2.6, S.DOME, 0.2); }
+    else k.chhatri(u, front, 3.2, H);
+    if (n % 2 === 1) { k.cylinder(u, back, 1.6, 1.5, H, H + 5.5, 8, S.DOME); k.onion(u, back, 1.9, H + 5.5, 2.6, S.DOME, 0.2); }
+    else k.chhatri(u, back, 3.2, H);
+  }
+  // Central block with the principal dome and flanking towers.
+  const c = span(0);
+  if (c) {
+    const fv = c[0] + 6;
+    k.box(-12, 12, H, H + 7, c[0] + 1, c[0] + 12, S.REDSTONE);
+    k.arcade('v0', c[0] + 0.95, -9, 9, H + 1.2, 2.4, 4.4, 3, S.GLASS);
+    k.hemi(0, fv, 9, H + 7, S.DOME, 0.7);
+    for (const du of [-16, 16]) { k.cylinder(du, fv, 3.2, 3.0, H, H + 11, 8, S.REDSTONE); k.onion(du, fv, 3.6, H + 11, 4.8, S.DOME, 0.2); }
+  }
+}
+
 function buildAll(k: Kit, g: Grounds): { flag?: WavingFlag } {
   const res: { flag?: WavingFlag } = {};
   const b = site('bara_imambara'); if (b) baraImambara(k, g, b);
@@ -732,14 +785,7 @@ function buildAll(k: Kit, g: Grounds): { flag?: WavingFlag } {
   const sb = site('safed_baradari');
   if (sb) ringMonument(k, sb, 10, S.DOME, 83, (kk, hu, hv) => { kk.arcadeAll(-hu, hu, -hv, hv, 0.6, 2.8, 7, 4.2, S.GLASS); kk.merlons(-hu, hu, -hv, hv, 10, S.DOME); for (const u of [-hu, hu]) for (const v of [-hv, hv]) kk.chhatri(u, v, 2.2, 10); });
   const cb = site('charbagh');
-  if (cb) {
-    k.begin(cb, 26, 89);
-    k.extrudeWorldRing(cb.ring, 0, 13, S.REDSTONE, S.ROOF);
-    const hu = cb.ext[0] / 2 - 20;
-    for (let i = -4; i <= 4; i++) { const u = (i / 4) * hu; k.chhatri(u, 0, i === 0 ? 7 : 3.4, 13, S.DOME); }
-    k.box(-18, 18, 13, 20, -10, 10, S.DOME); k.onion(0, 0, 7, 20, 7, S.DOME, 0.12);
-    for (const u of [-hu * 0.5, hu * 0.5]) { k.cylinder(u, 0, 3, 3, 13, 22, 8, S.DOME); k.chhatri(u, 0, 4, 22); }
-  }
+  if (cb) charbaghStation(k, cb);
   const lm = site('la_martiniere');
   if (lm) ringMonument(k, lm, 18, S.DOME, 97, (kk) => {
     kk.box(-8, 8, 18, 34, -8, 8, S.DOME); kk.arcadeAll(-8, 8, -8, 8, 19, 2.4, 6, 4);

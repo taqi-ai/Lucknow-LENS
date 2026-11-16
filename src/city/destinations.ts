@@ -68,8 +68,9 @@ export const DESTINATIONS: Destination[] = [
       key: 'ambedkar_memorial', azimuth: 1.75, pitch: 0.4, distance: 1250, tier: 'A',
       status: 'Axial layout with stupa, 62 elephants and obelisks; schematic, not a surveyed plan.', tour: true }),
   D({ id: 'janeshwar_park', name: 'Janeshwar Mishra Park', aliases: ['jmp', 'janeshwar mishra', 'janeshwar park', 'janeswar mishra park'], category: 'parks', note: 'Gomti Nagar, 376 acres',
-      key: 'janeshwar_flag', azimuth: 1.1, pitch: 0.5, distance: 1900, tier: 'C',
-      status: 'Only the flag and ordinary Overture park polygons exist. Lakes, islands and tracks are NOT reconstructed. Excluded from the tour until built.', tour: false }),
+      ll: [26.83631, 80.99035], azimuth: 0.3, pitch: 0.9, distance: 1700, tier: 'B',
+      status: 'The two lakes (16.0 and 12.6 acres in Overture, official 14 and 18) are drawn with their mapped shorelines, an island and stone banks. Lawns, tree cover, tracks, fountains and sports zones are generic; the park is still a dense tree carpet, unlike the real open lawns and palms.', tour: true }),
+
 
   D({ id: 'hazratganj', name: 'Hazratganj', aliases: ['hazrat ganj', 'ganj'], category: 'popular', note: 'Colonial-era promenade',
       ll: [26.8467, 80.9461], azimuth: 0.6, pitch: 0.3, distance: 900, tier: 'C',

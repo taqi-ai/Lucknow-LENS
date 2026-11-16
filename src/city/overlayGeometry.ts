@@ -554,6 +554,12 @@ function buildMetroStationsGeom(
   return placed;
 }
 
+function polyArea(p: Array<{ x: number; z: number }>): number {
+  let a = 0;
+  for (let i = 0; i < p.length; i++) { const j = (i + 1) % p.length; a += p[i].x * p[j].z - p[j].x * p[i].z; }
+  return Math.abs(a) / 2;
+}
+
 export function buildOverlay(src: OverlaySource): OverlayBuild {
   // Deterministic feature identity: one physical carriageway, one surface. Overture
   // occasionally ships the same polyline twice under different ids; identical
@@ -620,7 +626,13 @@ export function buildOverlay(src: OverlaySource): OverlayBuild {
   for (const w of waterways) {
     if (!w?.points || w.points.length < 2) continue;
     if (w.isPolygon && w.points.length >= 3) {
-      triangulateArea(water, w.points, -0.25);
+      // Lakes, ponds and reservoirs sit ABOVE the park and ground layers (y 0.04): at -0.25 the
+      // surrounding park polygon painted over them, so Janeshwar Mishra Park's two lakes were
+      // invisible. Rivers keep the lower level (the ground raster is already cut out for them).
+      const still = w.cls === 'pond' || w.cls === 'lake' || w.cls === 'reservoir' || w.cls === 'water';
+      triangulateArea(water, w.points, still ? 0.07 : -0.25);
+      // Stone-stepped bank along still water over 1 ha (as at Janeshwar Mishra Park).
+      if (still && polyArea(w.points) > 1e4) appendRibbon(riverBank, [...w.points, w.points[0]], { half: 1.3, y: 0.11 });
       // Embankment along the real bank line of the river channel (round 2).
       if (w.cls === 'river_poly') appendRibbon(riverBank, [...w.points, w.points[0]], { half: 3.2, y: 0.05 });
     } else {

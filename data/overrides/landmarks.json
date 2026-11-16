@@ -20,7 +20,7 @@
     { "key": "taj_hotel", "name": "Taj Mahal Lucknow (hotel)", "xz": [2329, -181], "height": 26 },
     { "key": "renaissance", "name": "Renaissance Lucknow Hotel", "xz": [2247, -272], "height": 58 },
     { "key": "ekana", "name": "Ekana Cricket Stadium", "building": "dc04dd91", "height": 36 },
-    { "key": "janeshwar_flag", "name": "National flag, Janeshwar Mishra Park", "xz": [3837, 1678], "snap": false, "exclude": false, "size": 30 },
+    { "key": "janeshwar_flag", "name": "National flag, Janeshwar Mishra Park", "xz": [3837, 1738], "snap": false, "exclude": false, "size": 30 },
     { "key": "dubagga_tv", "name": "Dubagga TV Tower (Doordarshan)", "xz": [-8372, -2707], "snap": false, "size": 40 }
   ]
 }

@@ -161,6 +161,7 @@ const MIX: number[][] = [
   /* open    */ [0.40, 0.18, 0.02, 0.14, 0.24, 0.02],
   /* yard    */ [0.42, 0.18, 0.12, 0.18, 0.05, 0.05],
   /* orchard */ [0.10, 0.86, 0.00, 0.02, 0.02, 0.00],
+  /* palm    */ [0.04, 0.00, 0.06, 0.00, 0.00, 0.90],
 ];
 
 export function pickSpecies(kind: number, h: number): number {

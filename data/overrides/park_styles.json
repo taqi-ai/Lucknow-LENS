@@ -1,0 +1,11 @@
+{
+  "_note": "Designed-park planting. A park polygon containing `anchor` is planted as open lawns with tree groves and palm lines along its lakes, instead of the default uniform tree grid. Reference: docs/3d-revamp/references/round-3/parks/janeshwar park.png (aerial photo).",
+  "parks": [
+    {
+      "id": "janeshwar_mishra_park",
+      "anchor": [3837, 1678],
+      "grove": { "noiseScale": 70, "threshold": 0.60, "density": 0.75, "lawnDensity": 0.025 },
+      "palmLine": { "spacing": 10, "offset": 6, "keep": 0.8 }
+    }
+  ]
+}

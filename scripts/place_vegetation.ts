@@ -221,6 +221,44 @@ function main(): void {
   const greenIndex = new AreaIndex();
   for (const g of greens) greenIndex.add(g.points);
 
+  // Designed parks (data/overrides/park_styles.json): open lawns, groves, palm lines on lakes.
+  interface ParkStyle { id: string; anchor: [number, number]; grove: { noiseScale: number; threshold: number; density: number; lawnDensity: number }; palmLine: { spacing: number; offset: number; keep: number } }
+  const styleFile = path.join(process.cwd(), 'data/overrides/park_styles.json');
+  const styles: ParkStyle[] = fs.existsSync(styleFile) ? JSON.parse(fs.readFileSync(styleFile, 'utf8')).parks ?? [] : [];
+  const styledGreens = new Map<{ points: Pt[] }, ParkStyle>();
+  const palmPts: Array<{ x: number; z: number }> = [];
+  for (const st of styles) {
+    const park = greens.find((g) => pointInRing(st.anchor[0], st.anchor[1], g.points));
+    if (!park) { console.log(`park style ${st.id}: no park polygon contains the anchor, skipped`); continue; }
+    styledGreens.set(park, st);
+    // Lakes inside this park: a palm line just inland of the shoreline.
+    let nLake = 0;
+    for (const w of overview.waterways as Array<{ points: Pt[]; isPolygon?: boolean; cls?: string }>) {
+      if (!w.isPolygon || !w.points || w.points.length < 3 || !['pond', 'lake', 'reservoir', 'water'].includes(w.cls ?? '')) continue;
+      const c = w.points.reduce((a, q) => ({ x: a.x + q.x / w.points.length, z: a.z + q.z / w.points.length }), { x: 0, z: 0 });
+      if (!pointInRing(c.x, c.z, park.points)) continue;
+      nLake++;
+      const ring = w.points;
+      let carry = 0;
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], c2 = ring[(i + 1) % ring.length];
+        const dx = c2.x - a.x, dz = c2.z - a.z, len = Math.hypot(dx, dz);
+        if (len < 1e-3) continue;
+        const nx = -dz / len, nz = dx / len;
+        for (let d = carry; d < len; d += st.palmLine.spacing) {
+          const bx = a.x + (dx / len) * d, bz = a.z + (dz / len) * d;
+          // Offset to whichever side is land.
+          for (const sgn of [1, -1]) {
+            const px = bx + nx * st.palmLine.offset * sgn, pz = bz + nz * st.palmLine.offset * sgn;
+            if (!pointInRing(px, pz, ring) && hash2(px, pz) < st.palmLine.keep) { palmPts.push({ x: px, z: pz }); break; }
+          }
+        }
+        carry = ((carry - len) % st.palmLine.spacing + st.palmLine.spacing) % st.palmLine.spacing;
+      }
+    }
+    console.log(`park style ${st.id}: ${nLake} lakes, ${palmPts.length} palm candidates`);
+  }
+
   const files = fs.readdirSync(TILES_DIR).filter((n) => n.startsWith('tile_') && n.endsWith('.json'));
 
   // ── Building centroid index ───────────────────────────────────────────────
@@ -293,7 +331,7 @@ function main(): void {
     return false;
   };
 
-  const stat = { park: 0, verge: 0, open: 0, yard: 0, orchard: 0, rejected: 0, tiles: 0 };
+  const stat = { park: 0, verge: 0, open: 0, yard: 0, orchard: 0, palm: 0, rejected: 0, tiles: 0 };
   let done = 0;
 
   for (const name of files) {
@@ -310,8 +348,8 @@ function main(): void {
     };
 
     const trees: Array<{ x: number; y: number; z: number; scale: number; k: number }> = [];
-    const KIND = { park: 0, verge: 1, open: 2, yard: 3, orchard: 4 } as const;
-    const push = (x: number, z: number, kind: 'park' | 'verge' | 'open' | 'yard' | 'orchard'): void => {
+    const KIND = { park: 0, verge: 1, open: 2, yard: 3, orchard: 4, palm: 5 } as const;
+    const push = (x: number, z: number, kind: 'park' | 'verge' | 'open' | 'yard' | 'orchard' | 'palm'): void => {
       // Landmark precincts get their own formal planting (src/city/landmarks.ts).
       if (isLandmarkSite(x, z) || inAirport(x, z)) { stat.rejected++; return; }
       if (blocked(x, z) || onBuilding(x, z) || (kind !== 'yard' && nearBuilding(x, z, BUILDING_PAD))) { stat.rejected++; return; }
@@ -319,7 +357,8 @@ function main(): void {
       // Park trees run larger and more varied; street trees are pruned to a
       // narrower crown, which is what avenue planting actually looks like.
       // Open-ground trees are the wildest of the three — unmanaged scrub.
-      const scale = kind === 'park' ? 0.78 + h * 0.85
+      const scale = kind === 'palm' ? 0.95 + h * 0.5
+        : kind === 'park' ? 0.78 + h * 0.85
         : kind === 'open' ? 0.7 + h * 1.05
         : kind === 'orchard' ? 0.85 + h * 0.35
         : kind === 'yard' ? 0.65 + h * 0.6
@@ -348,9 +387,21 @@ function main(): void {
           const jz = z + (hash2(z, x) - 0.5) * PARK_SPACING * 0.75;
           if (jx < b.minX || jx >= b.maxX || jz < b.minZ || jz >= b.maxZ) continue;
           if (!pointInRing(jx, jz, g.points)) continue;
+          const style = styledGreens.get(g);
+          if (style) {
+            // Open lawn with groves: low-frequency noise carves clearings.
+            const n = valueNoise(jx, jz, style.grove.noiseScale);
+            const dens = n > style.grove.threshold ? style.grove.density : style.grove.lawnDensity;
+            if (hash2(jx * 1.31, jz * 0.77) > dens) continue;
+          }
           push(jx, jz, 'park');
         }
       }
+    }
+
+    for (const q of palmPts) {
+      if (q.x < b.minX || q.x >= b.maxX || q.z < b.minZ || q.z >= b.maxZ) continue;
+      push(q.x, q.z, 'palm');
     }
 
     // Verges: stepped along this tile's own arterials, offset to both sides.
@@ -434,7 +485,7 @@ function main(): void {
     if (done % 1500 === 0) console.log(`  ${done}/${files.length}`);
   }
 
-  const total = stat.park + stat.verge + stat.open + stat.yard + stat.orchard;
+  const total = stat.park + stat.verge + stat.open + stat.yard + stat.orchard + stat.palm;
   console.log(`\nTrees ${total} across ${stat.tiles} tiles (park ${stat.park}, verge ${stat.verge}, ` +
               `open ${stat.open}, yard ${stat.yard}, orchard ${stat.orchard}); ${stat.rejected} candidates masked out`);
   console.log('Next: npm run bake');

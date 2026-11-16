@@ -47,7 +47,7 @@ const TILE_SIZE = 500;
 const DRY = process.argv.includes('--dry');
 
 /** Mean spacing of trees inside a park, metres. */
-const PARK_SPACING = 13;
+const PARK_SPACING = 9;
 /** Spacing of avenue trees along a lit arterial, metres. */
 const VERGE_SPACING = 26;
 /** Clear distance a tree keeps from a building footprint centroid cluster. */
@@ -124,6 +124,17 @@ function groundClass(x: number, z: number): number {
   const j = Math.floor((z - GROUND_META.originZ) / GROUND_META.cell);
   if (i < 0 || j < 0 || i >= GROUND_META.size || j >= GROUND_META.size) return 255;
   return GROUND_CLS[j * GROUND_META.size + i];
+}
+
+// Field-edge hedge mask written by scripts/py/build_ground.py (1 = hedge line between parcels).
+const BORDER_FILE = path.join(process.cwd(), 'data/derived/parcel_border.u8');
+const PARCEL_BORDER = fs.existsSync(BORDER_FILE) ? fs.readFileSync(BORDER_FILE) : null;
+function onHedge(x: number, z: number): boolean {
+  if (!PARCEL_BORDER) return false;
+  const i = Math.floor((x - GROUND_META.originX) / GROUND_META.cell);
+  const j = Math.floor((z - GROUND_META.originZ) / GROUND_META.cell);
+  if (i < 0 || j < 0 || i >= GROUND_META.size || j >= GROUND_META.size) return false;
+  return PARCEL_BORDER[j * GROUND_META.size + i] === 1;
 }
 
 function main(): void {
@@ -359,8 +370,8 @@ function main(): void {
       // Open-ground trees are the wildest of the three — unmanaged scrub.
       const scale = kind === 'palm' ? 0.95 + h * 0.5
         : kind === 'park' ? 0.78 + h * 0.85
-        : kind === 'open' ? 0.7 + h * 1.05
-        : kind === 'orchard' ? 0.85 + h * 0.35
+        : kind === 'open' ? 0.95 + h * 0.9
+        : kind === 'orchard' ? 1.05 + h * 0.5
         : kind === 'yard' ? 0.65 + h * 0.6
         : 0.68 + h * 0.45;
       trees.push({ x: +x.toFixed(2), y: 0, z: +z.toFixed(2), scale: +scale.toFixed(3), k: KIND[kind] });
@@ -443,19 +454,21 @@ function main(): void {
     // scattered trees on scrub/grass, field-edge trees on cropland, and yard/courtyard
     // trees (neem, peepal) between houses in built-up land. Walked on the global grid
     // so the lattice is continuous across tile seams.
+    // Round 3: dense canopy. The user wants green land to read as continuous tree cover, so the
+    // grass, scrub, canopy, wetland and campus classes are planted at roughly 2-3x the old density.
     const RULES: Record<number, { sp: number; p: number; kind: 'open' | 'yard' | 'orchard'; clear: number }> = {
-      2: { sp: 21, p: 0.72, kind: 'orchard', clear: 12 },   // tree canopy
-      3: { sp: 30, p: 0.45, kind: 'open', clear: 20 },      // scrub
-      4: { sp: 36, p: 0.28, kind: 'open', clear: 20 },      // grassland
-      5: { sp: 46, p: 0.07, kind: 'open', clear: 25 },      // cropland: field-edge trees
-      14: { sp: 46, p: 0.07, kind: 'open', clear: 25 },     // farmland
-      7: { sp: 30, p: 0.30, kind: 'open', clear: 20 },      // wetland
-      1: { sp: 24, p: 0.16, kind: 'yard', clear: 0 },       // built-up: yard trees
-      12: { sp: 24, p: 0.20, kind: 'yard', clear: 0 },      // residential land use
-      11: { sp: 20, p: 0.45, kind: 'yard', clear: 0 },      // campuses
-      13: { sp: 40, p: 0.10, kind: 'open', clear: 25 },     // sand banks: sparse
+      2: { sp: 12, p: 0.97, kind: 'orchard', clear: 7 },    // tree canopy
+      3: { sp: 14, p: 0.85, kind: 'open', clear: 9 },       // scrub
+      4: { sp: 14, p: 0.80, kind: 'open', clear: 9 },       // grassland
+      5: { sp: 40, p: 0.12, kind: 'open', clear: 20 },      // cropland: field-edge trees
+      14: { sp: 40, p: 0.12, kind: 'open', clear: 20 },     // farmland
+      7: { sp: 18, p: 0.65, kind: 'open', clear: 12 },      // wetland
+      1: { sp: 20, p: 0.22, kind: 'yard', clear: 0 },       // built-up: yard trees
+      12: { sp: 18, p: 0.30, kind: 'yard', clear: 0 },      // residential land use
+      11: { sp: 12, p: 0.85, kind: 'yard', clear: 0 },      // campuses
+      13: { sp: 32, p: 0.14, kind: 'open', clear: 25 },     // sand banks: sparse
     };
-    for (const sp of [20, 21, 24, 30, 36, 40, 46]) {
+    for (const sp of Array.from(new Set(Object.values(RULES).map((r) => r.sp)))) {
       for (let x = Math.ceil(b.minX / sp) * sp; x < b.maxX; x += sp) {
         for (let z = Math.ceil(b.minZ / sp) * sp; z < b.maxZ; z += sp) {
           const jx = x + (hash2(x * 1.7 + sp, z) - 0.5) * sp * 0.8;
@@ -464,13 +477,25 @@ function main(): void {
           const rule = RULES[groundClass(jx, jz)];
           if (!rule || rule.sp !== sp) continue;
           // Groves clump: modulate probability with low-frequency noise.
-          const clump = 0.55 + 0.9 * (valueNoise(jx, jz, GROVE_SCALE) - 0.5);
+          const clump = 0.95 + 0.5 * (valueNoise(jx, jz, GROVE_SCALE) - 0.5);
           if (hash2(jx * 0.37, jz * 0.71) > rule.p * clump) continue;
           if (greenIndex.hits(jx, jz)) continue;
           if (rule.clear > 0 && nearBuilding(jx, jz, rule.clear)) continue;
           if (roadMask.hits(jx, jz, rule.kind === 'yard' ? 2.5 : OPEN_ROAD_CLEAR)) continue;
           push(jx, jz, rule.kind);
         }
+      }
+    }
+
+    // Hedgerow trees along the field-parcel borders (round 3): a tree every ~6-14 m on the
+    // hedge line of cropland and open land, so the countryside shows its parcel pattern.
+    for (let x = Math.ceil(b.minX / 7) * 7; x < b.maxX; x += 7) {
+      for (let z = Math.ceil(b.minZ / 7) * 7; z < b.maxZ; z += 7) {
+        const jx = x + (hash2(x * 2.1, z) - 0.5) * 5, jz = z + (hash2(z, x * 2.1) - 0.5) * 5;
+        if (jx < b.minX || jx >= b.maxX || jz < b.minZ || jz >= b.maxZ) continue;
+        if (!onHedge(jx, jz) || hash2(jx * 0.9, jz * 1.3) > 0.42) continue;
+        if (greenIndex.hits(jx, jz) || nearBuilding(jx, jz, 6) || roadMask.hits(jx, jz, 5)) continue;
+        push(jx, jz, 'open');
       }
     }
 

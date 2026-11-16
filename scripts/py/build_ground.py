@@ -258,15 +258,50 @@ def main():
         alb = np.stack([box_blur(alb[..., i], 1) for i in range(3)], -1)
     n1 = value_noise(48, 1)[..., None]; n2 = value_noise(9, 2)[..., None]; n3 = value_noise(220, 3)[..., None]
     alb *= 0.90 + 0.12 * n1 + 0.07 * (n2 - 0.5)
-    # Field parcels: each ~60-120 m block gets its own crop stage (green / ripening / ploughed).
+    # Field parcels (round 3): an irregular, hard-edged mosaic like the satellite view of Lucknow's
+    # countryside. Seeds on a jittered grid (~90-130 m); each pixel takes the nearest seed. Every
+    # parcel gets its own crop stage, and pixels where the two nearest seeds are almost equally
+    # far form the hedge line between parcels. Applied to cropland/farmland fully and to open
+    # grass, scrub and bare ground partly, so empty land never reads as a smooth blur.
     rng = np.random.default_rng(7)
-    pg = 9
-    parcel = rng.random((N // pg + 2, N // pg + 2)).astype(np.float32)
-    parcel = np.kron(parcel, np.ones((pg, pg), np.float32))[:N, :N]
+    PG = 10                                   # seed spacing in cells (110 m)
+    gy, gx_ = np.mgrid[0:N, 0:N].astype(np.float32)
+    ny, nx_ = N // PG + 3, N // PG + 3
+    seed_y = (np.arange(ny)[:, None] + rng.random((ny, nx_)) * 0.9 - 0.2) * PG
+    seed_x = (np.arange(nx_)[None, :] + rng.random((ny, nx_)) * 0.9 - 0.2) * PG
+    cy = np.clip((gy // PG).astype(int) + 1, 1, ny - 2); cx = np.clip((gx_ // PG).astype(int) + 1, 1, nx_ - 2)
+    best = np.full((N, N), 1e9, np.float32); second = np.full((N, N), 1e9, np.float32); pid = np.zeros((N, N), np.int32)
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            sy = seed_y[cy + dy, cx + dx]; sx = seed_x[cy + dy, cx + dx]
+            d = np.hypot(gy - sy, gx_ - sx).astype(np.float32)
+            better = d < best
+            second = np.where(better, best, np.minimum(second, d))
+            pid = np.where(better, (cy + dy) * nx_ + (cx + dx), pid)
+            best = np.where(better, d, best)
+    hedge = (second - best) < 0.55
+    prng = np.random.default_rng(11)
+    r1 = prng.random(ny * nx_).astype(np.float32); r2 = prng.random(ny * nx_).astype(np.float32)
+    # Crop-stage palette as multipliers on the class albedo: lush green, young green, dark green,
+    # golden stubble, pale fallow, ploughed brown, dry beige.
+    stages = np.array([[0.62, 0.92, 0.55], [0.78, 1.06, 0.62], [0.55, 0.80, 0.52], [1.16, 1.04, 0.78],
+                       [1.24, 1.14, 0.96], [0.98, 0.80, 0.72], [1.10, 1.02, 0.90]], np.float32)
+    weights = np.array([0.10, 0.10, 0.05, 0.17, 0.22, 0.14, 0.22]); cum = np.cumsum(weights)
+    stage_of = np.searchsorted(cum, r1)
+    stage_of = np.clip(stage_of, 0, 6)
+    mult = stages[stage_of[pid]] * (0.93 + 0.14 * r2[pid])[..., None]
     farm = (cls == 5) | (cls == 14)
-    stages = np.array([[0.86, 1.02, 0.80], [1.06, 1.02, 0.84], [1.10, 0.98, 0.88], [1.02, 0.94, 0.86]], np.float32)
-    idx = np.clip((parcel * 4).astype(int), 0, 3)
-    alb[farm] *= stages[idx[farm]]
+    openland = (cls == 4) | (cls == 3) | (cls == 0)
+    blend = np.where(farm, 1.0, np.where(openland, 0.65, 0.0)).astype(np.float32)[..., None]
+    alb = alb * (1 + (mult - 1) * blend)
+    # Hedge / field-edge line, darker and greener.
+    hmask = (hedge & (farm | openland))[..., None]
+    alb = np.where(hmask, alb * np.array([0.62, 0.70, 0.55], np.float32), alb)
+    # Faint furrow striping inside farm parcels (direction set per parcel).
+    ang = (r2[pid] * np.pi).astype(np.float32)
+    furrow = 0.5 + 0.5 * np.sin((gx_ * np.cos(ang) + gy * np.sin(ang)) * 2.6)
+    alb[farm] *= (0.965 + 0.07 * furrow[farm])[..., None]
+    (hedge & (farm | openland)).astype(np.uint8).tofile(os.path.join(DER, 'parcel_border.u8'))
     # Grassland: patchy dry grass, not a lawn.
     grass = (cls == 4) | (cls == 3)
     alb[grass] *= (0.92 + 0.16 * n1[grass]) * np.array([1.06, 1.0, 0.88], np.float32)

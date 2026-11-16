@@ -176,6 +176,15 @@ const FRAG_COLOR = /* glsl */ `
   int pk = int(pick);
   if (bTyp > 2.5 && bTyp < 3.5) { for (int i = 0; i < 4; i++) if (i == pk) wallCol = uHeritagePal[i]; }
   if (bTyp > 5.5 && bTyp < 6.5) { for (int i = 0; i < 4; i++) if (i == pk) wallCol = uIndustrialPal[i]; }
+  // Hazratganj colonial frontage (round 3): market-typology buildings inside the Hazratganj
+  // precinct (circle r=420 m around the chauraha; data/overrides/landmarks.json anchors it)
+  // get lime-washed ivory/ochre walls, arched upper windows, an arcaded ground floor and a
+  // projecting cornice, instead of the bazaar's rolling shutters and coloured signboards.
+  float colonial = (bTyp > 1.5 && bTyp < 2.5 && length(vWorldPos.xz - vec2(-420.0, 340.0)) < 420.0) ? 1.0 : 0.0;
+  if (colonial > 0.5) {
+    vec3 ivory = vec3(0.80, 0.75, 0.64), ochre = vec3(0.74, 0.62, 0.43), grey = vec3(0.70, 0.68, 0.62), sage = vec3(0.64, 0.68, 0.58);
+    wallCol = pk == 0 ? ivory : pk == 1 ? ochre : pk == 2 ? grey : sage;
+  }
   int ri = int(floor(lensHash(bHash * 5.3 + 0.7) * 8.0 * 0.999));
   vec3 roofCol = uRoofPal[0];
   for (int i = 1; i < 8; i++) { if (i == ri) roofCol = uRoofPal[i]; }
@@ -208,11 +217,24 @@ const FRAG_COLOR = /* glsl */ `
       baseCol *= 1.0 - 0.10 * slab * near;
       // Windows (not on parapets / cabins, not on the ground floor of shops).
       vec2 cell; float bay;
-      vec2 wm = windowMask(fuv, fh, bTyp, cell, bay);
+      vec2 wm = windowMask(fuv, fh, colonial > 0.5 ? 3.0 : bTyp, cell, bay);
       float storeys = bHeight / fh;
       float inFloors = step(0.85, y / fh) * (1.0 - step(storeys - 0.25, y / fh));
       bool shop = bTyp > 1.5 && bTyp < 2.5 && y < fh;
-      if (shop) {
+      if (shop && colonial > 0.5) {
+        // Arcaded shopfront: 4.2 m bays, pale piers, arched dark openings with warm shop glass,
+        // a muted signboard band above the arches. No rolling shutters.
+        float bu = fract(fuv.x / 4.2 + lensHash(bHash));
+        float inBay = smoothstep(0.17, 0.19, bu) * (1.0 - smoothstep(0.81, 0.83, bu));
+        float archTop = 2.55 + 0.45 * sqrt(max(0.0, 1.0 - pow((bu - 0.5) / 0.32, 2.0)));
+        float open = inBay * (1.0 - smoothstep(archTop - 0.05, archTop + 0.05, y)) * smoothstep(0.25, 0.3, y);
+        float lit = 0.55 + 0.45 * lensHash2(vec2(floor(fuv.x / 4.2 + lensHash(bHash)), bHash * 11.0));
+        vec3 shopGlass = mix(vec3(0.09, 0.08, 0.07), vec3(0.40, 0.33, 0.22), lit * 0.5);
+        baseCol = mix(baseCol, shopGlass, open * (0.45 + 0.55 * near));
+        float band = smoothstep(3.05, 3.1, y) * (1.0 - smoothstep(3.5, 3.55, y)) * (1.0 - open);
+        vec3 boardCol = mix(vec3(0.18, 0.26, 0.20), vec3(0.42, 0.16, 0.13), step(0.5, lensHash(floor(fuv.x / 8.4) + bHash * 3.0)));
+        baseCol = mix(baseCol, boardCol, band * 0.8 * near);
+      } else if (shop) {
         // Bazaar ground floor: dark open bays between piers, rolling shutters, signboards.
         float bayU = fract(fuv.x / 3.4 + lensHash(bHash));
         float open = smoothstep(0.10, 0.14, bayU) * (1.0 - smoothstep(0.86, 0.90, bayU)) * (1.0 - smoothstep(2.55, 2.62, y));
@@ -232,6 +254,13 @@ const FRAG_COLOR = /* glsl */ `
         baseCol = mix(baseCol, baseCol * 1.06 + 0.02, wm.y * inFloors * near * 0.5); // frames / lintels
         // Roughness stays constant: glossy sub-pixel window bands alias into stripes
         // under a low sun. Glass reads through colour alone.
+      }
+      if (colonial > 0.5) {
+        // Projecting cornice and a shadowed frieze under it; string course above the arcade.
+        float top = bHeight - y;
+        baseCol *= 1.0 - 0.18 * smoothstep(1.5, 1.2, top) * step(0.4, top);
+        baseCol = mix(baseCol, baseCol * 1.10 + 0.02, smoothstep(0.8, 0.5, top) * step(0.0, top));
+        baseCol = mix(baseCol, baseCol * 1.08 + 0.02, (1.0 - smoothstep(0.0, 0.07, abs(y - fh))) * 0.8);
       }
     } else if (bSurf == 2.0) {
       baseCol *= 0.94;

@@ -72,9 +72,9 @@ export const DESTINATIONS: Destination[] = [
       status: 'The two lakes (16.0 and 12.6 acres in Overture, official 14 and 18) are drawn with their mapped shorelines, an island and stone banks. Lawns, tree cover, tracks, fountains and sports zones are generic; the park is still a dense tree carpet, unlike the real open lawns and palms.', tour: true }),
 
 
-  D({ id: 'hazratganj', name: 'Hazratganj', aliases: ['hazrat ganj', 'ganj'], category: 'popular', note: 'Colonial-era promenade',
-      ll: [26.8467, 80.9461], azimuth: 0.6, pitch: 0.3, distance: 900, tier: 'C',
-      status: 'Overture footprints with procedural facades. Colonial arcades are NOT implemented. Excluded from the tour.', tour: false }),
+  D({ id: 'hazratganj', name: 'Hazratganj', aliases: ['hazrat ganj', 'ganj', 'mg marg', 'mahatma gandhi marg'], category: 'popular', note: 'Colonial-era promenade',
+      ll: [26.8467, 80.9461], azimuth: 0.6, pitch: 0.3, distance: 900, tier: 'B',
+      status: 'Market-typology buildings within 420 m of the chauraha are shaded as colonial frontage: ivory/ochre walls, arcaded arched shopfronts, arched windows, cornice. Shader-level only: no real colonnade geometry, balconies, pedestrian zones, heritage signage text or period lamps.', tour: true }),
   D({ id: 'ekana', name: 'Ekana Cricket Stadium', aliases: ['ekana', 'bharat ratna atal bihari vajpayee ekana', 'cricket stadium'], category: 'popular', note: 'Cricket ground',
       key: 'ekana', azimuth: 1.15, pitch: 0.5, distance: 900, tier: 'B', status: 'Procedural bowl on Overture footprint.', tour: true }),
   D({ id: 'taj_gomti', name: 'Gomti Riverfront and Taj Mahal Lucknow', aliases: ['taj hotel', 'taj mahal lucknow', 'gomti riverfront', 'gomti river', 'riverfront'], category: 'popular',

@@ -8,35 +8,35 @@
   "results": [
     {
       "shot": "ambedkar_top",
-      "fps": 162,
-      "frameMsP50": 6.2,
-      "frameMsP95": 9.2,
+      "fps": 165,
+      "frameMsP50": 6.1,
+      "frameMsP95": 10,
       "drawCalls": 330,
-      "triangles": 4879237,
+      "triangles": 4850027,
       "geometries": 174,
-      "textures": 54,
+      "textures": 49,
       "programs": 60,
       "tiles": 177,
       "buildings": 58035,
       "lod": 2,
       "scale": "NEIGHBORHOOD",
-      "jsHeapMB": 245
+      "jsHeapMB": 243
     },
     {
       "shot": "ambedkar_oblique",
-      "fps": 135,
-      "frameMsP50": 7.4,
-      "frameMsP95": 10.1,
-      "drawCalls": 499,
-      "triangles": 4947203,
-      "geometries": 311,
-      "textures": 54,
+      "fps": 154,
+      "frameMsP50": 6.4,
+      "frameMsP95": 9.9,
+      "drawCalls": 498,
+      "triangles": 4917991,
+      "geometries": 287,
+      "textures": 49,
       "programs": 60,
       "tiles": 177,
       "buildings": 88161,
       "lod": 3,
       "scale": "STREET",
-      "jsHeapMB": 264
+      "jsHeapMB": 254
     }
   ],
   "errors": []

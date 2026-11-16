@@ -485,31 +485,29 @@ function ambedkarMemorial(k: Kit, g: Grounds, s: LandmarkSite): void {
   quad(PALE, 0.49, 0.40, 0.05, 0.05, 0.12);
   quad(WHITE, 0.49, 0.40, 0.022, 0.022, 0.13);
 
-  // 4. Cloverleaf platform with a small stupa.
+  // 4. Cloverleaf platform with a small stupa: four RAISED petals (stepped white mounds with a
+  //    pink inlaid crown and an upstand rim), joined by a raised central block under the stupa.
   {
     const [cu, cv] = P(0.31, 0.24);
     const R = 0.09 * W;
+    const circ = (u: number, v: number, r: number): number[][] => {
+      const o: number[][] = [];
+      for (let t = 0; t < 32; t++) { const q = (t / 32) * Math.PI * 2; const w = k.w([u + Math.cos(q) * r, 0, v + Math.sin(q) * r]); o.push([w[0], w[2]]); }
+      return o;
+    };
     for (let i = 0; i < 4; i++) {
       const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
       const lu = cu + Math.cos(a) * R * 0.62, lv = cv + Math.sin(a) * R * 0.62;
-      const ring2: number[][] = [];
-      for (let t = 0; t < 28; t++) { const q = (t / 28) * Math.PI * 2; const w = k.w([lu + Math.cos(q) * R * 0.52, 0, lv + Math.sin(q) * R * 0.52]); ring2.push([w[0], w[2]]); }
-      k.extrudeWorldRing(ring2, 0, 3.2, S.LIME, S.LIME);
-      // White sculpted surface with a pink inlaid band and a raised rim (no concentric rings).
-      const r3: number[][] = [], r4: number[][] = [];
-      for (let t = 0; t < 28; t++) {
-        const q = (t / 28) * Math.PI * 2;
-        const w = k.w([lu + Math.cos(q) * R * 0.5, 0, lv + Math.sin(q) * R * 0.5]); r3.push([w[0], w[2]]);
-        const w2 = k.w([lu + Math.cos(q) * R * 0.36, 0, lv + Math.sin(q) * R * 0.36]); r4.push([w2[0], w2[2]]);
-      }
-      g.color(WHITE).polyWorld(r3, 3.25);
-      g.color(PINK).polyWorld(r4, 3.3);
-      for (const sg of [-1, 1]) k.box(lu - R * 0.28, lu + R * 0.28, 3.3, 4.1, lv + sg * R * 0.1 - 0.5, lv + sg * R * 0.1 + 0.5, S.LIME);
+      k.extrudeWorldRing(circ(lu, lv, R * 0.52), 0, 5.0, S.LIME, S.LIME);       // base mass
+      k.extrudeWorldRing(circ(lu, lv, R * 0.44), 5.0, 7.2, S.LIME, S.LIME);     // second step
+      k.extrudeWorldRing(circ(lu, lv, R * 0.34), 7.2, 9.0, S.LIME, S.LIME);     // crown
+      g.color(PINK).polyWorld(circ(lu, lv, R * 0.27), 9.05);
+      for (const sg of [-1, 1]) k.box(lu - R * 0.2, lu + R * 0.2, 9.0, 9.9, lv + sg * R * 0.08 - 0.5, lv + sg * R * 0.08 + 0.5, S.LIME);
     }
-    k.box(cu - 9, cu + 9, 0, 4, cv - 9, cv + 9, S.LIME);
-    k.cylinder(cu, cv, 5.5, 5.5, 4, 8, 20, S.LIME);
-    k.hemi(cu, cv, 5.2, 8, S.LIME, 0.75);
-    k.cylinder(cu, cv, 0.5, 0.15, 12, 16, 8, S.GILT);
+    k.extrudeWorldRing(circ(cu, cv, R * 0.34), 0, 7, S.LIME, S.LIME);           // raised joining block
+    k.cylinder(cu, cv, 5.5, 5.5, 7, 11, 20, S.LIME);
+    k.hemi(cu, cv, 5.2, 11, S.LIME, 0.75);
+    k.cylinder(cu, cv, 0.5, 0.15, 15, 19, 8, S.GILT);
   }
 
   // 5. Two white domed halls (SE).
@@ -598,7 +596,7 @@ function ambedkarMemorial(k: Kit, g: Grounds, s: LandmarkSite): void {
       }
     }
     // Lamp columns between the elephants and on the outer edges.
-    const nL = Math.floor(len / 11);
+    const nL = Math.floor(len / 6.5);
     for (let i = 0; i < nL; i++) {
       const t = (i + 0.5) / nL;
       for (const off of [-20, -8, 8, 20]) {
@@ -629,10 +627,67 @@ function ambedkarMemorial(k: Kit, g: Grounds, s: LandmarkSite): void {
     }
   }
 
+  // 7c. Fill the plazas (round 3): patterned paving panels with radial inlay, a grid of
+  //     pedestal pillars beside the amphitheatre (as in the dusk drone view), planter beds,
+  //     lamp bollards on a regular grid and long colonnaded halls along the edges.
+  const IN2 = 0xb4a084, DARKP = 0xa8957c;
+  for (const [fx, fy, hx, hy] of [[0.60, 0.48, 0.10, 0.06], [0.42, 0.22, 0.05, 0.06], [0.55, 0.88, 0.14, 0.04], [0.20, 0.92, 0.10, 0.03], [0.92, 0.36, 0.05, 0.14]] as Array<[number, number, number, number]>) {
+    quad(INLAY, fx, fy, hx, hy, 0.12);
+    quad(0xd8cab3, fx, fy, hx - 0.006, hy - 0.006, 0.13);
+    for (let i = -4; i <= 4; i++) { quad(IN2, fx + (hx * i) / 4.5, fy, 0.0012, hy - 0.008, 0.14); quad(IN2, fx, fy + (hy * i) / 4.5, hx - 0.008, 0.0012, 0.14); }
+    const [cu, cv] = P(fx, fy);
+    g.color(DARKP).disc(cu, cv, Math.min(hx, hy) * W * 0.5, 0.15, 24);
+    g.color(0xd8cab3).disc(cu, cv, Math.min(hx, hy) * W * 0.3, 0.16, 24);
+  }
+  // Pedestal-pillar grid beside the amphitheatre: 3 x 16 blocks, each with a short column.
+  for (let i = 0; i < 16; i++) for (let j = 0; j < 3; j++) {
+    const [u, v] = P(0.58 + i * 0.0165, 0.56 + j * 0.036);
+    if (!inside(u, v)) continue;
+    k.box(u - 3, u + 3, 0, 1.4, v - 3, v + 3, S.LIME);
+    k.lathe(u, v, [[1.0, 1.4], [0.6, 8], [0, 9]], 6, S.LIME, 0);
+  }
+  // Planter beds and lamp bollards on a regular grid across the open plaza.
+  for (let fx = 0.12; fx < 0.95; fx += 0.055) for (let fy = 0.10; fy < 0.95; fy += 0.055) {
+    const [u, v] = P(fx, fy);
+    if (!inside(u, v)) continue;
+    if (((Math.round(fx * 100) + Math.round(fy * 100)) & 1) === 0) { g.color(0x7e8c55).disc(u, v, 4.2, 0.17, 12); g.color(0x5c6c3a).disc(u, v, 2.4, 0.19, 10); }
+    else k.cylinder(u, v, 0.35, 0.25, 0, 4.8, 6, S.LIME);
+  }
+  // Long colonnaded halls along the north-east and south edges.
+  for (const [fx0, fy0, fx1, fy1] of [[0.50, 0.965, 0.90, 0.93], [0.90, 0.60, 0.95, 0.80]] as Array<[number, number, number, number]>) {
+    const [a0, b0] = P(fx0, fy0), [a1, b1] = P(fx1, fy1);
+    const hl = Math.hypot(a1 - a0, b1 - b0), hx2 = (a1 - a0) / hl, hy2 = (b1 - b0) / hl, qx = -hy2 * 7, qy = hx2 * 7;
+    const wq = (x: number, y: number): number[] => { const q = k.w([x, 0, y]); return [q[0], q[2]]; };
+    if (inside(a0, b0) && inside(a1, b1) && inside(a0 + qx, b0 + qy) && inside(a1 + qx, b1 + qy)) {
+      k.extrudeWorldRing([wq(a0, b0), wq(a1, b1), wq(a1 + qx, b1 + qy), wq(a0 + qx, b0 + qy)], 0, 6.5, S.LIME, S.LIME);
+      for (let d = 0; d <= hl; d += 6) k.cylinder(a0 + hx2 * d - qx * 0.05, b0 + hy2 * d - qy * 0.05, 0.55, 0.5, 0, 6.5, 6, S.STONE);
+    }
+  }
+
   // 8. Small triangular pool (SE corner).
   {
     const tri: number[][] = [P(0.93, 0.86), P(0.88, 0.95), P(0.97, 0.95)].map(([u, v]) => { const q = k.w([u, 0, v]); return [q[0], q[2]]; });
     g.color(POOL).polyWorld(tri, 0.12);
+  }
+
+  // 8b. Boundary wall around the whole precinct, pale sandstone like the paving, with pier caps
+  //     every ~30 m. Each edge is a thin slab on the inside of the precinct outline.
+  {
+    const cx = loc.reduce((a2, q) => a2 + q[0], 0) / loc.length, cz = loc.reduce((a2, q) => a2 + q[1], 0) / loc.length;
+    for (let i = 0; i < loc.length; i++) {
+      const [ax, az] = loc[i], [bx, bz] = loc[(i + 1) % loc.length];
+      const dx = bx - ax, dz = bz - az, len = Math.hypot(dx, dz);
+      if (len < 2) continue;
+      let nx = -dz / len, nz = dx / len;
+      if ((cx - ax) * nx + (cz - az) * nz < 0) { nx = -nx; nz = -nz; }   // point inward
+      const T = 1.6;
+      const wq = (x: number, y: number): number[] => { const q = k.w([x, 0, y]); return [q[0], q[2]]; };
+      k.extrudeWorldRing([wq(ax, az), wq(bx, bz), wq(bx + nx * T, bz + nz * T), wq(ax + nx * T, az + nz * T)], 0, 3.2, S.LIME, S.LIME);
+      for (let d = 0; d <= len; d += 30) {
+        const px = ax + (dx / len) * d + nx * T * 0.5, pz = az + (dz / len) * d + nz * T * 0.5;
+        k.box(px - 1.2, px + 1.2, 0, 4.4, pz - 1.2, pz + 1.2, S.LIME);
+      }
+    }
   }
 
   // 9. Trees: narrow edge strips and one grove, never over the plazas.
@@ -1036,7 +1091,7 @@ export function buildLandmarkLayer(material: THREE.Material): LandmarkLayer {
   return {
     group,
     update: (t) => flag?.update(t),
-    setNight: (n) => { gmat.color.setHex(n ? 0x5a5650 : 0xffffff); },
+    setNight: (n) => { gmat.color.setHex(n ? 0x5a5650 : 0xffffff); gmat.emissive.setHex(n ? 0x1c130b : 0x000000); },
   };
 }
 

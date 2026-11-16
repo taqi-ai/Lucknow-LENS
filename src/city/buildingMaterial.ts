@@ -27,22 +27,22 @@ export type SkylineStyle = 'warm' | 'clear' | 'cyberpunk';
 
 /** 8 palette families x 4 wall colours (sRGB), indexed family*4 + k. */
 const WALL_FAMILIES = [
-  // 0 old-city: lime cream, ochre, weathered grey plaster, faded rose
-  0xd8c9a6, 0xc8a877, 0xb7b0a2, 0xcfb2a0,
-  // 1 bazaar: mixed dusty plaster, signage-stained
-  0xcdc2ad, 0xb4a48b, 0xd6c49d, 0xa79e92,
-  // 2 planned colonies: off-white, warm cream, pale beige, light buff
-  0xe6e0d3, 0xe0d4bc, 0xd6d0c6, 0xe7dbc2,
-  // 3 modern: neutral grey, putty, concrete, off-white
-  0xd6d5d0, 0xc3c1bb, 0xb6b2a8, 0xe1ded6,
-  // 4 periphery: exposed brick, darker brick, plastered, brick-orange
-  0xa6694f, 0x985d46, 0xc5b59d, 0xae7858,
-  // 5 village: earth, whitewash, mud-brown, sand
-  0xbea886, 0xd6cebe, 0xa58868, 0xbcab8f,
-  // 6 institutional: Dholpur buff, Lucknow red, sandstone, light ochre
-  0xc6996b, 0xaf6c51, 0xd5c39f, 0xc9b08b,
-  // 7 generic urban: pastel cream, peach, pale grey-green, sand
-  0xd9d0be, 0xd2c5ae, 0xc6ccc4, 0xdccbb4,
+  // 0 old-city: lime white, weathered ochre, grey plaster, faded pink-lime
+  0xdcd4c2, 0xc9b088, 0xb3aea4, 0xd2bfb0,
+  // 1 bazaar: dusty plaster, stained cream, grey, faded yellow
+  0xcfc8b8, 0xb9ad98, 0xa9a59d, 0xd6c79f,
+  // 2 planned colonies: off-white, cream, light grey, pale buff
+  0xe4e1d9, 0xddd3bf, 0xcfcdc7, 0xe2d8c4,
+  // 3 modern: neutral grey, white, concrete, putty
+  0xd3d3cf, 0xe6e4df, 0xb3b1ab, 0xc7c2b6,
+  // 4 periphery: exposed brick, brick, grey plaster, raw concrete
+  0xa36c54, 0x94634e, 0xbdb7ab, 0xa9a49a,
+  // 5 village: whitewash, earth, grey, sand
+  0xd4cfc3, 0xb8a68a, 0xa8a49b, 0xc1b49a,
+  // 6 institutional: Dholpur buff, Lucknow red, sandstone, grey stone
+  0xc8a77e, 0xa9705a, 0xd2c4a6, 0xbab4a7,
+  // 7 generic urban: off-white, grey, cream, pale pastel
+  0xdcd9d1, 0xc5c3bd, 0xd8cdb8, 0xcdd0c8,
 ];
 
 /** Roof terraces seen from above: RCC grey-beige, brick dust, white-washed, grimy. */
@@ -273,7 +273,13 @@ const FRAG_COLOR = /* glsl */ `
   else if (bSurf == 12.0) { baseCol = vec3(0.78, 0.60, 0.25); rough = 0.35; metal = 0.8; }
   else if (bSurf == 13.0) {
     // Glass on modern blocks; on heritage fabric the same surface is a deep arch opening.
-    baseCol = (bTyp > 2.5 && bTyp < 3.5) ? vec3(0.075, 0.065, 0.055) : vec3(0.18, 0.25, 0.30);
+    // Heritage: deep arch opening. Curtain walls: tinted glass with a sky reflection band
+    // (no environment map, so the reflection is painted rather than left black).
+    if (bTyp > 2.5 && bTyp < 3.5 && vWorldPos.y < 40.0 && bHeight < 50.0) baseCol = vec3(0.075, 0.065, 0.055);
+    else {
+      float sky = clamp(vWorldPos.y / max(bHeight, 1.0), 0.0, 1.0);
+      baseCol = mix(vec3(0.20, 0.30, 0.33), vec3(0.50, 0.60, 0.64), sky * 0.7) * (0.9 + 0.2 * vnoise(vec2(fuv.x * 0.25, vWorldPos.y * 0.3)));
+    }
     rough = 0.6;
   }
   else if (bSurf == 14.0) { baseCol = vec3(0.90, 0.86, 0.78); rough = 0.8; }

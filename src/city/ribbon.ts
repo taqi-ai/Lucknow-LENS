@@ -324,8 +324,36 @@ export function buildElevationProfiles(
     return false;
   };
 
+  // Connected structures (pieces joined end to end) share one span length, so a long
+  // flyover split into short features does not sawtooth between culvert and deck heights.
+  const parent = new Map<ElevatableRoad, ElevatableRoad>();
+  const find = (r: ElevatableRoad): ElevatableRoad => {
+    let x = r; while (parent.get(x) !== x) x = parent.get(x)!;
+    parent.set(r, x); return x;
+  };
+  const lenOf = new Map<ElevatableRoad, number>();
+  for (const e of elevated) {
+    parent.set(e.road, e.road);
+    let L = 0;
+    for (let i = 1; i < e.pts.length; i++) L += Math.hypot(e.pts[i].x - e.pts[i - 1].x, e.pts[i].z - e.pts[i - 1].z);
+    lenOf.set(e.road, L);
+  }
+  for (const e of elevated) {
+    for (const p of [e.pts[0], e.pts[e.pts.length - 1]]) {
+      const gx = Math.floor(p.x / JOIN_CELL), gz = Math.floor(p.z / JOIN_CELL);
+      for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+        for (const o of index.get(`${gx + dx},${gz + dz}`) ?? []) {
+          if (o.owner !== e.road && Math.hypot(o.p.x - p.x, o.p.z - p.z) <= JOIN_TOL) parent.set(find(e.road), find(o.owner));
+        }
+      }
+    }
+  }
+  const compLen = new Map<ElevatableRoad, number>();
+  for (const e of elevated) { const r = find(e.road); compLen.set(r, (compLen.get(r) ?? 0) + lenOf.get(e.road)!); }
+
   for (const { road, pts } of elevated) {
     const deck = deckHeightFor(road.level ?? 1);
+    const span = compLen.get(find(road)) ?? 0;
     const n = pts.length;
 
     // Cumulative arc length.
@@ -336,6 +364,10 @@ export function buildElevationProfiles(
     const total = s[n - 1];
     if (total < 1e-3) continue;
 
+    // Mapped bridges include short culverts over nalas; a 20 m span is a slab at
+    // grade, not a 7.5 m flyover. Only long spans (which cross roads/rail) rise fully.
+    const effDeck = span < 45 ? 0.6 : span < 140 ? Math.min(deck, 1.0 + (span - 45) * 0.07) : deck;
+
     const head = pts[0];
     const tail = pts[n - 1];
     const rampHead = !continuesAt(head, road) && (isFreeEnd ? isFreeEnd(head) : true);
@@ -343,7 +375,7 @@ export function buildElevationProfiles(
 
     // A short feature cannot fit two full ramps; sharing the length keeps the
     // gradient sane and simply means it never reaches full deck height.
-    const ideal = deck * RAMP_GRADIENT;
+    const ideal = effDeck * RAMP_GRADIENT;
     const budget = rampHead && rampTail ? total * 0.45 : total * 0.9;
     const ramp = Math.max(1, Math.min(ideal, budget));
 
@@ -352,7 +384,7 @@ export function buildElevationProfiles(
       let f = 1;
       if (rampHead) f = Math.min(f, smoothstep(s[i] / ramp));
       if (rampTail) f = Math.min(f, smoothstep((total - s[i]) / ramp));
-      profile[i] = { x: pts[i].x, z: pts[i].z, y: deck * f };
+      profile[i] = { x: pts[i].x, z: pts[i].z, y: effDeck * f };
     }
     out.set(road, profile);
   }

@@ -1,0 +1,23 @@
+[
+ {"n":"r2_01_city_day","t":[0,0],"az":0.78,"pi":0.98,"d":22000,"night":false},
+ {"n":"r2_02_bara_complex_overhead","t":[-3740,-2170],"az":0.3,"pi":1.25,"d":620,"night":false},
+ {"n":"r2_03_bara_complex_oblique","t":[-3740,-2150],"az":0.35,"pi":0.42,"d":520,"night":false},
+ {"n":"r2_04_asafi_masjid","t":[-3770,-2155],"az":1.85,"pi":0.2,"d":150,"night":false},
+ {"n":"r2_05_rumi_approach","t":[-3757,-2364],"az":1.27,"pi":0.24,"d":230,"night":false},
+ {"n":"r2_06_chhota_complex","t":[-4590,-2660],"az":0.45,"pi":0.55,"d":380,"night":false},
+ {"n":"r2_07_ambedkar_overhead","t":[2554,319],"az":0.0,"pi":1.3,"d":1250,"night":false},
+ {"n":"r2_08_ambedkar_oblique","t":[2554,319],"az":1.7,"pi":0.4,"d":700,"night":false},
+ {"n":"r2_09_cantonment","t":[-200,3300],"az":0.5,"pi":0.75,"d":2600,"night":false},
+ {"n":"r2_10_gomti_riverfront","t":[1700,-400],"az":0.9,"pi":0.5,"d":1800,"night":false},
+ {"n":"r2_11_airport_overhead","t":[-6080,9900],"az":0.0,"pi":1.3,"d":4200,"night":false},
+ {"n":"r2_12_airport_oblique","t":[-6300,9800],"az":0.4,"pi":0.35,"d":1500,"night":false},
+ {"n":"r2_13_dubagga_tv","t":[-8372,-2707],"az":0.6,"pi":0.18,"d":420,"night":false},
+ {"n":"r2_14_flyover","t":[6086,-1310],"az":0.8,"pi":0.3,"d":420,"night":false},
+ {"n":"r2_15_metro_elevated","t":[-4722,4003],"az":0.9,"pi":0.22,"d":260,"night":false},
+ {"n":"r2_16_janeshwar_flag","t":[3837,1678],"az":0.4,"pi":0.05,"d":260,"night":false},
+ {"n":"r2_17_taj_renaissance","t":[2290,-230],"az":2.6,"pi":0.3,"d":520,"night":false},
+ {"n":"r2_18_old_water_canal_site","t":[-343,-59],"az":0.6,"pi":0.6,"d":2200,"night":false},
+ {"n":"r2_19_bara_night","t":[-3740,-2150],"az":0.35,"pi":0.42,"d":520,"night":true},
+ {"n":"r2_20_metro_night","t":[-4722,4003],"az":0.9,"pi":0.22,"d":260,"night":true},
+ {"n":"r2_21_city_night","t":[0,0],"az":0.78,"pi":0.98,"d":22000,"night":true}
+]

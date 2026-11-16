@@ -34,7 +34,7 @@ export interface OverlayRoad {
   level?: number;
   isElevated?: boolean;
 }
-export interface OverlayWater { id?: string; points: Pt[]; width?: number; isPolygon?: boolean }
+export interface OverlayWater { id?: string; points: Pt[]; width?: number; isPolygon?: boolean; cls?: string; bridgeable?: boolean }
 export interface OverlayArea { id?: string; points: Pt[] }
 
 export interface OverlaySource {
@@ -49,6 +49,8 @@ export interface OverlayBuild {
   /** Per-vertex (u across -1..1, v metres along) for each road class buffer. */
   roadsUv: Record<string, Float32Array>;
   water: Float32Array;
+  /** Stone embankment ribbon along river polygon outlines. */
+  riverBank: Float32Array;
   parks: Float32Array;
   bridgeDeck: Float32Array;
   bridgePier: Float32Array;
@@ -178,7 +180,9 @@ function buildRiverIndex(waterways: OverlayWater[]): Map<string, RiverSeg[]> {
   const index = new Map<string, RiverSeg[]>();
   for (const w of waterways) {
     if (w.isPolygon || !w.points || w.points.length < 2) continue;
-    const half = Math.max(18, (w.width ?? 45) / 2);
+    // Only real rivers and major canals get bridges (scripts/py/build_hydrology.py).
+    if (!w.bridgeable) continue;
+    const half = Math.max(6, (w.width ?? 20) / 2);
     for (let i = 0; i < w.points.length - 1; i++) {
       const a = w.points[i];
       const b = w.points[i + 1];
@@ -361,6 +365,8 @@ function buildElevatedSupports(
   barriersOut: number[],
 ): void {
   for (const road of roads) {
+    // The metro is its own system (metroSystem.ts): no road-style piers or barriers.
+    if (road.type === 'subway') continue;
     const prof = profiles.get(road);
     if (!prof || prof.length < 2) continue;
 
@@ -577,6 +583,7 @@ export function buildOverlay(src: OverlaySource): OverlayBuild {
   // Ballast, sleepers and rails at the correct gauge, or a box girder on viaduct.
   const railSinks: RailSinks = { bed: [], sleepers: [], rails: [] };
   for (const road of railways) {
+    if (road.type === 'subway') continue; // metroSystem.ts owns the metro viaduct and track
     appendRailway(railSinks, profiles.get(road) ?? road.points, {
       gauge: railGaugeFor(road.type),
       elevated: Boolean(road.isElevated) || (road.level ?? 0) > 0,
@@ -593,12 +600,16 @@ export function buildOverlay(src: OverlaySource): OverlayBuild {
 
   // ── Water ────────────────────────────────────────────────────────────────
   const water: number[] = [];
+  const riverBank: number[] = [];
   for (const w of waterways) {
     if (!w?.points || w.points.length < 2) continue;
     if (w.isPolygon && w.points.length >= 3) {
       triangulateArea(water, w.points, -0.25);
+      // Embankment along the real bank line of the river channel (round 2).
+      if (w.cls === 'river_poly') appendRibbon(riverBank, [...w.points, w.points[0]], { half: 3.2, y: 0.05 });
     } else {
-      appendRibbon(water, w.points, { half: Math.min(90, Math.max(14, (w.width ?? 45) / 2)), y: -0.25 });
+      // Measured / class width from the hydrology layer; never a fixed broad buffer.
+      appendRibbon(water, w.points, { half: Math.max(1.0, (w.width ?? 4) / 2), y: -0.25 });
     }
   }
 
@@ -625,7 +636,8 @@ export function buildOverlay(src: OverlaySource): OverlayBuild {
   const metroDeck: number[] = [];
   const metroCanopy: number[] = [];
   const metroColumn: number[] = [];
-  const stations = buildMetroStationsGeom(roads, profiles, metroDeck, metroCanopy, metroColumn);
+  // Stations are now built by metroSystem.ts on the metro's own viaduct (round 2).
+  const stations = 0; void buildMetroStationsGeom;
 
   // ── Named structures ──────────────────────────────────────────────────────
   // Signature detail along the real centreline of each curated bridge/flyover.
@@ -668,6 +680,7 @@ export function buildOverlay(src: OverlaySource): OverlayBuild {
     roads: roadsOut,
     roadsUv,
     water: new Float32Array(water),
+    riverBank: new Float32Array(riverBank),
     parks: new Float32Array(parks),
     bridgeDeck: new Float32Array(deck),
     bridgePier: new Float32Array(pier),

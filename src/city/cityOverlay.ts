@@ -43,6 +43,7 @@ export class CityOverlay {
   private structTrussMat: THREE.MeshStandardMaterial;
   private structMassMat: THREE.MeshStandardMaterial;
   private waterMaterial: THREE.MeshStandardMaterial;
+  private bankMaterial = new THREE.MeshStandardMaterial({ color: 0x9c958a, roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 });
   private parkMaterial: THREE.MeshStandardMaterial;
   private waterMesh: THREE.Mesh | null = null;
   private parkMesh: THREE.Mesh | null = null;
@@ -134,7 +135,7 @@ export class CityOverlay {
     // black ribbon in daylight. Low roughness alone gives the sheen.
     this.waterMaterial = new THREE.MeshStandardMaterial({
       color: 0x0d2438,
-      roughness: 0.32,
+      roughness: 0.62, // a silty river: soft highlight, no mirror-like sun streaks
       metalness: 0.08,
     });
     // A flat-shaded plane reads as painted cardboard no matter what colour it is.
@@ -164,15 +165,16 @@ export class CityOverlay {
           // Ripples are sub-pixel past ~1.5 km and produce heavy moire across the
           // whole river, so they fade out with distance.
           float rippleFade = 1.0 - smoothstep(600.0, 2200.0, length(vViewPosition));
-          normal = normalize(mix(normal, ripple, 0.55 * rippleFade));
+          normal = normalize(mix(normal, ripple, 0.22 * rippleFade));
         `)
         .replace('#include <fog_fragment>', /* glsl */ `
           // Fresnel: water is far more reflective at grazing angles, which is what
           // separates a river from a coloured polygon when seen from a low camera.
           vec3 vDir = normalize(vViewPosition);
           float fres = pow(1.0 - clamp(dot(normalize(normal), vDir), 0.0, 1.0), 3.2);
-          vec3 skyTint = mix(vec3(0.44, 0.58, 0.70), vec3(0.10, 0.15, 0.26), uNightW);
-          gl_FragColor.rgb = mix(gl_FragColor.rgb, skyTint, fres * mix(0.55, 0.35, uNightW));
+          // Hazy-sky reflection, low intensity: the Gomti reads as a silty green-brown river.
+          vec3 skyTint = mix(vec3(0.50, 0.55, 0.56), vec3(0.10, 0.12, 0.16), uNightW);
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, skyTint, fres * mix(0.35, 0.3, uNightW));
           // Silt gradient — shallower, warmer water toward the banks.
           float siltFade = 1.0 - smoothstep(1500.0, 6000.0, length(vViewPosition));
           float silt = 0.5 + 0.5 * sin(vWPos.x * 0.004 + vWPos.z * 0.0031);
@@ -181,7 +183,7 @@ export class CityOverlay {
           float glint = smoothstep(0.72, 0.99, h * 0.5 + 0.5) * fres
                       * (1.0 - smoothstep(600.0, 2200.0, length(vViewPosition)));
           gl_FragColor.rgb += mix(vec3(1.0, 0.97, 0.88), vec3(0.55, 0.68, 0.92), uNightW)
-                            * glint * mix(0.45, 0.28, uNightW);
+                            * glint * mix(0.18, 0.2, uNightW);
           #include <fog_fragment>
         `);
     };
@@ -272,6 +274,8 @@ export class CityOverlay {
         } else if (sec.name === 'water') {
           this.waterMesh = this.makeMesh(pos, this.waterMaterial, 'water');
           this.stats.waterVerts = sec.floats / 3;
+        } else if (sec.name === 'riverBank') {
+          this.makeMesh(pos, this.bankMaterial, 'water');
         } else if (sec.name === 'parks') {
           this.parkMesh = this.makeMesh(pos, this.parkMaterial, 'parks');
           this.stats.parkVerts = sec.floats / 3;
@@ -425,10 +429,10 @@ export class CityOverlay {
       this.metroCanopyMat.color.setHex(0x3d4149);
       this.metroCanopyMat.emissive.setHex(0x2a2213);
     } else {
-      this.waterMaterial.color.setHex(0x4e7a80);
-      this.waterMaterial.roughness = 0.34;
+      this.waterMaterial.color.setHex(0x4b5a50);
+      this.waterMaterial.roughness = 0.62;
       this.waterNight.value = 0;
-      this.parkMaterial.color.setHex(0x5f7a4c);
+      this.parkMaterial.color.setHex(0x637548);
       this.flyoverPierMat.color.setHex(0x606268);
       this.flyoverBarrierMat.color.setHex(0x7a7d84);
       this.flyoverBarrierMat.emissive.setHex(0x000000);

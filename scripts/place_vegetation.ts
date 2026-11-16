@@ -30,6 +30,14 @@
 import fs from 'fs';
 import path from 'path';
 import { classifyRoad, ROAD_HALF_WIDTH, type RoadClass } from '../src/city/ribbon';
+import { isLandmarkSite, PRECINCTS, AIRPORT } from '../src/city/landmarkSites';
+import { pointInRing as pir } from './lib/spatialIndex';
+const AMB = (PRECINCTS.ambedkar ?? []).map(([x, z]) => ({ x, z }));
+const AIR = (AIRPORT.boundary ?? []).map(([x, z]) => ({ x, z }));
+/** Inside the airfield or the Ambedkar memorial (both get bespoke landscaping). */
+function inAirport(x: number, z: number): boolean {
+  return (AIR.length > 3 && pir(x, z, AIR)) || (AMB.length > 3 && pir(x, z, AMB));
+}
 import {
   AreaIndex, CELL, CorridorIndex, pointInRing, ringArea, type Pt,
 } from './lib/spatialIndex';
@@ -144,7 +152,7 @@ function main(): void {
     if (!pts || pts.length < 2) continue;
     if (w.isPolygon && pts.length >= 3) waterAreas.add(pts);
     else {
-      const half = Math.min(90, Math.max(10, ((w.width as number) ?? 35) / 2));
+      const half = Math.max(1, ((w.width as number) ?? 4) / 2);
       for (let i = 0; i < pts.length - 1; i++) {
         waterLines.add({ ax: pts[i].x, az: pts[i].z, bx: pts[i + 1].x, bz: pts[i + 1].z, half });
       }
@@ -304,6 +312,8 @@ function main(): void {
     const trees: Array<{ x: number; y: number; z: number; scale: number; k: number }> = [];
     const KIND = { park: 0, verge: 1, open: 2, yard: 3, orchard: 4 } as const;
     const push = (x: number, z: number, kind: 'park' | 'verge' | 'open' | 'yard' | 'orchard'): void => {
+      // Landmark precincts get their own formal planting (src/city/landmarks.ts).
+      if (isLandmarkSite(x, z) || inAirport(x, z)) { stat.rejected++; return; }
       if (blocked(x, z) || onBuilding(x, z) || (kind !== 'yard' && nearBuilding(x, z, BUILDING_PAD))) { stat.rejected++; return; }
       const h = hash2(x, z);
       // Park trees run larger and more varied; street trees are pruned to a

@@ -199,7 +199,7 @@ function main(): void {
     if (w.isPolygon && pts.length >= 3) {
       waterAreas.add(pts);
     } else {
-      const half = Math.min(90, Math.max(10, ((w.width as number) ?? 35) / 2));
+      const half = Math.max(1, ((w.width as number) ?? 4) / 2);
       for (let i = 0; i < pts.length - 1; i++) {
         waterLines.add({ ax: pts[i].x, az: pts[i].z, bx: pts[i + 1].x, bz: pts[i + 1].z, half });
       }

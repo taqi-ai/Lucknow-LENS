@@ -1,6 +1,6 @@
 # Building height quality report
 
-Generated 2026-11-16T07:46:46.396Z by `scripts/build_buildings.ts`.
+Generated 2026-11-16T09:26:16.439Z by `scripts/build_buildings.ts`.
 
 Footprints: Overture Maps release 2026-10-21.0 (`building` + `building_part`), 956,304 building records
 after building parts replace their parents (105 parents replaced by parts).
@@ -37,7 +37,7 @@ after building parts replace their parents (105 parents replaced by parts).
 
 | < 4 m | 4-7 | 7-10 | 10-13 | 13-18 | 18-26 | 26-40 | >= 40 m |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 316,152 | 432,050 | 170,989 | 28,544 | 5,867 | 1,538 | 893 | 271 |
+| 316,151 | 432,051 | 170,989 | 28,544 | 5,867 | 1,538 | 893 | 271 |
 
 The old pipeline put 99.99% of buildings in a uniform 12-26 m band (`12 + hash % 15`).
 
@@ -45,13 +45,13 @@ The old pipeline put 99.99% of buildings in a uniform 12-26 m band (`12 + hash %
 
 | Typology | Buildings |
 |---|---:|
-| GENERIC | 640,362 |
-| PLANNED | 227,918 |
+| GENERIC | 640,233 |
+| PLANNED | 228,031 |
 | OLD_CITY | 62,605 |
-| MARKET | 11,526 |
+| MARKET | 11,543 |
 | INDUSTRIAL | 7,752 |
 | INSTITUTIONAL | 3,366 |
-| APARTMENT | 2,350 |
+| APARTMENT | 2,349 |
 | HERITAGE | 425 |
 
 Typology comes from source class/subtype, the land-use class under the footprint (Overture land use + ESA WorldCover),

@@ -56,16 +56,16 @@ LAT = CENTER_LAT - zs / M_PER_LAT          # per row (row 0 = north)
 CLASSES = {
     0: ('bare_soil', (176, 160, 132)),
     1: ('built_ground', (124, 115, 102)),
-    2: ('tree_canopy', (66, 86, 48)),
+    2: ('tree_canopy', (70, 84, 52)),
     3: ('scrub', (128, 128, 86)),
-    4: ('grassland', (128, 140, 82)),
-    5: ('cropland', (138, 146, 88)),
-    6: ('water', (74, 96, 92)),
+    4: ('grassland', (138, 138, 92)),
+    5: ('cropland', (128, 134, 86)),
+    6: ('water', (62, 78, 76)),
     7: ('wetland', (98, 116, 84)),
-    8: ('park_lawn', (92, 128, 62)),
+    8: ('park_lawn', (96, 118, 66)),
     9: ('paved_plaza', (138, 134, 126)),
     10: ('industrial_yard', (124, 121, 114)),
-    11: ('campus', (118, 132, 86)),
+    11: ('campus', (120, 126, 90)),
     12: ('residential', (130, 119, 104)),
     13: ('sand_bank', (196, 182, 150)),
     14: ('farmland', (146, 140, 92)),
@@ -188,27 +188,41 @@ def main():
             continue
         shapes.setdefault(k, []).append(proj_geom(f['geometry']))
     order = [12, 14, 15, 10, 9, 11, 8]  # residential first, parks last
+    wc_cls = cls.copy()
     for k in order:
         if shapes.get(k):
-            m = rasterize([(g, 1) for g in shapes[k]], out_shape=(N, N), transform=t, fill=0, dtype='uint8')
-            cls[m > 0] = k
+            m = rasterize([(g, 1) for g in shapes[k]], out_shape=(N, N), transform=t, fill=0, dtype='uint8') > 0
+            if k in (11, 12):
+                # Large residential / institutional / cantonment polygons are mixed land:
+                # keep WorldCover's own canopy, grass and bare ground inside them and only
+                # relabel the built-up part. A whole cantonment painted as one 'campus' is
+                # what made it read as a uniform green sheet.
+                cls[m & (wc_cls == 1)] = k
+                cls[m & (wc_cls == 0)] = 15 if k == 12 else 0
+            else:
+                cls[m] = k
 
-    water_polys, water_lines = [], []
-    width = {'river': 45, 'canal': 14, 'stream': 8, 'drain': 5, 'ditch': 3}
+    # Water comes ONLY from the classified hydrology layer (build_hydrology.py): real
+    # surfaces plus measured-width channels. Drains/ditches are not water surfaces.
     from shapely.geometry import shape, mapping
-    for line in open(os.path.join(RAW, 'overture_water.geojsonseq'), encoding='utf8'):
-        f = json.loads(line); p = f['properties']; g = f['geometry']
-        if p.get('class') == 'swimming_pool':
+    hyd = json.load(open(os.path.join(DER, 'hydrology.geojson'), encoding='utf8'))
+    water_geoms = []
+    for f in hyd['features']:
+        p = f['properties']
+        if not p.get('render'):
             continue
-        pg = proj_geom(g)
-        if pg is None:
-            continue
-        if g['type'] in ('Polygon', 'MultiPolygon'):
-            water_polys.append(pg)
-        else:
-            w = width.get(p.get('subtype'), width.get(p.get('class'), 6))
-            water_lines.append(mapping(shape(pg).buffer(w / 2, cap_style=2)))
-    water = rasterize([(g, 1) for g in water_polys + water_lines], out_shape=(N, N), transform=t, fill=0, dtype='uint8') > 0
+        g = shape(f['geometry'])
+        pg = shape(proj_geom(mapping(g)) if g.geom_type in ('Polygon', 'MultiPolygon', 'LineString', 'MultiLineString') else None)
+        if g.geom_type in ('LineString', 'MultiLineString'):
+            pg = pg.buffer(max(1.0, (p.get('width') or 4) / 2), cap_style=2)
+        water_geoms.append(mapping(pg))
+    water = rasterize([(g, 1) for g in water_geoms], out_shape=(N, N), transform=t, fill=0, dtype='uint8') > 0
+    # WorldCover 'water' that is not a mapped present-day channel (seasonal pools, old
+    # channels, flooded fields) becomes wet grassland / sand, never open water.
+    stale = (cls == 6) & ~water
+    near = box_blur(water.astype(np.float32), 9) > 0.02
+    cls[stale & near] = 13
+    cls[stale & ~near] = 7
     cls[water] = 6
     # WorldCover water stays water too (seasonal channel); bare/sand next to water = sand bank.
     near_water = box_blur(water.astype(np.float32), 18) > 0.02  # ~200 m
@@ -244,6 +258,18 @@ def main():
         alb = np.stack([box_blur(alb[..., i], 1) for i in range(3)], -1)
     n1 = value_noise(48, 1)[..., None]; n2 = value_noise(9, 2)[..., None]; n3 = value_noise(220, 3)[..., None]
     alb *= 0.90 + 0.12 * n1 + 0.07 * (n2 - 0.5)
+    # Field parcels: each ~60-120 m block gets its own crop stage (green / ripening / ploughed).
+    rng = np.random.default_rng(7)
+    pg = 9
+    parcel = rng.random((N // pg + 2, N // pg + 2)).astype(np.float32)
+    parcel = np.kron(parcel, np.ones((pg, pg), np.float32))[:N, :N]
+    farm = (cls == 5) | (cls == 14)
+    stages = np.array([[0.86, 1.02, 0.80], [1.06, 1.02, 0.84], [1.10, 0.98, 0.88], [1.02, 0.94, 0.86]], np.float32)
+    idx = np.clip((parcel * 4).astype(int), 0, 3)
+    alb[farm] *= stages[idx[farm]]
+    # Grassland: patchy dry grass, not a lawn.
+    grass = (cls == 4) | (cls == 3)
+    alb[grass] *= (0.92 + 0.16 * n1[grass]) * np.array([1.06, 1.0, 0.88], np.float32)
     # Regional tint: dry dusty ochre <-> greener floodplain.
     dry = np.array([1.04, 1.00, 0.93], np.float32); moist = np.array([0.93, 1.02, 0.95], np.float32)
     tint = dry + (moist - dry) * np.clip(low * 0.8 + (n3[..., 0] - 0.5) * 0.4, 0, 1)[..., None]

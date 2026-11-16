@@ -10,7 +10,8 @@ import { CityOverlay } from './cityOverlay';
 import { ROAD_LAYER_Y, type RoadClass } from './ribbon';
 import { createRoadMaterial, applyRoadPalette, roadUniforms } from './roadMaterial';
 import { GroundSurface } from './groundSurface';
-import { buildLandmarkMesh } from './landmarks';
+import { buildLandmarkLayer, type LandmarkLayer } from './landmarks';
+import { MetroSystem } from './metroSystem';
 import { buildTreePrototypes, createTreeMaterial, pickSpecies, SPECIES, SPECIES_COUNT } from './treePrototypes';
 import type { TileWorkerRequest, TileWorkerResponse } from './tileWorker';
 import { getDeviceProfile } from './deviceProfile';
@@ -133,7 +134,8 @@ export class TileStreamer {
   private readonly detailRadius = getDeviceProfile().detailRadius;
   private readonly treeNearRadius = getDeviceProfile().treeNearRadius;
   private lastAltitude = 1e9;
-  private landmarkMesh: THREE.Mesh;
+  private landmarks: LandmarkLayer;
+  private metro = new MetroSystem();
 
   private lampMastGeo!: THREE.BufferGeometry;
   private lampHeadGeo!: THREE.BufferGeometry;
@@ -197,8 +199,8 @@ export class TileStreamer {
 
     this.hlod = new HLODLayer(scene, materials);
     // Procedural landmark models (their source footprints are excluded from tiles + HLOD).
-    this.landmarkMesh = buildLandmarkMesh(materials.solid);
-    scene.add(this.landmarkMesh);
+    this.landmarks = buildLandmarkLayer(materials.solid);
+    scene.add(this.landmarks.group);
     this.overlay = new CityOverlay(scene);
   }
 
@@ -371,6 +373,8 @@ export class TileStreamer {
 
     void hlodManifest;
     await this.ground.init().catch((e) => console.warn('[TileStreamer] ground init failed:', e));
+    await this.metro.init(this.scene).catch((e) => console.warn('[TileStreamer] metro init failed:', e));
+    this.metro.setNightMode(this.isNight);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -422,6 +426,8 @@ export class TileStreamer {
     this.ground.update(camera.position);
     roadUniforms.uRoadCam.value.copy(camera.position);
     this.updateDetailAndTrees(camera, altitude);
+    this.metro.update(now / 1000, altitude);
+    this.landmarks.update(now / 1000);
 
     this.pumpQueue();
     this.cullLoadedTiles();
@@ -944,6 +950,8 @@ export class TileStreamer {
     roadUniforms.uRoadNight.value = night ? 1 : 0;
     this.overlay.setNightMode(night);
     this.ground.setNightMode(night, cyber);
+    this.metro.setNightMode(night);
+    this.landmarks.setNight(night);
 
     if (night) {
       this.parkMaterial.color.setHex(0x16241a);
@@ -959,8 +967,8 @@ export class TileStreamer {
       this.treeMaterial.color.setHex(0x9fd0c8);
     } else {
       // Lawns close to the baked ground's park tone, not a saturated sheet of green.
-      this.parkMaterial.color.setHex(0x627f48);
-      this.waterMaterial.color.setHex(0x55767a);
+      this.parkMaterial.color.setHex(0x637548);
+      this.waterMaterial.color.setHex(0x4b5a50);
       this.lampHeadMat.emissiveIntensity = 0.0;
       this.setLampGlow(0, 0);
       this.treeMaterial.color.setHex(0xffffff);
@@ -974,7 +982,8 @@ export class TileStreamer {
   public setLayerVisibility(v: { buildings: boolean; roads: boolean; parks: boolean; water: boolean }): void {
     this.layerVisibility = v;
     this.hlod.setVisible(v.buildings);
-    this.landmarkMesh.visible = v.buildings;
+    this.landmarks.group.visible = v.buildings;
+    this.metro.setVisible(v.roads);
     this.overlay.setLayerVisibility({ roads: v.roads, parks: v.parks, water: v.water });
     for (const container of this.loadedTiles.values()) {
       applyLayerVisibility(container.group, v);
@@ -1015,8 +1024,9 @@ export class TileStreamer {
     this.workers = [];
     for (const [id, c] of this.loadedTiles) this.retireTile(id, c);
     this.hlod.dispose();
-    this.landmarkMesh.geometry.dispose();
-    this.landmarkMesh.removeFromParent();
+    this.landmarks.group.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) m.geometry.dispose(); });
+    this.landmarks.group.removeFromParent();
+    this.metro.dispose();
     this.overlay.dispose();
     for (const g of this.treeGeometries) g.dispose();
     this.treeMaterial.dispose();

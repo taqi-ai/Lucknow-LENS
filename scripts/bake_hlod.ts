@@ -371,6 +371,7 @@ function bakeOverlay(): void {
     }
   }
   if (built.water.length) sections.push({ name: 'water', data: built.water });
+  if (built.riverBank.length) sections.push({ name: 'riverBank', data: built.riverBank });
   if (built.parks.length) sections.push({ name: 'parks', data: built.parks });
   if (built.bridgeDeck.length) sections.push({ name: 'bridgeDeck', data: built.bridgeDeck });
   if (built.bridgePier.length) sections.push({ name: 'bridgePier', data: built.bridgePier });

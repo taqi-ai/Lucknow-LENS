@@ -802,7 +802,14 @@ export class TileStreamer {
       const h = Math.sin(trees[i * 5] * 12.9898 + trees[i * 5 + 2] * 78.233) * 43758.5453;
       return h - Math.floor(h);
     };
-    for (let i = 0; i < count; i++) buckets[pickSpecies(trees[i * 5 + 4], hashOf(i))].push(i);
+    // Device budget: weaker tiers keep a deterministic fraction of the (dense) canopy.
+    const keepFrac = getDeviceProfile().quality === 'low' ? 0.38 : getDeviceProfile().quality === 'medium' ? 0.7 : 1;
+    const kept: number[] = [];
+    for (let i = 0; i < count; i++) {
+      const hk = Math.sin(trees[i * 5] * 4.1414 + trees[i * 5 + 2] * 9.7351) * 24634.6345;
+      if (keepFrac >= 1 || hk - Math.floor(hk) < keepFrac) kept.push(i);
+    }
+    for (const i of kept) buckets[pickSpecies(trees[i * 5 + 4], hashOf(i))].push(i);
 
     const dummy = new THREE.Object3D();
     const tint = new THREE.Color();
@@ -837,9 +844,9 @@ export class TileStreamer {
       group.add(inst);
       near.push(inst);
     }
-    const far = new THREE.InstancedMesh(this.treeGeometries[SPECIES.FAR], this.treeMaterial, count);
+    const far = new THREE.InstancedMesh(this.treeGeometries[SPECIES.FAR], this.treeMaterial, kept.length);
     far.name = 'trees';
-    for (let i = 0; i < count; i++) place(far, i, i);
+    for (let j = 0; j < kept.length; j++) place(far, j, kept[j]);
     far.instanceMatrix.needsUpdate = true;
     if (far.instanceColor) far.instanceColor.needsUpdate = true;
     far.computeBoundingSphere();

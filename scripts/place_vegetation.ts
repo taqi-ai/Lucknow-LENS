@@ -47,7 +47,7 @@ const TILE_SIZE = 500;
 const DRY = process.argv.includes('--dry');
 
 /** Mean spacing of trees inside a park, metres. */
-const PARK_SPACING = 9;
+const PARK_SPACING = 7;
 /** Spacing of avenue trees along a lit arterial, metres. */
 const VERGE_SPACING = 26;
 /** Clear distance a tree keeps from a building footprint centroid cluster. */
@@ -69,7 +69,7 @@ const OPEN_SPACING = 40;
 /** A candidate needs this much clear ground around it from any building. */
 const OPEN_BUILDING_CLEAR = 45;
 /** ...and this much from any road or rail corridor edge. */
-const OPEN_ROAD_CLEAR = 12;
+const OPEN_ROAD_CLEAR = 6;
 /**
  * Grove threshold. Trees on open land do not grow in a uniform lawn, so the
  * grid is masked by low-frequency noise and only the peaks are planted. Raise
@@ -371,7 +371,7 @@ function main(): void {
       const scale = kind === 'palm' ? 0.95 + h * 0.5
         : kind === 'park' ? 0.78 + h * 0.85
         : kind === 'open' ? 0.95 + h * 0.9
-        : kind === 'orchard' ? 1.05 + h * 0.5
+        : kind === 'orchard' ? 1.15 + h * 0.6
         : kind === 'yard' ? 0.65 + h * 0.6
         : 0.68 + h * 0.45;
       trees.push({ x: +x.toFixed(2), y: 0, z: +z.toFixed(2), scale: +scale.toFixed(3), k: KIND[kind] });
@@ -457,15 +457,15 @@ function main(): void {
     // Round 3: dense canopy. The user wants green land to read as continuous tree cover, so the
     // grass, scrub, canopy, wetland and campus classes are planted at roughly 2-3x the old density.
     const RULES: Record<number, { sp: number; p: number; kind: 'open' | 'yard' | 'orchard'; clear: number }> = {
-      2: { sp: 12, p: 0.97, kind: 'orchard', clear: 7 },    // tree canopy
-      3: { sp: 14, p: 0.85, kind: 'open', clear: 9 },       // scrub
-      4: { sp: 14, p: 0.80, kind: 'open', clear: 9 },       // grassland
+      2: { sp: 10, p: 0.92, kind: 'orchard', clear: 5 },    // tree canopy
+      3: { sp: 12, p: 0.75, kind: 'open', clear: 7 },       // scrub
+      4: { sp: 14, p: 0.65, kind: 'open', clear: 8 },       // grassland
       5: { sp: 40, p: 0.12, kind: 'open', clear: 20 },      // cropland: field-edge trees
       14: { sp: 40, p: 0.12, kind: 'open', clear: 20 },     // farmland
       7: { sp: 18, p: 0.65, kind: 'open', clear: 12 },      // wetland
       1: { sp: 20, p: 0.22, kind: 'yard', clear: 0 },       // built-up: yard trees
-      12: { sp: 18, p: 0.30, kind: 'yard', clear: 0 },      // residential land use
-      11: { sp: 12, p: 0.85, kind: 'yard', clear: 0 },      // campuses
+      12: { sp: 12, p: 0.50, kind: 'yard', clear: 0 },      // residential land use
+      11: { sp: 9, p: 0.95, kind: 'yard', clear: 0 },      // campuses
       13: { sp: 32, p: 0.14, kind: 'open', clear: 25 },     // sand banks: sparse
     };
     for (const sp of Array.from(new Set(Object.values(RULES).map((r) => r.sp)))) {

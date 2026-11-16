@@ -386,9 +386,22 @@ const FRAG_OUTPUT = /* glsl */ `
       float blur = smoothstep(0.30, 1.10, foot);
       float paneF = mix(wm.x, 0.12, blur);
       float onF = mix(on, (occ * 0.6) * mix(0.25, 1.0, litBldg), blur);
-      gl_FragColor.rgb += winCol * onF * paneF * inFloors * uNight * 0.95;
+      // Every building burns at its own brightness: a few bright, many dim.
+      float winGain = 0.40 + 0.95 * lensHash(bHash * 3.3 + 8.1);
+      gl_FragColor.rgb += winCol * onF * paneF * inFloors * uNight * 0.95 * winGain;
       // Bazaar shopfronts glow along the whole ground floor.
-      if (bTyp > 1.5 && bTyp < 2.5 && vWorldPos.y < fh) {
+      if (colonial > 0.5 && vWorldPos.y < fh) {
+        // Hazratganj arcade: warm shop glass in each arch, a lit signboard band above.
+        float bu = fract(fuv.x / 4.2 + lensHash(bHash));
+        float inBay = smoothstep(0.17, 0.19, bu) * (1.0 - smoothstep(0.81, 0.83, bu));
+        float archTop = 2.55 + 0.45 * sqrt(max(0.0, 1.0 - pow((bu - 0.5) / 0.32, 2.0)));
+        float open = inBay * (1.0 - smoothstep(archTop - 0.05, archTop + 0.05, vWorldPos.y)) * smoothstep(0.25, 0.3, vWorldPos.y);
+        float on = step(0.22, lensHash2(vec2(floor(fuv.x / 4.2 + lensHash(bHash)), bHash * 11.0)));
+        gl_FragColor.rgb += vec3(1.0, 0.76, 0.46) * open * on * uNight * 0.85;
+        float board = smoothstep(3.05, 3.1, vWorldPos.y) * (1.0 - smoothstep(3.5, 3.55, vWorldPos.y)) * (1.0 - open);
+        gl_FragColor.rgb += vec3(1.0, 0.90, 0.70) * board * on * uNight * 0.40;
+      }
+      if (bTyp > 1.5 && bTyp < 2.5 && vWorldPos.y < fh && colonial < 0.5) {
         float bayU = fract(fuv.x / 3.4 + lensHash(bHash));
         float open = smoothstep(0.10, 0.14, bayU) * (1.0 - smoothstep(0.86, 0.90, bayU)) * (1.0 - smoothstep(2.55, 2.62, vWorldPos.y));
         float shopOn = step(0.25, lensHash2(vec2(floor(fuv.x / 3.4), bHash * 17.0)));
@@ -402,15 +415,25 @@ const FRAG_OUTPUT = /* glsl */ `
     }
     // Heritage fabric is floodlit from below.
     if (bTyp > 2.5 && bTyp < 3.5 && (bSurf == 0.0 || bSurf >= 10.0 || bSurf == 5.0)) {
+      // Lighting profile by material, after the night photographs: lime-plastered Imambara
+      // walls and red sandstone take a warm amber wash; white lime-washed domes stay a softer
+      // warm white; gilt finials carry their own glow. Lamp pools repeat every ~9 m along the
+      // wall, so the facade rhythm reads instead of a uniform orange sheet.
+      vec2 ffuv = facadeUV();
+      float rhythm = 0.78 + 0.22 * (0.5 + 0.5 * cos(ffuv.x * 0.698));
       float flood = exp(-max(vWorldPos.y, 0.0) / 14.0) * 0.65 + 0.12;
-      gl_FragColor.rgb += vec3(1.0, 0.72, 0.40) * flood * uNight * 0.55;
+      vec3 fcol = vec3(1.0, 0.72, 0.40); float fk = 0.55;
+      if (bSurf == 15.0) { fcol = vec3(1.0, 0.66, 0.34); fk = 0.70; }          // red sandstone, brick
+      else if (bSurf == 11.0) { fcol = vec3(1.0, 0.84, 0.62); fk = 0.36; }      // white domes
+      else if (bSurf == 12.0) { fcol = vec3(1.0, 0.80, 0.40); fk = 0.60; flood = 0.9; rhythm = 1.0; }  // gilt
+      gl_FragColor.rgb += fcol * flood * rhythm * uNight * fk;
     }
     // From altitude you see roofs and the light standing over each block: a per-building
     // constant ramped by distance, weighted to the district's light density.
     float spill = smoothstep(900.0, 6000.0, dist);
     float roofW = (bSurf == 1.0 || bSurf == 7.0) ? 1.0 : 0.4;
     vec3 spillCol = mix(lampCol, warm, 0.6);
-    gl_FragColor.rgb += spillCol * litBldg * (0.25 + 0.75 * density) * spill * roofW * uNight * 0.45;
+    gl_FragColor.rgb += spillCol * litBldg * (0.25 + 0.75 * density) * spill * roofW * uNight * (0.20 + 0.20 * lensHash(bHash * 13.7));
   }
 `;
 

@@ -135,7 +135,10 @@ float dash(float v, float on, float period){ float f = fract(v / period) * perio
       float across = exp(-pow((vRoadUV.x - side * 0.55) * 1.4, 2.0));
       float dist2 = length(vRoadW - uRoadCam);
       float resolve = smoothstep(4500.0, 1500.0, dist2);   // far away the pools average out
-      pool = mix(0.38, along * (0.35 + 0.65 * across), resolve) * ${poolI.toFixed(2)};
+      // Far away the individual pools average out, but not into a uniform bright strip:
+      // low-frequency noise leaves some stretches dim, as unlit or failed lamps do.
+      float stretch = 0.40 + 0.95 * rn(vRoadW.xz * 0.0035);
+      pool = mix(0.20 * stretch, along * (0.35 + 0.65 * across), resolve) * ${poolI.toFixed(2)};
     ` : ''}
     totalEmissiveRadiance += vec3(1.0, 0.70, 0.38) * pool * uRoadNight * 0.55;
   }

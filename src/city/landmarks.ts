@@ -409,71 +409,142 @@ function chhotaImambara(k: Kit, g: Grounds, s: LandmarkSite): void {
 }
 
 function ambedkarMemorial(k: Kit, g: Grounds, s: LandmarkSite): void {
-  // The 438,412 m2 Overture outline of the park (~108 acres; the published area is 107).
-  // Layout follows its long axis: a central sandstone axis, the domed Ambedkar stupa,
-  // museum halls, rows of red-sandstone columns/obelisks, the Pratibimb Sthal with 62
-  // elephants in two rows, formal lawns and tree rows. Paving dominates, as in reality.
+  // Round 3 rebuild after aerial reference photographs (docs/3d-revamp/references/round-3/parks).
+  // Composition seen from the front, with the entrance on the -v side:
+  //   front   two bean-shaped terraced platforms (contour steps) either side of a gateway block
+  //   centre  the stupa: stepped square base, red-brown dome on a drum, four small corner domes
+  //   rear    central formal garden between four rows of pillars, then a long hall with two domes
+  //   right   Pratibimb Sthal: two rows of 31 elephants (62) either side of a water channel
+  //   left    circular stepped fountain plaza with a tall pillar, flanked by small red kiosks
+  // Materials: pale cream-pink sandstone for paving and walls, red-brown domes and kiosks.
+  // Layout is composed from the photographs, NOT from a surveyed plan: positions, counts of
+  // pillars and the platform outlines are approximate. The 62-elephant count is documented.
   const ring = PRECINCTS.ambedkar ?? s.ring;
-  k.begin(s, 34, 97); g.frame(s);
-  g.color(C.paveSand); g.polyWorld(ring, 0.07);
-  // Long axis extent inside the outline.
-  let umin = Infinity, umax = -Infinity, vmin = Infinity, vmax = -Infinity;
-  for (const [x, z] of ring) { const [u, v] = k.local(x, z); umin = Math.min(umin, u); umax = Math.max(umax, u); vmin = Math.min(vmin, v); vmax = Math.max(vmax, v); }
-  const U0 = umin + 40, U1 = umax - 40, V0 = vmin + 40, V1 = vmax - 40;
-  // Central axis and cross axis in red sandstone.
-  g.color(C.paveRed).rect(U0, U1, -14, 14, 0.1); g.color(C.paveRed).rect(-14, 14, V0, V1, 0.1);
-  // Formal lawns in the four quadrants, framed by tree rows.
-  let seed = 7;
-  // Quadrants are mostly stone plazas: a perimeter lawn band, diagonal-free formal lawn
-  // strips and tree avenues, with pale paving in between (as in the aerial imagery).
-  for (const [a0, a1] of [[U0 + 20, -40], [40, U1 - 20]]) for (const [b0, b1] of [[V0 + 20, -40], [40, V1 - 20]]) {
-    if (a1 - a0 < 30 || b1 - b0 < 30) continue;
-    g.color(C.paveGrey).rect(a0, a1, b0, b1, 0.1);
-    const strips = Math.max(2, Math.floor((b1 - b0) / 46));
-    for (let i = 0; i < strips; i++) {
-      const vb = b0 + 8 + i * ((b1 - b0 - 16) / strips), ve = vb + Math.min(16, (b1 - b0) / strips - 12);
-      g.color(C.hedge).rect(a0 + 8, a1 - 8, vb, ve, 0.12); g.color(C.lawn).rect(a0 + 9.2, a1 - 9.2, vb + 1.2, ve - 1.2, 0.14);
-      for (let u = a0 + 12; u < a1 - 10; u += 11) g.tree(u, vb - 4, 8, true, seed++);
+  k.begin(s, 40, 97); g.frame(s);
+  const PALE = 0xd6c5ac, INLAY = 0xc3ab8f, PINK = 0xc9a58f, LAWN = 0x6b7d47;
+  const loc: Array<[number, number]> = ring.map(([x, z]) => k.local(x, z));
+  const inside = (u: number, v: number): boolean => {
+    let c = false;
+    for (let i = 0, j = loc.length - 1; i < loc.length; j = i++) {
+      const [ui, vi] = loc[i], [uj, vj] = loc[j];
+      if ((vi > v) !== (vj > v) && u < ((uj - ui) * (v - vi)) / (vj - vi) + ui) c = !c;
     }
-    g.color(C.paveSand).rect(a0, a1, b0, b0 + 4, 0.13); g.color(C.paveSand).rect(a0, a1, b1 - 4, b1, 0.13);
+    return c;
+  };
+  const box4 = (u0: number, u1: number, v0: number, v1: number, m = 0): boolean =>
+    inside(u0 - m, v0 - m) && inside(u1 + m, v0 - m) && inside(u1 + m, v1 + m) && inside(u0 - m, v1 + m);
+  const rect = (col: number, u0: number, u1: number, v0: number, v1: number, y: number): void => {
+    if (box4(u0, u1, v0, v1)) g.color(col).rect(u0, u1, v0, v1, y);
+  };
+  const toWorld = (pts: Array<[number, number]>): number[][] => pts.map(([u, v]) => { const w = k.w([u, 0, v]); return [w[0], w[2]]; });
+
+  // 1. Paving: pale sandstone over the whole precinct, with an inlaid grid like the real plazas.
+  // The precinct outline is lawn; the paved memorial core sits inside it.
+  g.color(0x6f8049); g.polyWorld(ring, 0.06);
+  const CU0 = -250, CU1 = 250, CV0 = -215, CV1 = 292;
+  const inCore = (u: number, v: number): boolean => u > CU0 - 8 && u < CU1 + 8 && v > CV0 - 8 && v < CV1 + 8;
+  rect(PALE, CU0, CU1, CV0, CV1, 0.07);
+  for (let u = CU0 + 24; u < CU1; u += 24) rect(INLAY, u - 0.35, u + 0.35, CV0, CV1, 0.08);
+  for (let v = CV0 + 24; v < CV1; v += 24) rect(INLAY, CU0, CU1, v - 0.35, v + 0.35, 0.08);
+
+  // 2. Front terraces: two wavy, bean-shaped platforms with contour steps, flanking the gate.
+  const lobe = (cu: number, cv: number, A: number, B: number, scale: number, phase: number): Array<[number, number]> => {
+    const out: Array<[number, number]> = [];
+    for (let i = 0; i < 48; i++) {
+      const t = (i / 48) * Math.PI * 2;
+      const wob = 1 + 0.10 * Math.sin(3 * t + phase) + 0.05 * Math.sin(5 * t);
+      // Pinch toward the central gate: the inner edge (facing u = 0) bulges less.
+      const pinch = 1 - 0.18 * Math.max(0, -Math.sign(cu) * Math.cos(t));
+      out.push([cu + A * scale * Math.cos(t) * wob * pinch, cv + B * scale * Math.sin(t) * wob]);
+    }
+    return out;
+  };
+  for (const sg of [-1, 1]) {
+    const cu = sg * 88, cv = -105, A = 66, B = 44;
+    const outer = lobe(cu, cv, A, B, 1, sg);
+    if (outer.every(([u, v]) => inside(u, v))) {
+      k.extrudeWorldRing(toWorld(outer), 0, 4.2, S.LIME, S.LIME);               // retaining wall
+      for (let i = 0; i < 7; i++) {
+        const r = lobe(cu, cv, A, B, 0.94 - i * 0.12, sg + i * 0.7);            // contour steps
+        g.color(i % 2 ? 0xe3d6c1 : PINK).polyWorld(toWorld(r), 4.25 + i * 0.06);
+      }
+    }
   }
-  // Perimeter landscape band inside the boundary.
-  g.color(C.lawn).rect(U0 - 30, U1 + 30, V0 - 30, V0 - 8, 0.12); g.color(C.lawn).rect(U0 - 30, U1 + 30, V1 + 8, V1 + 30, 0.12);
-  for (let u = U0 - 20; u < U1 + 20; u += 12) { g.tree(u, V0 - 19, 10, false, seed++); g.tree(u, V1 + 19, 10, false, seed++); }
-  // Raised platform and the main domed stupa (~34 m / 112 ft).
-  k.box(-48, 48, 0, 4, -48, 48, S.REDSTONE, S.REDSTONE);
-  for (let i = 0; i < 5; i++) k.box(-14, 14, 0, 4 - i * 0.8, -48 - (i + 1) * 1.1, -48 - i * 1.1, S.REDSTONE);
-  k.box(-30, 30, 4, 18, -30, 30, S.REDSTONE);
-  k.arcadeAll(-30, 30, -30, 30, 4.6, 4.2, 11.5, 8.5, S.GLASS);
-  k.merlons(-30, 30, -30, 30, 18, S.REDSTONE);
-  k.cylinder(0, 0, 21, 21, 18, 21, 28, S.REDSTONE);
-  k.hemi(0, 0, 20, 21, S.REDSTONE, 0.62);
-  k.cylinder(0, 0, 2.2, 1.4, 33, 34.5, 10, S.STONE); k.cylinder(0, 0, 0.5, 0.15, 34.5, 37, 8, S.GILT);
-  for (const u of [-30, 30]) for (const v of [-30, 30]) { k.box(u - 5, u + 5, 4, 20, v - 5, v + 5, S.REDSTONE); k.hemi(u, v, 5, 20, S.REDSTONE, 1); }
-  // Museum halls along the cross axis, each with a dome.
-  for (const sv of [-1, 1]) {
-    const v = sv * Math.min(150, (V1 - 30));
-    k.box(-36, 36, 0, 15, v - 18, v + 18, S.REDSTONE); k.arcadeAll(-36, 36, v - 18, v + 18, 0.6, 3.2, 9, 6);
-    k.merlons(-36, 36, v - 18, v + 18, 15, S.REDSTONE); k.hemi(0, v, 12, 15, S.REDSTONE, 0.9);
+  // Gateway block between the terraces, with the monumental arched, relief-faced entrance.
+  if (box4(-24, 24, -166, -138)) {
+    k.box(-24, 24, 0, 13, -166, -138, S.LIME);
+    k.arcade('v0', -166, -9, 9, 0, 8, 10, 1, S.GLASS, true);
+    k.arcade('v0', -166, -22, -11, 1.5, 3, 8, 1); k.arcade('v0', -166, 11, 22, 1.5, 3, 8, 1);
+    k.merlons(-24, 24, -166, -138, 13, S.LIME);
+    for (const sg of [-1, 1]) k.cylinder(sg * 20, -152, 2.2, 2.0, 13, 17, 10, S.REDSTONE);
   }
-  // Pratibimb Sthal: a long elephant avenue along the main axis (62 elephants, 2 x 31).
-  const e0 = 62, e1 = Math.min(U1 - 10, e0 + 31 * 7.5);
+  // Steps and forecourt in front of the gate.
+  rect(INLAY, -40, 40, -214, -166, 0.09);
+
+  // 3. The stupa and its stepped base, with four small corner domes.
+  for (let i = 0; i < 4; i++) k.box(-56 + i * 5, 56 - i * 5, 0, 1.6 + i * 1.6, -56 + i * 5, 56 - i * 5, S.LIME);
+  k.box(-32, 32, 6.4, 19, -32, 32, S.LIME);
+  k.arcadeAll(-32, 32, -32, 32, 7, 4.2, 10.5, 8, S.GLASS);
+  k.merlons(-32, 32, -32, 32, 19, S.LIME);
+  k.cylinder(0, 0, 22, 22, 19, 23, 28, S.REDSTONE);
+  k.hemi(0, 0, 21, 23, S.REDSTONE, 0.66);
+  k.cylinder(0, 0, 2.4, 1.5, 36, 37.5, 10, S.LIME); k.cylinder(0, 0, 0.5, 0.15, 37.5, 40, 8, S.GILT);
+  for (const u of [-34, 34]) for (const v of [-34, 34]) { k.box(u - 5, u + 5, 6.4, 21, v - 5, v + 5, S.LIME); k.hemi(u, v, 5, 21, S.REDSTONE, 0.9); }
+
+  // 4. Rear: formal garden between pillar rows, then the long hall with two large domes.
+  rect(INLAY, -34, 34, 70, 190, 0.09);
+  for (let i = 0; i < 4; i++) rect(i % 2 ? 0x587040 : LAWN, -26 + (i % 2) * 0, 26, 78 + i * 28, 98 + i * 28, 0.12);
+  for (let v = 70; v <= 196; v += 14) for (const u of [-52, -40, 40, 52]) {
+    if (!inside(u, v)) continue;
+    k.box(u - 1.4, u + 1.4, 0, 1.3, v - 1.4, v + 1.4, S.LIME);
+    k.lathe(u, v, [[0.9, 1.3], [0.5, 12], [0, 13.2]], 6, S.LIME, 0);
+  }
+  if (box4(-110, 110, 214, 252)) {
+    k.box(-110, 110, 0, 12, 214, 252, S.LIME);
+    k.arcade('v0', 214, -104, 104, 0.6, 3.4, 8.5, 17, S.GLASS);
+    k.merlons(-110, 110, 214, 252, 12, S.LIME);
+    for (const u of [-58, 58]) { k.cylinder(u, 233, 24, 24, 12, 18, 28, S.LIME); k.hemi(u, 233, 23, 18, S.LIME, 0.82); k.cylinder(u, 233, 1.4, 0.4, 36, 40, 8, S.GILT); }
+  }
+
+  // 5. Pratibimb Sthal: two rows of 31 elephants (62) on pedestals, water channel between.
+  const ex0 = -34, step = 7.4;
+  rect(0x4a5a58, -140, -132, ex0 - 6, ex0 + 31 * step + 4, 0.1);                    // channel
   for (let i = 0; i < 31; i++) {
-    const u = e0 + 6 + i * ((e1 - e0 - 6) / 31);
-    for (const sv of [-1, 1]) {
-      k.box(u - 2, u + 2, 0, 1.4, sv * 22 - 2.5, sv * 22 + 2.5, S.REDSTONE);
-      g.elephant(u, sv * 22, 1.4, 0.95, -sv * 0 + 1);
+    const v = ex0 + i * step;
+    for (const u of [-124, -148]) {
+      if (!inside(u, v)) continue;
+      k.box(u - 2.6, u + 2.6, 0, 1.4, v - 1.9, v + 1.9, S.LIME);
+      g.elephant(u, v, 1.4, 0.95, u < -136 ? 1 : -1);
     }
   }
-  // Rows of monumental columns / obelisks on the opposite arm of the axis.
-  for (let u = -62; u > U0 + 8; u -= 13) for (const sv of [-1, 1]) {
-    k.box(u - 1.6, u + 1.6, 0, 1.5, sv * 20 - 1.6, sv * 20 + 1.6, S.REDSTONE);
-    k.lathe(u, sv * 20, [[1.0, 1.5], [0.55, 14], [0.0, 15.5]], 4, S.REDSTONE, Math.PI / 4);
+
+  // 6. Left: stepped circular fountain plaza with a tall pillar, ringed by small red kiosks.
+  const fu = 150, fv = 30;
+  if (inside(fu - 55, fv) && inside(fu + 55, fv)) {
+    const cols = [PALE, INLAY, PINK, INLAY, PALE];
+    for (let i = 0; i < 5; i++) g.color(cols[i]).disc(fu, fv, 50 - i * 8, 0.1 + i * 0.12, 40);
+    g.color(0x4a5a58).disc(fu, fv, 7, 0.75, 20);
+    k.cylinder(fu, fv, 1.6, 0.9, 0.7, 26, 10, S.LIME); k.cylinder(fu, fv, 0.5, 0.1, 26, 29, 8, S.GILT);
+    for (let i = 0; i < 6; i++) {
+      const t = (i / 6) * Math.PI * 2 + 0.3;
+      k.chhatri(fu + Math.cos(t) * 56, fv + Math.sin(t) * 56, 4.4, 0.4, S.REDSTONE);
+    }
   }
-  // Gateway pavilions at the ends of the main axis.
-  for (const u of [U0 + 6, U1 - 6]) {
-    k.box(u - 8, u + 8, 0, 12, -16, 16, S.REDSTONE); k.arcade('u0', u - 8, -10, 10, 0, 7, 10, 1); k.arcade('u1', u + 8, -10, 10, 0, 7, 10, 1);
-    k.hemi(u, 0, 6, 12, S.REDSTONE, 0.9);
+  // Red kiosks around the stupa plaza and corners.
+  for (const [u, v] of [[-80, 60], [80, 60], [-80, -50], [80, -50], [200, -80], [-200, 120]] as Array<[number, number]>) {
+    if (inside(u, v)) k.chhatri(u, v, 4.4, 0.2, S.REDSTONE);
+  }
+
+  // 7. Trees: clusters on the lawns around the paved core, never over the plazas.
+  let seed = 7;
+  const hash = (a: number, b: number): number => { const h = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453; return h - Math.floor(h); };
+  for (let u = -340; u <= 330; u += 15) {
+    for (let v = -420; v <= 340; v += 15) {
+      if (inCore(u, v) || !inside(u, v) || !inside(u + 10, v) || !inside(u - 10, v) || !inside(u, v + 10) || !inside(u, v - 10)) continue;
+      const clump = Math.sin(u * 0.021) * Math.cos(v * 0.017) + 0.5 * Math.sin((u + v) * 0.033);
+      if (hash(u, v) > 0.28 + 0.5 * clump) continue;
+      g.tree(u + (hash(v, u) - 0.5) * 9, v + (hash(u * 1.3, v) - 0.5) * 9, 8 + hash(u, v * 2) * 5, hash(u, v + 3) < 0.25, seed++);
+    }
   }
 }
 

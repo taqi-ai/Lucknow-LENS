@@ -296,32 +296,43 @@ export function buildElevationProfiles(
 
   // Endpoint hash, so "does another elevated feature continue here" is O(1).
   const cellKey = (p: Pt) => `${Math.floor(p.x / JOIN_CELL)},${Math.floor(p.z / JOIN_CELL)}`;
-  const index = new Map<string, Array<{ p: Pt; owner: ElevatableRoad }>>();
-  const addEnd = (p: Pt, owner: ElevatableRoad) => {
+  // Ends are indexed with their OUTWARD tangent. Another feature only "continues" this end
+  // if it heads onward, away from it (tangents roughly opposed). Parallel carriageways that
+  // merely finish side by side (tangents the same way) do not continue each other: that
+  // false "continuation" held both decks at full height and left them ending in open air.
+  type End = { p: Pt; owner: ElevatableRoad; tx: number; tz: number };
+  const index = new Map<string, End[]>();
+  const tangent = (a: Pt, b: Pt): [number, number] => {
+    const dx = a.x - b.x, dz = a.z - b.z, L = Math.hypot(dx, dz) || 1;
+    return [dx / L, dz / L];
+  };
+  const addEnd = (p: Pt, prev: Pt, owner: ElevatableRoad) => {
     const k = cellKey(p);
     let bucket = index.get(k);
     if (!bucket) { bucket = []; index.set(k, bucket); }
-    bucket.push({ p, owner });
+    const [tx, tz] = tangent(p, prev);
+    bucket.push({ p, owner, tx, tz });
   };
   for (const e of elevated) {
-    addEnd(e.pts[0], e.road);
-    addEnd(e.pts[e.pts.length - 1], e.road);
+    addEnd(e.pts[0], e.pts[1], e.road);
+    addEnd(e.pts[e.pts.length - 1], e.pts[e.pts.length - 2], e.road);
   }
-
-  const continuesAt = (p: Pt, self: ElevatableRoad): boolean => {
-    const gx = Math.floor(p.x / JOIN_CELL);
-    const gz = Math.floor(p.z / JOIN_CELL);
-    for (let dx = -1; dx <= 1; dx++) {
-      for (let dz = -1; dz <= 1; dz++) {
-        const bucket = index.get(`${gx + dx},${gz + dz}`);
-        if (!bucket) continue;
-        for (const e of bucket) {
-          if (e.owner === self) continue;
-          if (Math.hypot(e.p.x - p.x, e.p.z - p.z) <= JOIN_TOL) return true;
-        }
+  const joins = (p: Pt, prev: Pt, self: ElevatableRoad, visit: (o: End) => void) => {
+    const [tx, tz] = tangent(p, prev);
+    const gx = Math.floor(p.x / JOIN_CELL), gz = Math.floor(p.z / JOIN_CELL);
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+      for (const e of index.get(`${gx + dx},${gz + dz}`) ?? []) {
+        if (e.owner === self) continue;
+        if (Math.hypot(e.p.x - p.x, e.p.z - p.z) > JOIN_TOL) continue;
+        if (tx * e.tx + tz * e.tz > -0.2) continue; // same-way or sideways: not a continuation
+        visit(e);
       }
     }
-    return false;
+  };
+  const continuesAt = (p: Pt, prev: Pt, self: ElevatableRoad): boolean => {
+    let hit = false;
+    joins(p, prev, self, () => { hit = true; });
+    return hit;
   };
 
   // Connected structures (pieces joined end to end) share one span length, so a long
@@ -339,13 +350,9 @@ export function buildElevationProfiles(
     lenOf.set(e.road, L);
   }
   for (const e of elevated) {
-    for (const p of [e.pts[0], e.pts[e.pts.length - 1]]) {
-      const gx = Math.floor(p.x / JOIN_CELL), gz = Math.floor(p.z / JOIN_CELL);
-      for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
-        for (const o of index.get(`${gx + dx},${gz + dz}`) ?? []) {
-          if (o.owner !== e.road && Math.hypot(o.p.x - p.x, o.p.z - p.z) <= JOIN_TOL) parent.set(find(e.road), find(o.owner));
-        }
-      }
+    const n = e.pts.length;
+    for (const [p, prev] of [[e.pts[0], e.pts[1]], [e.pts[n - 1], e.pts[n - 2]]] as Array<[Pt, Pt]>) {
+      joins(p, prev, e.road, (o) => { parent.set(find(e.road), find(o.owner)); });
     }
   }
   const compLen = new Map<ElevatableRoad, number>();
@@ -370,8 +377,8 @@ export function buildElevationProfiles(
 
     const head = pts[0];
     const tail = pts[n - 1];
-    const rampHead = !continuesAt(head, road) && (isFreeEnd ? isFreeEnd(head) : true);
-    const rampTail = !continuesAt(tail, road) && (isFreeEnd ? isFreeEnd(tail) : true);
+    const rampHead = !continuesAt(head, pts[1], road) && (isFreeEnd ? isFreeEnd(head) : true);
+    const rampTail = !continuesAt(tail, pts[n - 2], road) && (isFreeEnd ? isFreeEnd(tail) : true);
 
     // A short feature cannot fit two full ramps; sharing the length keeps the
     // gradient sane and simply means it never reaches full deck height.

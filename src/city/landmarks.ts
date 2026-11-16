@@ -300,15 +300,19 @@ function baraImambara(k: Kit, g: Grounds, s: LandmarkSite): void {
   for (let u = -40; u <= 40; u += 10) { g.tree(u, -255, 7, false, seed++); }
   // Perimeter walls with openings at the gates.
   const wallH = 6;
-  k.box(-116, -114, 0, wallH, -260, 46, S.LIME); k.box(114, 116, 0, wallH, -260, 46, S.LIME);
+  k.box(-116, -114, 0, wallH, -260, 46, S.LIME);
+  // A residential lane crosses the east wall near v=-64 (Overture road); leave it open, no wall over a road.
+  k.box(114, 116, 0, wallH, -260, -78, S.LIME); k.box(114, 116, 0, wallH, -52, 46, S.LIME);
   k.box(-116, 116, 0, wallH, 44, 46, S.LIME);
-  for (const [u0, u1] of [[-116, -24], [24, 116]]) { k.box(u0, u1, 0, wallH, -260, -258, S.LIME); k.box(u0, u1, 0, wallH, -214, -212, S.LIME); k.box(u0, u1, 0, wallH, -166, -164, S.LIME); }
+  for (const [u0, u1] of [[-116, -24], [24, 116]]) { k.box(u0, u1, 0, wallH, -260, -258, S.LIME); k.box(u0, u1, 0, wallH, -214, -212, S.LIME); }
   k.merlons(-116, 116, -260, 46, wallH);
-  // Gateways: outer (with Naubat Khana gallery above) and inner.
+  // Gateways, per the NMA plan labels: FIRST triple gateway (carries the Naqqar/Naubat Khana
+  // gallery) and SECOND triple gateway, giving three forecourts. Rumi Darwaza is the separate
+  // external gate on the public road (rumiDarwaza()), not one of these.
   const gate = (v: number, h: number, gallery: boolean) => {
     k.box(-24, 24, 0, h, v - 6, v + 6, S.LIME);
     k.arcade('v0', v - 6, -6, 6, 0, 9, h - 3, 1, S.GLASS, true); k.arcade('v1', v + 6, -6, 6, 0, 9, h - 3, 1, S.GLASS, true);
-    for (const sgn of [-1, 1]) { k.arcade('v0', v - 6, sgn * 15 - 6, sgn * 15 + 6, 1, 2.8, 6, 2); k.arcade('v1', v + 6, sgn * 15 - 6, sgn * 15 + 6, 1, 2.8, 6, 2); }
+    for (const sgn of [-1, 1]) { k.arcade('v0', v - 6, sgn * 15 - 6, sgn * 15 + 6, 1, 3.4, 6.4, 1); k.arcade('v1', v + 6, sgn * 15 - 6, sgn * 15 + 6, 1, 3.4, 6.4, 1); }
     if (gallery) { k.box(-20, 20, h, h + 5, v - 5, v + 5, S.LIME); k.arcade('v0', v - 5, -18, 18, h + 0.6, 1.8, 3.6, 9); k.arcade('v1', v + 5, -18, 18, h + 0.6, 1.8, 3.6, 9); }
     const top = gallery ? h + 5 : h;
     k.merlons(-24, 24, v - 6, v + 6, top);
@@ -317,7 +321,6 @@ function baraImambara(k: Kit, g: Grounds, s: LandmarkSite): void {
   };
   gate(-259, 15, true);
   gate(-213, 13, false);
-  gate(-165, 12, false);
   // Raised platform, steps and the main hall.
   k.box(-66, 66, 0, 2.4, -26, 34, S.LIME);
   for (let i = 0; i < 4; i++) k.box(-22, 22, 0, 2.4 - i * 0.6, -26 - (i + 1) * 0.9, -26 - i * 0.9, S.LIME);
@@ -361,19 +364,19 @@ function chhotaImambara(k: Kit, g: Grounds, s: LandmarkSite): void {
   // Footprint frame: main Imambara at the origin on a raised terrace, the long courtyard
   // with its raised central water tank and iron bridge running toward the gate (-v).
   k.begin(s, 30, 53); g.frame(s);
-  g.color(C.paveSand).rect(-72, 72, -178, 34, 0.08);
+  g.color(C.paveSand).rect(-72, 64, -152, 34, 0.08);
   for (const su of [-1, 1]) {
-    g.color(C.hedge).rect(su * 10, su * 46, -150, -28, 0.12); g.color(C.lawn).rect(su * 11.2, su * 44.8, -148.8, -29.2, 0.14);
-    for (let v = -140; v <= -38; v += 17) g.color(C.bed).disc(su * 28, v, 2.2, 0.17, 12);
+    g.color(C.hedge).rect(su * 10, su * 46, -138, -28, 0.12); g.color(C.lawn).rect(su * 11.2, su * 44.8, -136.8, -29.2, 0.14);
+    for (let v = -128; v <= -38; v += 17) g.color(C.bed).disc(su * 28, v, 2.2, 0.17, 12);
   }
-  g.color(C.path).rect(-10, 10, -172, -28, 0.12);
+  g.color(C.path).rect(-10, 10, -152, -28, 0.12);
   // Raised central tank with its channel and the ornamental bridge.
-  k.box(-7.5, 7.5, 0, 1.0, -150, -30, S.STONE, S.STONE);
-  g.color(C.water).rect(-6.3, 6.3, -149, -31, 1.02);
+  k.box(-7.5, 7.5, 0, 1.0, -138, -30, S.STONE, S.STONE);
+  g.color(C.water).rect(-6.3, 6.3, -137, -31, 1.02);
   k.box(-8.5, 8.5, 1.0, 1.6, -91.5, -88.5, S.METAL, S.METAL);                       // iron bridge deck
   for (const su of [-8.2, 8.2]) k.box(su - 0.1, su + 0.1, 1.6, 2.6, -91.5, -88.5, S.METAL);
   let seed = 3;
-  for (let v = -145; v <= -35; v += 10) { g.tree(-47, v, 10, true, seed++); g.tree(47, v, 10, true, seed++); }
+  for (let v = -133; v <= -35; v += 10) { g.tree(-47, v, 10, true, seed++); g.tree(47, v, 10, true, seed++); }
   // Terrace + main Imambara (white, gilded central dome, corner minarets, kiosks).
   const lu = Math.min(24, s.ext[0] / 2 + 2), lv = Math.min(16, s.ext[1] / 2);
   k.box(-lu - 6, lu + 6, 0, 2.5, -lv - 10, lv + 4, S.STONE);
@@ -399,10 +402,10 @@ function chhotaImambara(k: Kit, g: Grounds, s: LandmarkSite): void {
   for (const dv of [-8, 0, 8]) k.onion(lu + 24, dv, dv ? 2.6 : 3.4, 9, dv ? 4 : 5.2, S.DOME, 0.2);
   for (const dv of [-lv, lv]) k.minaret(lu + 13, dv, 0.9, 18, 3, S.DOME);
   // Gates: white main gateway and a side gate; boundary walls.
-  k.box(-20, 20, 0, 14, -178, -168, S.DOME); k.arcade('v0', -178, -6, 6, 0, 8, 12, 1, S.GLASS, true); k.arcade('v1', -168, -6, 6, 0, 8, 12, 1, S.GLASS, true);
-  k.merlons(-20, 20, -178, -168, 14, S.DOME); for (const su of [-17, 17]) k.chhatri(su, -173, 2.6, 14);
-  k.box(68, 76, 0, 10, -128, -112, S.DOME); k.arcade('u1', 76, -124, -116, 0, 5, 8.5, 1, S.GLASS, true);
-  for (const [u0, u1, v0, v1] of [[-72, -70, -178, 34], [70, 72, -178, -128], [70, 72, -112, 34], [-72, 72, 32, 34], [-72, -20, -178, -176], [20, 72, -178, -176]]) k.box(u0, u1, 0, 4.5, v0, v1, S.DOME);
+  k.box(-20, 20, 0, 14, -152, -142, S.DOME); k.arcade('v0', -152, -6, 6, 0, 8, 12, 1, S.GLASS, true); k.arcade('v1', -142, -6, 6, 0, 8, 12, 1, S.GLASS, true);
+  k.merlons(-20, 20, -152, -142, 14, S.DOME); for (const su of [-17, 17]) k.chhatri(su, -147, 2.6, 14);
+  k.box(58, 66, 0, 10, -128, -112, S.DOME); k.arcade('u1', 66, -124, -116, 0, 5, 8.5, 1, S.GLASS, true);
+  for (const [u0, u1, v0, v1] of [[-72, -70, -152, 34], [64, 66, -152, -128], [64, 66, -112, 34], [-72, 66, 32, 34], [-72, -20, -152, -150], [20, 66, -152, -150]]) k.box(u0, u1, 0, 4.5, v0, v1, S.DOME);
 }
 
 function ambedkarMemorial(k: Kit, g: Grounds, s: LandmarkSite): void {

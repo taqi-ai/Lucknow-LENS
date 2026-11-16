@@ -22,7 +22,8 @@ C_LAT = 26.84997035; C_LON = 80.95005255000001
 ML = 111320 * math.cos(math.radians(C_LAT))
 P = lambda lo, la: (round((lo - C_LON) * ML, 2), round(-(la - C_LAT) * 111320, 2))
 RAIL_Y = 12.5
-RAMP = 260.0  # metres from portal to full viaduct height (~4.8% grade)
+RAMP = 330.0  # metres from the portal to full viaduct height
+PORTAL_DEPTH = 9.0  # rail level below ground inside the tunnel; the ramp dives below the surface
 
 
 def main():
@@ -37,12 +38,17 @@ def main():
         else:
             lines.append({'kind': 'grade', 'name': f.get('name'), 'pts': [[x, 0, z] for x, z in pts]})
     # Portal / grade endpoints -> viaduct ends ramp down there.
-    ground_ends = []
+    ground_ends = []   # depot / at-grade ends: the ramp comes down to the surface
+    tunnel_ends = []   # bored-tunnel ends: the ramp dives below the surface
     for l in lines:
-        if l['kind'] != 'viaduct':
+        if l['kind'] == 'tunnel':
+            tunnel_ends += [l['pts'][0], l['pts'][-1]]
+        elif l['kind'] != 'viaduct':
             ground_ends += [l['pts'][0], l['pts'][-1]]
+    def near_tunnel(p):
+        return any(math.hypot(p[0] - q[0], p[1] - q[2]) < 25 for q in tunnel_ends)
     def near_ground(p):
-        return any(math.hypot(p[0] - q[0], p[1] - q[2]) < 25 for q in ground_ends)
+        return near_tunnel(p) or any(math.hypot(p[0] - q[0], p[1] - q[2]) < 25 for q in ground_ends)
     for l in lines:
         if l['kind'] != 'viaduct':
             continue
@@ -52,13 +58,17 @@ def main():
             s.append(s[-1] + math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]))
         tot = s[-1]
         rh, rt = near_ground(pts[0]), near_ground(pts[-1])
+        dh, dt = near_tunnel(pts[0]), near_tunnel(pts[-1])
         out = []
         for i, (x, z) in enumerate(pts):
-            f = 1.0
+            f = 1.0; low = 0.0
             if rh: f = min(f, s[i] / RAMP)
             if rt: f = min(f, (tot - s[i]) / RAMP)
+            # depth below grade applies only to the end(s) that meet a tunnel
+            if dh and s[i] / RAMP < 1.0 and (not rt or s[i] / RAMP <= (tot - s[i]) / RAMP): low = PORTAL_DEPTH
+            if dt and (tot - s[i]) / RAMP < 1.0 and (not rh or (tot - s[i]) / RAMP < s[i] / RAMP): low = PORTAL_DEPTH
             f = max(0.0, min(1.0, f)); f = f * f * (3 - 2 * f)
-            out.append([x, round(RAIL_Y * f, 2), z])
+            out.append([x, round(-low * (1 - f) + RAIL_Y * f, 2), z])
         l['pts'] = out
     stations = []
     tunnels = [l for l in lines if l['kind'] == 'tunnel']

@@ -135,6 +135,17 @@ export class MetroSystem {
           }
           carry = ((carry - L) % PIER_SPACING + PIER_SPACING) % PIER_SPACING;
         }
+        // Tunnel portal: where the ramp dives through the ground surface, put a concrete
+        // headwall with a dark opening. Beneath it the line is simply below the terrain.
+        for (let i = 0; i < l.pts.length - 1; i++) {
+          const a = l.pts[i], b = l.pts[i + 1];
+          if ((a[1] < 0.2) === (b[1] < 0.2)) continue;
+          const t = (0.2 - a[1]) / (b[1] - a[1]);
+          const x = a[0] + (b[0] - a[0]) * t, z = a[2] + (b[2] - a[2]) * t;
+          const ang = Math.atan2(b[2] - a[2], b[0] - a[0]);
+          conc.setColor(0xb4afa5); conc.box(x, z, ang, 0.8, 6.2, -1.5, 5.4);
+          steel.setColor(0x181716); steel.box(x, z, ang, 1.0, 3.0, -0.6, 4.2);
+        }
       } else if (l.kind === 'tunnel') {
         // Subtle dashed line marking the bored alignment underneath.
         let acc = 0;

@@ -500,35 +500,78 @@ function ambedkarMemorial(k: Kit, g: Grounds, s: LandmarkSite): void {
     k.cylinder(u, v, 1.1, 0.3, 9 + r * 0.78, 9 + r * 0.78 + 3.5, 8, S.GILT);
   }
 
-  // 6. Semicircular tiered amphitheatre (SW), opening toward the centre.
+  // 6. Semicircular tiered amphitheatre (SW). Built in world axes: arc to the west, flat edge
+  //    facing east. Eight stepped annular tiers rising outward, a low stage, a colonnade on the
+  //    outer arc and radial aisles. Proportions are read from the reference views, not surveyed.
   {
-    const [cu, cv] = P(0.225, 0.665);
+    const cxw = minX + 0.225 * W, czw = minZ + 0.665 * H;
     const R = 0.17 * W;
-    for (let i = 0; i < 5; i++) {
-      const r1 = R * (1 - i * 0.15);
-      const pts: number[][] = [];
-      for (let t = 0; t <= 24; t++) { const a = Math.PI * 0.5 + (t / 24) * Math.PI; const w = k.w([cu + Math.cos(a) * r1 * -1, 0, cv + Math.sin(a) * r1]); pts.push([w[0], w[2]]); }
-      // Left-facing semicircle: x from centre outward to -u side.
-      g.color(i % 2 ? WHITE : PINK).polyWorld(pts, 0.2 + i * 0.5);
-      if (i === 0) k.extrudeWorldRing(pts, 0, 1.6, S.LIME, S.LIME);
+    const arcPt = (r: number, a: number): number[] => [cxw + Math.cos(a) * r, czw + Math.sin(a) * r];
+    const sector = (rOut: number, rIn: number): number[][] => {
+      const o: number[][] = [], i: number[][] = [];
+      for (let t = 0; t <= 28; t++) { const a = Math.PI * 0.5 + (t / 28) * Math.PI; o.push(arcPt(rOut, a)); i.push(arcPt(rIn, a)); }
+      return o.concat(i.reverse());
+    };
+    const TIERS = 8, rStage = R * 0.30;
+    for (let i = 0; i < TIERS; i++) {
+      const rOut = R - (i * (R - rStage * 1.35)) / TIERS, rIn = R - ((i + 1) * (R - rStage * 1.35)) / TIERS;
+      const h = 0.7 + (TIERS - i) * 0.55;                       // outer tiers are higher
+      k.extrudeWorldRing(sector(rOut, rIn), 0, h, i % 2 ? S.STONE : S.LIME, i % 2 ? S.STONE : S.LIME);
     }
+    // Stage and the wall around it.
+    const [su, sv] = k.local(cxw, czw);
+    g.color(0xd9cdb8).disc(su, sv, rStage * 1.3, 0.3, 36);
+    g.color(0xcdae94).disc(su, sv, rStage * 0.95, 0.35, 36);
+    // Radial aisles between seating blocks.
+    for (let n = 1; n < 9; n++) {
+      const a = Math.PI * 0.5 + (n / 9) * Math.PI;
+      const p0 = arcPt(rStage * 1.35, a), p1 = arcPt(R, a), nx = -Math.sin(a) * 1.2, nz = Math.cos(a) * 1.2;
+      g.color(0xefe6d6).polyWorld([[p0[0] + nx, p0[1] + nz], [p1[0] + nx, p1[1] + nz], [p1[0] - nx, p1[1] - nz], [p0[0] - nx, p0[1] - nz]], 5.05);
+    }
+    // Colonnade along the outer arc with a continuous entablature.
+    const cols = 46;
+    for (let t = 0; t <= cols; t++) {
+      const a = Math.PI * 0.5 + (t / cols) * Math.PI, p = arcPt(R + 2, a);
+      const [u, v] = k.local(p[0], p[1]);
+      if (inside(u, v)) k.cylinder(u, v, 0.9, 0.8, 0, 9.5, 8, S.LIME);
+    }
+    k.extrudeWorldRing(sector(R + 3, R + 1), 9.5, 10.6, S.LIME, S.LIME);
   }
 
-  // 7. Elephant avenue: two diagonal rows of 31 elephants (62).
+  // 7. Elephant avenue: 62 elephants (2 x 31, documented) on pedestals along a long diagonal
+  //    band with low parapets, lamp columns and shallow steps; the band runs the length of the
+  //    plaza as in the references. Lamp columns are extra to the 62.
   {
-    const [u0, v0] = P(0.14, 0.43), [u1, v1] = P(0.68, 0.82);
+    const [u0, v0] = P(0.15, 0.37), [u1, v1] = P(0.72, 0.82);
     const dx = u1 - u0, dv = v1 - v0, len = Math.hypot(dx, dv), ux = dx / len, uv = dv / len, nx = -uv, nv = ux;
-    const hw = 26;
-    const band = [[u0 + nx * hw, v0 + nv * hw], [u1 + nx * hw, v1 + nv * hw], [u1 - nx * hw, v1 - nv * hw], [u0 - nx * hw, v0 - nv * hw]]
-      .map(([u, v]) => { const q = k.w([u, 0, v]); return [q[0], q[2]]; });
-    g.color(WHITE).polyWorld(band, 0.09);
+    const hw = 24;
+    const wp = (u: number, v: number): number[] => { const q = k.w([u, 0, v]); return [q[0], q[2]]; };
+    const strip = (o0: number, o1: number, a: number, b: number): number[][] =>
+      [wp(u0 + dx * a + nx * o0, v0 + dv * a + nv * o0), wp(u0 + dx * b + nx * o0, v0 + dv * b + nv * o0),
+       wp(u0 + dx * b + nx * o1, v0 + dv * b + nv * o1), wp(u0 + dx * a + nx * o1, v0 + dv * a + nv * o1)];
+    g.color(WHITE).polyWorld(strip(-hw, hw, 0, 1), 0.09);
+    g.color(INLAY).polyWorld(strip(-3, 3, 0, 1), 0.11);                             // centre water-lane
+    for (const sg of [-1, 1]) {
+      k.extrudeWorldRing(strip(sg * hw, sg * (hw + 1.4), 0, 1), 0, 1.0, S.LIME, S.LIME);  // parapet
+      for (let st = 0; st < 3; st++) g.color(st % 2 ? WHITE : PINK).polyWorld(strip(sg * (hw + 1.4 + st * 1.5), sg * (hw + 2.9 + st * 1.5), 0, 1), 0.1);
+    }
     for (let i = 0; i < 31; i++) {
       const t = (i + 0.5) / 31;
       for (const sg of [-1, 1]) {
-        const u = u0 + dx * t + nx * 17 * sg, v = v0 + dv * t + nv * 17 * sg;
+        const u = u0 + dx * t + nx * 14 * sg, v = v0 + dv * t + nv * 14 * sg;
         if (!inside(u, v)) continue;
         k.box(u - 4.2, u + 4.2, 0, 2.2, v - 3.4, v + 3.4, S.LIME);
         g.elephant(u, v, 2.2, 1.7, ux >= 0 ? 1 : -1);
+      }
+    }
+    // Lamp columns between the elephants and on the outer edges.
+    const nL = Math.floor(len / 11);
+    for (let i = 0; i < nL; i++) {
+      const t = (i + 0.5) / nL;
+      for (const off of [-20, -8, 8, 20]) {
+        const u = u0 + dx * t + nx * off, v = v0 + dv * t + nv * off;
+        if (!inside(u, v)) continue;
+        k.cylinder(u, v, 0.4, 0.28, 0, 6.5, 6, S.LIME);
       }
     }
   }

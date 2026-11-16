@@ -29,7 +29,7 @@ interface Candidate {
   z: number;
   importance: number;
   type: string;
-  kind: 'place' | 'road';
+  kind: 'place' | 'road' | 'district';
 }
 
 // ─── Per-LOD configuration ────────────────────────────────────────────────────
@@ -181,7 +181,7 @@ function createTextSprite(style: SpriteStyle): THREE.Sprite {
 
 export const LABEL_FONTS = { display: '"Rozha One", Georgia, serif', text: 'Mukta, "Hanken Grotesk", system-ui, sans-serif' };
 
-type LabelKind = 'landmark' | 'major' | 'place' | 'road' | 'roadMajor';
+type LabelKind = 'landmark' | 'major' | 'place' | 'road' | 'roadMajor' | 'district';
 
 function drawArch(ctx: CanvasRenderingContext2D, x: number, y: number, h: number, color: string) {
   // a three-lobed (cusped) arch on two slim piers
@@ -205,10 +205,10 @@ function createLabelSprite(text: string, kind: LabelKind, night: boolean): THREE
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d')!;
   const plaque = kind === 'landmark';
-  const size = plaque ? 15 : kind === 'major' ? 13 : kind === 'place' ? 12 : kind === 'roadMajor' ? 11 : 10;
-  const font = plaque ? `400 ${size}px ${LABEL_FONTS.display}` : kind.startsWith('road') ? `500 ${size}px ${LABEL_FONTS.text}` : `${kind === 'major' ? 700 : 600} ${size}px ${LABEL_FONTS.text}`;
-  const label = kind.startsWith('road') ? text.toUpperCase() : text;
-  const tracking = kind.startsWith('road') ? 1.2 : 0;
+  const size = kind === 'district' ? 15 : plaque ? 15 : kind === 'major' ? 13 : kind === 'place' ? 12 : kind === 'roadMajor' ? 11 : 10;
+  const font = kind === 'district' ? `700 ${size}px ${LABEL_FONTS.text}` : plaque ? `400 ${size}px ${LABEL_FONTS.display}` : kind.startsWith('road') ? `500 ${size}px ${LABEL_FONTS.text}` : `${kind === 'major' ? 700 : 600} ${size}px ${LABEL_FONTS.text}`;
+  const label = kind.startsWith('road') || kind === 'district' ? text.toUpperCase() : text;
+  const tracking = kind === 'district' ? 3.2 : kind.startsWith('road') ? 1.2 : 0;
   ctx.font = font;
   if ('letterSpacing' in ctx) (ctx as unknown as { letterSpacing: string }).letterSpacing = `${tracking}px`;
   const tw = ctx.measureText(label).width;
@@ -245,9 +245,9 @@ function createLabelSprite(text: string, kind: LabelKind, night: boolean): THREE
       ctx.fillStyle = gold; ctx.fillRect(-2.6, -2.6, 5.2, 5.2); ctx.restore();
     }
     ctx.lineJoin = 'round';
-    ctx.strokeStyle = halo; ctx.lineWidth = kind.startsWith('road') ? 3 : 3.6;
+    ctx.strokeStyle = halo; ctx.lineWidth = kind.startsWith('road') ? 3 : kind === 'district' ? 4.4 : 3.6;
     ctx.strokeText(label, x, H / 2 + 1);
-    ctx.fillStyle = kind.startsWith('road') ? (night ? 'rgba(214,222,234,0.78)' : 'rgba(58,70,66,0.82)') : kind === 'place' ? (night ? 'rgba(244,239,228,0.86)' : 'rgba(29,42,38,0.86)') : ink;
+    ctx.fillStyle = kind === 'district' ? (night ? 'rgba(236,214,160,0.95)' : 'rgba(96,66,20,0.92)') : kind.startsWith('road') ? (night ? 'rgba(214,222,234,0.78)' : 'rgba(58,70,66,0.82)') : kind === 'place' ? (night ? 'rgba(244,239,228,0.86)' : 'rgba(29,42,38,0.86)') : ink;
     ctx.fillText(label, x, H / 2 + 1);
   }
 
@@ -262,6 +262,54 @@ function createLabelSprite(text: string, kind: LabelKind, night: boolean): THREE
   return sprite;
 }
 
+// ─── Name hygiene and district tier (round 3) ────────────────────────────────
+
+/**
+ * Overture place names include advertising copy ("Best Hospital in ... Lucknow", phone
+ * numbers, "price 5500 call me"). Those are dropped; long names are cut at the first
+ * separator and then truncated at a word boundary so no label dominates the map.
+ */
+const SPAM = /price|call me|whats\s?app|\b\d{7,}\b|\bbest\b.*\b(in|for)\b|\?{2,}|₹|\brs\.?\s?\d/i;
+const MAX_LABEL_CHARS = 30;
+const cleanCache = new Map<string, string | null>();
+function cleanName(raw: string): string | null {
+  const hit = cleanCache.get(raw);
+  if (hit !== undefined) return hit;
+  let n = raw.trim();
+  let out: string | null = null;
+  if (n && !SPAM.test(n)) {
+    n = n.split(/\s[|–—-]\s|,/)[0].trim();
+    n = n.replace(/\s+(lucknow|uttar pradesh|india)$/i, '').trim();
+    if (n.length > MAX_LABEL_CHARS) {
+      const cut = n.slice(0, MAX_LABEL_CHARS + 1);
+      const sp = cut.lastIndexOf(' ');
+      n = (sp > 14 ? cut.slice(0, sp) : cut.slice(0, MAX_LABEL_CHARS)).trim() + '…';
+    }
+    out = n.length >= 2 ? n : null;
+  }
+  cleanCache.set(raw, out);
+  return out;
+}
+
+/**
+ * Level-1 district names. Positions come from named anchors present in the data (the
+ * Hazratganj chauraha, the Charbagh station site, Chowk Hospital and Stadium, the Aminabad
+ * Road park, Alambagh bus station, the Cantonment Board Hospital, the Taj and Ambedkar
+ * sites near Gomti Nagar and the Dubagga TV tower site). They are label anchors, not
+ * boundaries. No Hindi names are included because none are in the source data.
+ */
+export const DISTRICTS: Array<{ id: string; name: string; x: number; z: number }> = [
+  { id: 'district:hazratganj', name: 'Hazratganj', x: -420, z: 340 },
+  { id: 'district:hussainabad', name: 'Hussainabad', x: -4000, z: -2300 },
+  { id: 'district:chowk', name: 'Chowk', x: -4000, z: -1800 },
+  { id: 'district:aminabad', name: 'Aminabad', x: -2340, z: 300 },
+  { id: 'district:charbagh', name: 'Charbagh', x: -2599, z: 2111 },
+  { id: 'district:alambagh', name: 'Alambagh', x: -4500, z: 3600 },
+  { id: 'district:cantonment', name: 'Cantonment', x: -500, z: 2700 },
+  { id: 'district:gomtinagar', name: 'Gomti Nagar', x: 2300, z: -250 },
+  { id: 'district:dubagga', name: 'Dubagga', x: -8372, z: -2707 },
+];
+
 // ─── LabelManager ─────────────────────────────────────────────────────────────
 
 export class LabelManager {
@@ -273,6 +321,9 @@ export class LabelManager {
   private loaded = false;
 
   private activeSprites = new Set<THREE.Sprite>();
+  /** Ids shown at the last rebuild: ranked up so labels do not flicker as the camera drifts. */
+  private shownIds = new Set<string>();
+  private selectedId: string | null = null;
   // Caching to prevent recreating canvas textures
   private spriteCache = new Map<string, THREE.Sprite>();
 
@@ -329,6 +380,13 @@ export class LabelManager {
   }
 
   public setCamera(cam: THREE.Camera): void { this.camera = cam; }
+
+  /** A selected place always gets its label, ahead of budgets and collisions. */
+  public setSelected(id: string | null): void {
+    if (this.selectedId === id) return;
+    this.selectedId = id;
+    this.lastCamPos.set(1e9, 0, 0);
+  }
 
   public setSettings(next: LabelSettings): void {
     this.settings = next;
@@ -391,7 +449,15 @@ export class LabelManager {
 
     // ── Screen-space occupancy grid (pixel rects) ──────────────────────────────
     const occupied: { cx: number; cy: number; hw: number; hh: number }[] = [];
-    const PADDING = 28; // Screen pixels padding between labels
+    const PADX = 12, PADY = 7; // pixel gaps between labels
+    const vw = this.viewport.x, vh = this.viewport.y;
+    // Screen regions the interface occupies: left toolbar, top pill, right dock, footer credit.
+    const reserved = [
+      { x0: 0, x1: 80, y0: 0, y1: 150 },
+      { x0: vw / 2 - 110, x1: vw / 2 + 110, y0: 0, y1: 62 },
+      { x0: vw - 76, x1: vw, y0: 56, y1: 440 },
+      { x0: 0, x1: vw, y0: vh - 30, y1: vh },
+    ];
 
     const ndcOf = (wx: number, wz: number, wy: number): THREE.Vector3 | null => {
       if (!this.camera) return null;
@@ -405,10 +471,13 @@ export class LabelManager {
     const overlaps = (px: number, py: number, hw: number, hh: number): boolean => {
       for (const r of occupied) {
         if (
-          Math.abs(px - r.cx) < (hw + r.hw + PADDING) &&
-          Math.abs(py - r.cy) < (hh + r.hh + PADDING)
+          Math.abs(px - r.cx) < (hw + r.hw + PADX) &&
+          Math.abs(py - r.cy) < (hh + r.hh + PADY)
         ) return true;
       }
+      // Never off-screen, never under the interface.
+      if (px - hw < 4 || px + hw > vw - 4 || py - hh < 4 || py + hh > vh - 4) return true;
+      for (const q of reserved) if (px + hw > q.x0 && px - hw < q.x1 && py + hh > q.y0 && py - hh < q.y1) return true;
       return false;
     };
 
@@ -425,7 +494,9 @@ export class LabelManager {
       }
       const dist = Math.hypot(p.x - camX, p.z - camZ);
       if (dist > cfg.visRadius) continue;
-      candidates.push({ ...p, kind: 'place' });
+      const clean = cleanName(p.name);
+      if (!clean) continue;
+      candidates.push({ ...p, name: clean, kind: 'place' });
     }
 
     // Filter roads
@@ -436,24 +507,48 @@ export class LabelManager {
       candidates.push({ ...r, kind: 'road' });
     }
 
+    // Districts: the only text at wide scale, fading out as street scale approaches.
+    if (this.settings.places && lod <= 1) {
+      for (const d of DISTRICTS) {
+        if (Math.hypot(d.x - camX, d.z - camZ) > 40000) continue;
+        candidates.push({ id: d.id, name: d.name, x: d.x, z: d.z, importance: 12, type: 'district', kind: 'district' });
+      }
+    }
+    // The selected place always competes first, even below the importance floor.
+    if (this.selectedId) {
+      const sel = this.allPlaces.find((q) => q.id === this.selectedId);
+      if (sel && !candidates.some((q) => q.id === sel.id)) {
+        candidates.push({ ...sel, name: cleanName(sel.name) ?? sel.name, importance: 11, kind: 'place' });
+      }
+    }
+
     // Rank: landmark place types first, then importance, then proximity. Without the
     // proximity tiebreak the same distant label wins every frame and nearby context
     // never gets a slot.
     const rank = (c: Candidate): number => {
       const isLandmark = (c.kind === 'place' && (c as PlaceLabel).type === 'landmark') ? 20 : 0;
       const dist = Math.hypot(c.x - camX, c.z - camZ);
-      return isLandmark + c.importance * 3 - (dist / cfg.visRadius) * 4;
+      const stay = this.shownIds.has(c.id) ? 8 : 0;
+      const sel = c.id === this.selectedId ? 1000 : 0;
+      const dis = c.kind === 'district' ? 60 : 0;
+      return sel + dis + stay + isLandmark + c.importance * 3 - (dist / cfg.visRadius) * 4;
     };
     candidates.sort((a, b) => rank(b) - rank(a));
 
     let placesAdded = 0;
     let roadsAdded = 0;
 
+    const seenNames = new Set<string>();
+    const nextShown = new Set<string>();
     for (const c of candidates) {
-      if (c.kind === 'place' && placesAdded >= cfg.placeMax) continue;
+      const isSel = c.id === this.selectedId;
+      if (c.kind === 'place' && !isSel && placesAdded >= cfg.placeMax) continue;
       if (c.kind === 'road' && roadsAdded >= cfg.roadMax) continue;
+      // A chain or repeated name appears once per view.
+      const nameKey = c.name.toLowerCase();
+      if (c.kind !== 'district' && !isSel && seenNames.has(nameKey)) continue;
 
-      const wy = c.kind === 'place' ? this.labelHeightAt(c.importance, cfg) : cfg.labelHeight * 0.6;
+      const wy = c.kind === 'district' ? cfg.labelHeight * 1.4 : c.kind === 'place' ? this.labelHeightAt(c.importance, cfg) : cfg.labelHeight * 0.6;
       const ndc = ndcOf(c.x, c.z, wy);
       if (!ndc) continue;
 
@@ -462,14 +557,15 @@ export class LabelManager {
       const cw = (sprite as any).__canvasW as number;
       const ch = (sprite as any).__canvasH as number;
 
-      const hw = cw / 2;
-      const hh = ch / 2;
+      const hw = (cw * cfg.baseScale) / 2;
+      const hh = (ch * cfg.baseScale) / 2;
 
       // Convert NDC [-1,1] to pixel space for overlap check
       const px = (ndc.x * 0.5 + 0.5) * this.viewport.x;
       const py = (1 - (ndc.y * 0.5 + 0.5)) * this.viewport.y;
 
-      if (overlaps(px, py, hw, hh)) continue;
+      if (!isSel && overlaps(px, py, hw, hh)) continue;
+      seenNames.add(nameKey); nextShown.add(c.id);
 
       // Register occupancy
       occupied.push({ cx: px, cy: py, hw, hh });
@@ -491,8 +587,9 @@ export class LabelManager {
       this.activeSprites.add(sprite);
 
       if (c.kind === 'place') placesAdded++;
-      else roadsAdded++;
+      else if (c.kind === 'road') roadsAdded++;
     }
+    this.shownIds = nextShown;
   }
 
   private labelHeightAt(imp: number, cfg: LODConfig): number {
@@ -506,8 +603,10 @@ export class LabelManager {
       return this.spriteCache.get(key)!;
     }
 
-    const sprite = c.kind === 'place' 
-      ? this.makePlaceSprite(c, cfg) 
+    const sprite = c.kind === 'district'
+      ? this.makeDistrictSprite(c)
+      : c.kind === 'place'
+      ? this.makePlaceSprite(c, cfg)
       : this.makeRoadSprite(c, cfg);
     
     sprite.visible = false;
@@ -521,6 +620,12 @@ export class LabelManager {
     const kind: LabelKind = isLandmark ? 'landmark' : p.importance >= 7 ? 'major' : 'place';
     const sprite = createLabelSprite(p.name, kind, this.isNight);
     sprite.renderOrder = isLandmark ? 1000 : 999;
+    return sprite;
+  }
+
+  private makeDistrictSprite(d: Candidate): THREE.Sprite {
+    const sprite = createLabelSprite(d.name, 'district', this.isNight);
+    sprite.renderOrder = 1001;
     return sprite;
   }
 

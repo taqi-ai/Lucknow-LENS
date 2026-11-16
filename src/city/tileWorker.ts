@@ -267,7 +267,16 @@ self.onmessage = async (e: MessageEvent<TileWorkerRequest>) => {
     // unified LOD 2 and 3 onto a single content tier (CONTENT_TIER = 2) so that
     // crossing 600 m stops rebuilding every tile — which meant this branch had
     // been false for every request since, and no streetlight was ever built.
-    const streetlights = lod >= 2 ? buildStreetlights(roadList, originX, originZ) : new Float32Array(0);
+    const roadLamps = lod >= 2 ? buildStreetlights(roadList, originX, originZ) : new Float32Array(0);
+    // Promenade, lakeside and park-path lamps (scripts/place_lamps.ts), same instanced path.
+    const extra: number[][] = lod >= 2 ? (data.lod2?.parkLamps ?? []) : [];
+    const streetlights = new Float32Array(roadLamps.length + extra.length * 3);
+    streetlights.set(roadLamps, 0);
+    for (let i = 0; i < extra.length; i++) {
+      streetlights[roadLamps.length + i * 3] = extra[i][0] - originX;
+      streetlights[roadLamps.length + i * 3 + 1] = extra[i][1] - originZ;
+      streetlights[roadLamps.length + i * 3 + 2] = extra[i][2];
+    }
     const parks = buildAreas(parkList, originX, originZ, 0.05);
     const water = buildAreas(waterList, originX, originZ, -0.15);
 

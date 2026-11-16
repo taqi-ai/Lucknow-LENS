@@ -16,6 +16,7 @@
     "serve": "npm run build && npm run start",
     "suppress": "tsx --max-old-space-size=8192 scripts/suppress_conflicts.ts",
     "vegetation": "tsx --max-old-space-size=8192 scripts/place_vegetation.ts",
+    "lamps": "tsx --max-old-space-size=8192 scripts/place_lamps.ts",
     "audit:landmarks": "tsx scripts/audit_landmarks.ts",
     "smoke": "node scripts/smoke_test.mjs",
     "live": "npm run build && node scripts/build_vercel.mjs app https://terralyt-six.vercel.app https://terralyt-data.vercel.app && vercel deploy --prebuilt --prod --yes --archive=tgz",
@@ -23,7 +24,7 @@
     "buildings": "tsx --max-old-space-size=8192 scripts/build_buildings.ts",
     "data:heights": "python -I scripts/py/fetch_gob25d.py 2023 && python -I scripts/py/sample_gob25d.py",
     "data:ground": "python -I scripts/py/build_ground.py",
-    "data:city": "npm run buildings && npm run suppress && npm run vegetation && npm run bake && npm run validate:city",
+    "data:city": "npm run buildings && npm run suppress && npm run vegetation && npm run lamps && npm run bake && npm run validate:city",
     "validate:city": "tsx --max-old-space-size=8192 scripts/validate_city_data.ts"
   },
   "dependencies": {

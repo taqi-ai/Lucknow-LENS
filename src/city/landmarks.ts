@@ -370,7 +370,7 @@ function cityPark(k: Kit, g: Grounds, s: LandmarkSite): void {
   g.color(0x6f8d48); g.polyWorld(s.bound!, 0.09);
   const xs = loc.map((q) => q[0]), vs = loc.map((q) => q[1]);
   const u0 = Math.min(...xs), u1 = Math.max(...xs), v0 = Math.min(...vs), v1 = Math.max(...vs);
-  const [pu, pv] = k.local(-4111.2, -2494.9);  // user pin 1: central plaza
+  const [pu, pv] = s.key === 'husainabad_park' ? k.local(-4111.2, -2494.9) : k.local(s.c[0], s.c[1]);  // central plaza
   for (let u = u0 + 6; u < u1; u += 2) { if (IN(u, pv)) g.color(0xc9b996).rect(u - 1, u + 1, pv - 2, pv + 2, 0.12); }
   for (let v = v0 + 6; v < v1; v += 2) { if (IN(pu, v)) g.color(0xc9b996).rect(pu - 2, pu + 2, v - 1, v + 1, 0.12); }
   g.color(0xc9b996).disc(pu, pv, 16, 0.13, 40); g.color(0x6f8d48).disc(pu, pv, 12, 0.14, 40);
@@ -1368,6 +1368,45 @@ function charbaghYard(k: Kit, g: Grounds, s: LandmarkSite): void {
   k.box(hu - 4, hu + 14, 0, 4.5, 58, 76, S.REDSTONE); k.box(hu - 4, hu + 14, 4.5, 5, 58, 76, S.ROOF);
 }
 
+/**
+ * Royal tomb of the Awadh nawabs (round 3, after the user's photographs of the Saadat Ali Khan and
+ * Mushir Zaidi tombs): a square two-storey pavilion in warm pink-cream plaster on a low plinth. Lower
+ * storey: three round arches per face with deep reveals; upper storey: a balustraded terrace with
+ * arched openings; four corner turrets with small domes; a tall drum carrying a large ribbed dome and
+ * a gilt finial. Set in a walled formal garden with cross paths and edge trees. Proportions approximate.
+ */
+function tomb(k: Kit, g: Grounds, s: LandmarkSite, scale: number, seed: number): void {
+  k.begin(s, 30, seed); g.frame(s); k.domeDefault = S.LIME;
+  const h = 15 * scale, Z = S.LIME;
+  g.color(0x7d9450).rect(-40 * scale, 40 * scale, -40 * scale, 40 * scale, 0.08);
+  g.color(0xcdbd9c).rect(-2, 2, -40 * scale, 40 * scale, 0.12); g.color(0xcdbd9c).rect(-40 * scale, 40 * scale, -2, 2, 0.12);
+  g.color(0xcdbd9c).disc(0, 0, h * 1.5, 0.13, 40);
+  // Plinth and the two storeys.
+  k.box(-h - 3, h + 3, 0, 1.6, -h - 3, h + 3, Z);
+  k.box(-h, h, 1.6, 1.6 + h * 0.62, -h, h, Z);
+  k.arcadeAll(-h, h, -h, h, 2.0, h * 0.3, h * 0.46, h * 0.55, S.GLASS);
+  k.box(-h - 0.5, h + 0.5, 1.6 + h * 0.62, 2.1 + h * 0.62, -h - 0.5, h + 0.5, Z);          // string course
+  const y1 = 2.1 + h * 0.62;
+  k.box(-h * 0.82, h * 0.82, y1, y1 + h * 0.5, -h * 0.82, h * 0.82, Z);
+  k.arcadeAll(-h * 0.82, h * 0.82, -h * 0.82, h * 0.82, y1 + 0.4, h * 0.2, h * 0.3, h * 0.4, S.GLASS);
+  k.merlons(-h * 0.82, h * 0.82, -h * 0.82, h * 0.82, y1 + h * 0.5, Z);
+  k.merlons(-h, h, -h, h, y1, Z);                                                         // terrace balustrade
+  // Four corner turrets with cupolas.
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const cu = sx * (h - 1.4), cv = sz * (h - 1.4);
+    k.cylinder(cu, cv, 1.5, 1.3, y1, y1 + h * 0.55, 10, Z); k.chhatri(cu, cv, 2.6, y1 + h * 0.55, Z);
+  }
+  // Drum, ribbed dome, finial.
+  const y2 = y1 + h * 0.5;
+  k.cylinder(0, 0, h * 0.58, h * 0.58, y2, y2 + h * 0.34, 20, Z);
+  for (let i = 0; i < 16; i++) { const a = (i / 16) * Math.PI * 2; k.cylinder(Math.cos(a) * h * 0.6, Math.sin(a) * h * 0.6, 0.3, 0.3, y2, y2 + h * 0.34, 5, Z); }
+  k.lathe(0, 0, [[h * 0.6, y2 + h * 0.34], [h * 0.62, y2 + h * 0.5], [h * 0.52, y2 + h * 0.78], [h * 0.3, y2 + h * 1.0], [h * 0.1, y2 + h * 1.12], [0, y2 + h * 1.14]], 24, Z);
+  k.cylinder(0, 0, 0.35, 0.25, y2 + h * 1.12, y2 + h * 1.5, 8, S.GILT);
+  // Garden trees on the edges.
+  let sd = seed;
+  for (let u = -36 * scale; u <= 36 * scale; u += 9) { g.tree(u, -42 * scale, 8, false, sd++); g.tree(u, 42 * scale, 8, false, sd++); }
+}
+
 function buildAll(k: Kit, g: Grounds): { flag?: WavingFlag } {
   const res: { flag?: WavingFlag } = {};
   const b = site('bara_imambara'); if (b) baraImambara(k, g, b);
@@ -1376,6 +1415,9 @@ function buildAll(k: Kit, g: Grounds): { flag?: WavingFlag } {
   for (const key of ['chhota_gate_1', 'chhota_gate_2']) { const cg = site(key); if (cg) { k.begin(cg, 12, 191); smallGate(k, key.endsWith('1') ? 7 : 5.5, 8.5, S.BLUE); } }
   const pgg = site('pudiya_ghat_gate'); if (pgg) { k.begin(pgg, 12, 193); smallGate(k, 7, 9, S.LIME); }
   const hp = site('husainabad_park'); if (hp) cityPark(k, g, hp);
+  const sak = site('sadat_ali_khan_tomb'); if (sak) tomb(k, g, sak, 1.0, 241);
+  const mz = site('mushir_zaidi_tomb'); if (mz) tomb(k, g, mz, 0.78, 243);
+  const bhm = site('begum_hazrat_mahal_park'); if (bhm) cityPark(k, g, bhm);
   const jp = site('jpnic'); if (jp) jpnic(k, g, jp, site('jpnic_annex'));
   const st = site('jmp_statue'); if (st) statuePlatform(k, g, st);
   const dw = site('dariya_wali_masjid'); if (dw) dariyaWaliMasjid(k, g, dw);

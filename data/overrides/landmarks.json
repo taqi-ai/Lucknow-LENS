@@ -786,6 +786,107 @@
    "angle": 0,
    "size": 40,
    "note": "User pin: platform with a statue, not a building."
+  },
+  {
+   "key": "sadat_ali_khan_tomb",
+   "name": "Saadat Ali Khan Tomb",
+   "xz": [
+    -1636.5,
+    -472.3
+   ],
+   "snap": false,
+   "angle": 0.55,
+   "size": 64,
+   "note": "User pin 1: replaces the structure that stood here."
+  },
+  {
+   "key": "mushir_zaidi_tomb",
+   "name": "Mushir Zaidi Tomb",
+   "xz": [
+    -1530.2,
+    -432.6
+   ],
+   "snap": false,
+   "angle": 0.55,
+   "size": 50,
+   "note": "User pin 2."
+  },
+  {
+   "key": "begum_hazrat_mahal_park",
+   "name": "Begum Hazrat Mahal Park",
+   "xz": [
+    -1546.7,
+    -621.8
+   ],
+   "snap": false,
+   "angle": 0,
+   "exclPoly": [
+    [
+     -1441.7,
+     -621.8
+    ],
+    [
+     -1449.7,
+     -589.3
+    ],
+    [
+     -1472.5,
+     -561.7
+    ],
+    [
+     -1506.5,
+     -543.3
+    ],
+    [
+     -1546.7,
+     -536.8
+    ],
+    [
+     -1586.9,
+     -543.3
+    ],
+    [
+     -1620.9,
+     -561.7
+    ],
+    [
+     -1643.7,
+     -589.3
+    ],
+    [
+     -1651.7,
+     -621.8
+    ],
+    [
+     -1643.7,
+     -654.3
+    ],
+    [
+     -1620.9,
+     -681.9
+    ],
+    [
+     -1586.9,
+     -700.3
+    ],
+    [
+     -1546.7,
+     -706.8
+    ],
+    [
+     -1506.5,
+     -700.3
+    ],
+    [
+     -1472.5,
+     -681.9
+    ],
+    [
+     -1449.7,
+     -654.3
+    ]
+   ],
+   "note": "User pin 3; outline is an approximate ellipse around the pin, not surveyed."
   }
  ]
 }

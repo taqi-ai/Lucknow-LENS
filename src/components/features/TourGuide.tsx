@@ -11,6 +11,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import type { CameraController } from '../../city/cameraController';
 import { destinationById } from '../../city/destinations';
+import { TourAudio } from './tourAudio';
 
 interface Stop {
   id: string;
@@ -73,6 +74,12 @@ export const TourGuide: React.FC<Props> = ({ controller, night, onNight, hidden 
   const [card, setCard] = useState<{ kicker: string; title: string; text: string } | null>(null);
   const token = useRef(0);
   const pausedRef = useRef(false);
+  const audio = useRef(new TourAudio());
+  const [music, setMusic] = useState(true);
+  const [voice, setVoice] = useState(true);
+  /** Full-screen title card (opening and finale) and the cloud sweep between scenes. */
+  const [title, setTitle] = useState<{ big: string; small: string } | null>(null);
+  const [clouds, setClouds] = useState(0);
   /** Pending jump: stop index to go to (Back / Next). */
   const jumpRef = useRef<number | null>(null);
   const nightRef = useRef(night);
@@ -83,7 +90,8 @@ export const TourGuide: React.FC<Props> = ({ controller, night, onNight, hidden 
 
   const stop = useCallback(() => {
     token.current++;
-    setRunning(false); setPaused(false); setCard(null); setIdx(-1);
+    setRunning(false); setPaused(false); setCard(null); setIdx(-1); setTitle(null);
+    audio.current.stop();
     if (nightRef.current !== startNight.current) onNight(startNight.current);
   }, [onNight]);
 
@@ -121,10 +129,16 @@ export const TourGuide: React.FC<Props> = ({ controller, night, onNight, hidden 
     setRunning(true); setPaused(false); setIdx(-1);
     if (nightRef.current) onNight(false);
 
-    // Opening: a high, wide establishing view of the whole city.
-    setCard({ kicker: 'Lucknow Lens', title: 'Lucknow, guided', text: 'A flight across the City of Nawabs, from old Husainabad to the Gomti, by day and by night.' });
-    controller.transitionTo(new THREE.Vector3(-1500, 0, 300), 0.6, 0.85, 16000, 3000);
-    await wait(4200);
+    // Opening, teaser-style: black title card over the score, then a slow push-in through cloud
+    // from very high up down to the city.
+    audio.current.musicOn = music; audio.current.voiceOn = voice; audio.current.start();
+    setTitle({ big: 'LUCKNOW', small: 'The City of Nawabs' });
+    controller.transitionTo(new THREE.Vector3(-1500, 0, 300), 0.4, 1.2, 42000, 100);
+    await wait(3600);
+    audio.current.hit(); setClouds((c) => c + 1); setTitle(null);
+    audio.current.speak('Lucknow. The City of Nawabs. Come, fly with us.');
+    controller.transitionTo(new THREE.Vector3(-1500, 0, 300), 0.7, 0.75, 14000, 6500);
+    await wait(6800);
 
     for (let i = 0; i < STOPS.length && alive(); i++) {
       if (jumpRef.current !== null) { i = Math.max(0, Math.min(STOPS.length - 1, jumpRef.current)); jumpRef.current = null; }
@@ -146,6 +160,8 @@ export const TourGuide: React.FC<Props> = ({ controller, night, onNight, hidden 
       setIdx(i);
       if (s.night && !nightRef.current) { onNight(true); await wait(1400); }
       setCard({ kicker: s.kicker, title: s.title, text: s.text });
+      audio.current.hit(); setClouds((c) => c + 1);
+      audio.current.speak(`${s.title}. ${s.text}`);
       const tgt = new THREE.Vector3(x, 0, z);
       // Approach: swing in and settle on the framing.
       controller.transitionTo(tgt, az - s.orbit * 0.5, s.pitch, s.dist, 4200);
@@ -172,12 +188,14 @@ export const TourGuide: React.FC<Props> = ({ controller, night, onNight, hidden 
     if (alive()) {
       // Finale: pull back to the whole city.
       setIdx(STOPS.length);
-      setCard({ kicker: 'Lucknow', title: 'The City of Nawabs', text: 'Old gateways, river parks and a metro running above the streets. Thank you for flying with us.' });
+      setCard(null); audio.current.hit(); setClouds((c) => c + 1);
+      setTitle({ big: 'LUCKNOW LENS', small: 'Muskuraiye, aap Lucknow mein hain' });
+      audio.current.speak('Old gateways, river parks and a metro over the streets. Smile, you are in Lucknow.');
       controller.transitionTo(new THREE.Vector3(-600, 0, 400), 0.9, 0.62, 24000, 7000);
       await wait(8500);
     }
     if (alive()) stop();
-  }, [controller, onNight, stop]);
+  }, [controller, onNight, stop, music, voice]);
 
   // The launcher lives beside the search bar (CityUI) and talks to the tour through this event.
   useEffect(() => {
@@ -193,6 +211,21 @@ export const TourGuide: React.FC<Props> = ({ controller, night, onNight, hidden 
     <>
       {running && (
         <>
+          {title && (
+            <div className="pointer-events-none absolute inset-0 z-[23] grid place-items-center bg-black/55 animate-[fadeIn_1.2s_ease-out]">
+              <div className="text-center">
+                <h1 className="text-[clamp(2rem,7.5vw,5.5rem)] leading-none tracking-[0.12em] px-4 text-[#f3e3c3] [text-shadow:0_6px_40px_rgba(0,0,0,.6)]" style={{ fontFamily: '"Rozha One", Georgia, serif' }}>{title.big}</h1>
+                <p className="mt-3 text-[clamp(0.9rem,2.2vw,1.3rem)] uppercase tracking-[0.4em] text-[#d8b66a]">{title.small}</p>
+              </div>
+            </div>
+          )}
+          {clouds > 0 && (
+            <div key={clouds} aria-hidden="true" className="tour-clouds pointer-events-none absolute inset-0 z-[22] overflow-hidden">
+              <div className="tour-cloud" style={{ top: '8%', left: '-60%', animationDelay: '0s' }} />
+              <div className="tour-cloud" style={{ top: '38%', left: '-70%', animationDelay: '.15s', transform: 'scale(1.4)' }} />
+              <div className="tour-cloud" style={{ top: '62%', left: '-65%', animationDelay: '.3s' }} />
+            </div>
+          )}
           <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 z-[21] h-[7vh] bg-black/80" />
           <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 z-[21] h-[7vh] bg-black/80" />
           <div
@@ -214,6 +247,8 @@ export const TourGuide: React.FC<Props> = ({ controller, night, onNight, hidden 
               <button onClick={() => { jumpRef.current = Math.max(0, idx - 1); }} aria-label="Previous stop" className="rounded-lg bg-white/10 px-2.5 py-1 text-[12px] font-semibold hover:bg-white/20">Back</button>
               <button onClick={() => { jumpRef.current = idx + 1; }} aria-label="Next stop" className="rounded-lg bg-white/10 px-2.5 py-1 text-[12px] font-semibold hover:bg-white/20">Next</button>
               <button onClick={() => setPaused((p) => !p)} className="rounded-lg bg-white/10 px-2.5 py-1 text-[12px] font-semibold hover:bg-white/20">{paused ? 'Resume' : 'Pause'}</button>
+              <button onClick={() => { const v = !music; setMusic(v); audio.current.setMusic(v); }} aria-pressed={music} className="rounded-lg bg-white/10 px-2.5 py-1 text-[12px] font-semibold hover:bg-white/20">{music ? 'Music on' : 'Music off'}</button>
+              <button onClick={() => { const v = !voice; setVoice(v); audio.current.setVoice(v); }} aria-pressed={voice} className="rounded-lg bg-white/10 px-2.5 py-1 text-[12px] font-semibold hover:bg-white/20">{voice ? 'Voice on' : 'Voice off'}</button>
               <button onClick={stop} className="rounded-lg bg-white/10 px-2.5 py-1 text-[12px] font-semibold hover:bg-white/20">End</button>
             </div>
           </div>

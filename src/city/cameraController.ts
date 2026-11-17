@@ -277,7 +277,8 @@ export class CameraController {
     const normalizedDelta = Math.sign(rawDelta) * Math.min(Math.abs(rawDelta), 120) / 120;
 
     // Base zoom rate per notch (doubled again to 3.20)
-    const baseZoomRate = 3.20;
+    // About 1.6x per wheel notch: fast scrolling stays smooth and does not outrun tile streaming.
+    const baseZoomRate = 0.6;
     const zoomRate = baseZoomRate * this.zoomResponsivenessMultiplier;
     
     // Zoom factor based on normalized delta
@@ -423,7 +424,12 @@ export class CameraController {
   }
 
 
+  private lastTick = 0;
   public update(time: number = performance.now()) {
+    // Frame-rate independent smoothing: the same feel at 30, 60 or 144 fps (low-end devices used to
+    // feel sluggish because damping was applied per frame).
+    const dt = this.lastTick ? Math.min(0.1, Math.max(0.001, (time - this.lastTick) / 1000)) : 1 / 60;
+    this.lastTick = time;
     if (this.presetActive) {
       const elapsed = time - this.presetStartTime;
       const progress = Math.min(elapsed / this.presetDuration, 1);
@@ -450,9 +456,10 @@ export class CameraController {
       // Damping
       // Base damping factor is 0.15. Adjust with move multiplier for pan/rotate, and zoom multiplier for distance
       // Clamp to max 1.0 to prevent physics explosion
-      const baseDamping = 0.15;
-      const tMoveDamp = Math.min(1.0, baseDamping * this.moveResponsivenessMultiplier);
-      const tZoomDamp = Math.min(1.0, baseDamping * this.zoomResponsivenessMultiplier);
+      const baseDamping = 0.12;
+      const k60 = dt * 60;
+      const tMoveDamp = 1 - Math.pow(1 - Math.min(0.95, baseDamping * this.moveResponsivenessMultiplier), k60);
+      const tZoomDamp = 1 - Math.pow(1 - Math.min(0.95, baseDamping * this.zoomResponsivenessMultiplier), k60);
       
       this.target.lerp(this.destTarget, tMoveDamp);
       this.azimuth += (this.destAzimuth - this.azimuth) * tMoveDamp;

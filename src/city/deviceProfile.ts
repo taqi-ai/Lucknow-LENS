@@ -69,7 +69,8 @@ function detectQuality(tier: DeviceTier, gpu: string): QualityTier {
   if (tier === 'low') return 'low';
   if (tier === 'mobile') return 'medium';
   // Integrated / software GPUs get the medium budget on desktop.
-  if (/intel|uhd|iris|swiftshader|llvmpipe|microsoft basic|mali|adreno|apple m1(?! (pro|max|ultra))/i.test(gpu)) return 'medium';
+  if (/swiftshader|llvmpipe|softpipe|microsoft basic/i.test(gpu)) return 'low';
+  if (/intel|uhd|iris|mali|adreno|apple m1(?! (pro|max|ultra))/i.test(gpu)) return 'medium';
   return 'high';
 }
 
@@ -104,8 +105,14 @@ function detectTier(): { tier: DeviceTier; isTouch: boolean } {
 }
 
 function build(): DeviceProfile {
-  const { tier, isTouch } = detectTier();
+  const det = detectTier();
   const gpu = typeof document !== 'undefined' ? detectGpu() : 'unknown';
+  const isTouch = det.isTouch;
+  const memGB = (typeof navigator !== 'undefined' && (navigator as { deviceMemory?: number }).deviceMemory) || 0;
+  // No real GPU (software rasteriser), or a laptop with <= 4 GB: the low budget keeps it smooth.
+  const software = /swiftshader|llvmpipe|softpipe|microsoft basic|software/i.test(gpu);
+  const forced = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('quality') : null;
+  const tier: DeviceTier = forced ? det.tier : (software || (memGB > 0 && memGB <= 4 && !det.isTouch) ? 'low' : det.tier);
   const quality = detectQuality(tier, gpu);
   const q = { quality, gpu, ...QUALITY[quality] };
   const cores = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4;

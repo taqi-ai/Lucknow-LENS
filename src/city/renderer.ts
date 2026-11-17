@@ -67,6 +67,7 @@ export class CityRenderer {
     });
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(device.maxPixelRatio);
+    this.maxRatio = device.maxPixelRatio;
     this.renderer.shadowMap.enabled = false; // Shadows off by default — enabled adaptively at low altitude
     this.renderer.shadowMap.type = THREE.PCFShadowMap; // PCFSoft is deprecated in r185
     // Explicit colour management. Materials author colours in sRGB, lighting happens
@@ -283,8 +284,26 @@ export class CityRenderer {
       this.lastFpsTime = now;
     }
 
+    // Dynamic resolution: if frames get slow, render fewer pixels (down to 55% of the device's cap);
+    // recover when there is headroom. Checked every half second on a smoothed frame time.
+    const ft = now - (this.lastFrameAt || now);
+    this.lastFrameAt = now;
+    if (ft > 0 && ft < 250) this.ftEma = this.ftEma * 0.92 + ft * 0.08;
+    if (now - this.lastScaleAt > 500) {
+      this.lastScaleAt = now;
+      const cap = this.maxRatio;
+      let r = this.renderer.getPixelRatio();
+      if (this.ftEma > 26 && r > cap * 0.55) r = Math.max(cap * 0.55, r - 0.1);
+      else if (this.ftEma < 14 && r < cap) r = Math.min(cap, r + 0.05);
+      if (Math.abs(r - this.renderer.getPixelRatio()) > 0.01) this.renderer.setPixelRatio(r);
+    }
+
     this.renderer.render(this.scene, this.camera);
   }
+  private lastFrameAt = 0;
+  private lastScaleAt = 0;
+  private ftEma = 16;
+  private maxRatio = 1;
 
   public getRenderStats(): RenderStats {
     const info = this.renderer.info;

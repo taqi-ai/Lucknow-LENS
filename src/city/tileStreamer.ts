@@ -433,6 +433,7 @@ export class TileStreamer {
 
     if (streamRadius > 0 && this.manifest) {
       this.updateStreamedTiles(camera, lod, streamRadius);
+      this.warmCache(camera.position.x, camera.position.z, streamRadius);
     } else {
       this.retireAllStreamedTiles();
     }
@@ -493,7 +494,8 @@ export class TileStreamer {
   private updateStreamedTiles(camera: THREE.PerspectiveCamera, lod: LODLevel, radius: number): void {
     const camX = camera.position.x;
     const camZ = camera.position.z;
-    const unloadRadius = radius * 1.5;
+    // Keep loaded tiles well beyond the stream radius so zooming out and back in never reloads them.
+    const unloadRadius = radius * (getDeviceProfile().tier === 'low' ? 1.6 : 2.4);
 
     // Look-ahead point: where the camera will be in ~1.5 s. Tiles near it score
     // better, so flying forward preloads forward instead of behind.
@@ -554,6 +556,26 @@ export class TileStreamer {
     }
     this.queue.push({ id: tile.id, tile, lod, score });
     this.queued.add(tile.id);
+  }
+
+  /** Idle prefetch: when nothing is queued, quietly fetch tile files around the camera into the HTTP
+   *  cache (no geometry is built), so panning and zooming find them already downloaded. */
+  private warmed = new Set<string>();
+  private lastWarm = 0;
+  private warmCache(cx: number, cz: number, radius: number): void {
+    if (!this.manifest || this.queue.length > 0 || this.pending.size > 0) return;
+    const now = performance.now();
+    if (now - this.lastWarm < 400) return;
+    this.lastWarm = now;
+    let n = 0;
+    const r = radius * (getDeviceProfile().tier === 'low' ? 1.3 : 1.9);
+    const near = this.manifest.tiles.filter((t) => !this.warmed.has(t.id) && !this.loadedTiles.has(t.id) && Math.hypot(t.center.x - cx, t.center.z - cz) < r)
+      .sort((a, b) => Math.hypot(a.center.x - cx, a.center.z - cz) - Math.hypot(b.center.x - cx, b.center.z - cz));
+    for (const t of near) {
+      if (n++ >= 4) break;
+      this.warmed.add(t.id);
+      fetch(`/overture_tiles_full/${t.id}.json`, { priority: 'low' } as RequestInit).catch(() => this.warmed.delete(t.id));
+    }
   }
 
   private pumpQueue(): void {

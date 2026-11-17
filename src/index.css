@@ -315,3 +315,10 @@ body, header, section, footer { transition: background-color .6s ease, color .6s
 }
 
 @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* Guided tour: a soft cloud bank sweeps across the screen at each scene change. */
+.tour-cloud { position: absolute; width: 160%; height: 42%; border-radius: 50%;
+  background: radial-gradient(ellipse 30% 55% at 25% 50%, rgba(255,255,255,.92), transparent 70%), radial-gradient(ellipse 34% 60% at 58% 45%, rgba(250,246,238,.9), transparent 70%), radial-gradient(ellipse 26% 50% at 86% 55%, rgba(255,255,255,.88), transparent 72%);
+  filter: blur(22px); animation: tour-cloud-pass 2.6s cubic-bezier(.55,.05,.35,1) forwards; opacity: 0; }
+@keyframes tour-cloud-pass { 0% { transform: translateX(0); opacity: 0; } 25% { opacity: .95; } 70% { opacity: .9; } 100% { transform: translateX(120%); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .tour-cloud { display: none; } }

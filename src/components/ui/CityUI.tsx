@@ -65,6 +65,12 @@ interface CityUIProps {
   onSetDestinationWaypoint?: (dest: RouteWaypoint) => void;
 }
 
+const QUICK = [
+  { id: 'husainabad', label: 'Bara Imambara' }, { id: 'rumi_darwaza', label: 'Rumi Darwaza' }, { id: 'hazratganj', label: 'Hazratganj' },
+  { id: 'charbagh', label: 'Charbagh' }, { id: 'ambedkar_park', label: 'Ambedkar Park' }, { id: 'janeshwar_park', label: 'Janeshwar' },
+  { id: 'ekana', label: 'Ekana' }, { id: 'vidhan_sabha', label: 'Vidhan Sabha' }, { id: 'ccs_airport', label: 'Airport' },
+];
+
 export const CityUI: React.FC<CityUIProps> = ({
   mapData,
   cameraController,
@@ -189,6 +195,13 @@ export const CityUI: React.FC<CityUIProps> = ({
             <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 1.5v11l9-5.5z" fill="currentColor" /></svg>
             <span>Guided tour</span>
           </button>
+          {/* Quick fly-to chips: one tap flies to a highlight. */}
+          <div className="pointer-events-auto flex max-w-[300px] gap-1.5 overflow-x-auto no-scrollbar pb-0.5" role="list" aria-label="Quick fly to">
+            {QUICK.map((q) => (
+              <button key={q.id} role="listitem" onClick={() => onCameraSignal(`dest:${q.id}` as CameraPreset)}
+                className="glass-panel flex-shrink-0 rounded-full px-3 py-1.5 text-[11.5px] font-semibold text-paper/85 hover:text-paper">{q.label}</button>
+            ))}
+          </div>
           {searchOpen && (
             <div className={`${compact ? 'w-[calc(100vw-5.5rem)]' : 'w-[300px]'} -mt-[52px] ml-[52px]`}>
               <SearchUI mapData={mapData} onSelectResult={(r) => { handleSearchResultClick(r); setSearchOpen(false); }} onSetDestinationWaypoint={onSetDestinationWaypoint} />
@@ -222,6 +235,13 @@ export const CityUI: React.FC<CityUIProps> = ({
             Guided tour of Lucknow
           </button>
         </div>
+        {/* Quick fly-to chips: one tap flies to a highlight. */}
+          <div className="pointer-events-auto flex max-w-[300px] gap-1.5 overflow-x-auto no-scrollbar pb-0.5" role="list" aria-label="Quick fly to">
+            {QUICK.map((q) => (
+              <button key={q.id} role="listitem" onClick={() => onCameraSignal(`dest:${q.id}` as CameraPreset)}
+                className="glass-panel flex-shrink-0 rounded-full px-3 py-1.5 text-[11.5px] font-semibold text-paper/85 hover:text-paper">{q.label}</button>
+            ))}
+          </div>
         {selectedEntity && (
           <div className="pointer-events-auto">
             <InfoPanel entity={selectedEntity} onClose={() => onSelectEntity(null)} onSetDestinationWaypoint={onSetDestinationWaypoint} />

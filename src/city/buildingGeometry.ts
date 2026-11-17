@@ -556,6 +556,12 @@ export function emitDetail(sink: VertexSink, p: Prepared, ox: number, oz: number
     const balcony = (p.typ === TYPOLOGY.PLANNED || p.typ === TYPOLOGY.APARTMENT) && r() < 0.75;
     const chhajja = r() < (p.typ === TYPOLOGY.OLD_CITY ? 0.75 : 0.55);
     const awning = p.typ === TYPOLOGY.MARKET;
+    // District character (round 3): Hazratganj market frontage gets a real colonnade (arcade slab on
+    // square columns); Aminabad and Chowk market/old-city buildings get deeper chhajjas, jharokha
+    // balconies and more signboards.
+    const inGanj = p.typ === TYPOLOGY.MARKET && Math.hypot(p.cx + 420, p.cz - 340) < 420;
+    const inBazaar = (p.typ === TYPOLOGY.MARKET || p.typ === TYPOLOGY.OLD_CITY)
+      && (Math.hypot(p.cx + 2340, p.cz - 300) < 450 || Math.hypot(p.cx + 4000, p.cz + 1800) < 650);
     let edges = 0;
     for (let i = 0; i < ring.length && edges < 4; i++) {
       const a = ring[i], b = ring[(i + 1) % ring.length];
@@ -586,7 +592,21 @@ export function emitDetail(sink: VertexSink, p: Prepared, ox: number, oz: number
       };
       for (let f = 0; f < Math.min(p.floors, 14); f++) {
         const yb = p.minH + f * fh;
-        if (awning && f === 0) slab(yb + 2.9, 1.1, 0.2, len - 0.2, 0.08, SURFACE.METAL);
+        if (inGanj && f === 0 && len > 6) {
+          // Colonnade: 3 m deep arcade roof with square columns every 3.6 m.
+          slab(yb + 3.6, 3.0, 0, len, 0.35, SURFACE.STONE);
+          for (let t = 0.6; t < len - 0.3; t += 3.6) {
+            const cx = a.x + ux * t + nx * 2.8 * s, cz = a.z + uz * t + nz * 2.8 * s, w = 0.22;
+            for (const [ax, az, bx, bz] of [[cx - ux * w - nx * w, cz - uz * w - nz * w, cx + ux * w - nx * w, cz + uz * w - nz * w], [cx + ux * w - nx * w, cz + uz * w - nz * w, cx + ux * w + nx * w, cz + uz * w + nz * w], [cx + ux * w + nx * w, cz + uz * w + nz * w, cx - ux * w + nx * w, cz - uz * w + nz * w], [cx - ux * w + nx * w, cz - uz * w + nz * w, cx - ux * w - nx * w, cz - uz * w - nz * w]])
+              e.wall(ax, az, bx, bz, yb, yb + 3.6, 10, 14, SURFACE.STONE);
+          }
+        } else if (awning && f === 0) slab(yb + 2.9, inBazaar ? 1.8 : 1.1, 0.2, len - 0.2, 0.08, SURFACE.METAL);
+        if (inBazaar && f >= 1 && len > 5 && r() < 0.6) {
+          // Jharokha balcony: projecting box with a parapet.
+          const w = Math.min(len * 0.4, 3.6), t0 = (len - w) / 2;
+          slab(yb + 0.2, 1.0, t0, t0 + w, 0.15, SURFACE.SLAB);
+          slab(yb + fh * 0.85, 1.2, t0 - 0.2, t0 + w + 0.2, 0.12, SURFACE.SLAB);
+        }
         if (balcony && f >= 1 && len > 6) {
           const w = Math.min(len * 0.45, 5);
           const t0 = (len - w) / 2;

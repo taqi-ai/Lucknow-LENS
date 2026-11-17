@@ -36,8 +36,8 @@ export const ROAD_NIGHT: Record<RoadClass, number> = {
 
 /** Light-pool strength and spacing (m) by class at night. 0 = unlit. */
 const POOL: Record<RoadClass, [number, number]> = {
-  motorway: [1.0, 39], trunk: [0.95, 38], primary: [0.85, 36], secondary: [0.7, 34],
-  tertiary: [0.5, 47], residential: [0.28, 60], service: [0.15, 70], footway: [0.0, 1],
+  motorway: [0.62, 39], trunk: [0.58, 38], primary: [0.52, 36], secondary: [0.42, 34],
+  tertiary: [0.3, 47], residential: [0.16, 60], service: [0.08, 70], footway: [0.0, 1],
   railway: [0.0, 1], flyover: [0.42, 36],
 };
 
@@ -150,7 +150,7 @@ float dash(float v, float on, float period){ float f = fract(v / period) * perio
       float stretch = 0.40 + 0.95 * rn(vRoadW.xz * 0.0035);
       pool = mix(0.20 * stretch, along * (0.35 + 0.65 * across), resolve) * ${poolI.toFixed(2)};
     ` : ''}
-    totalEmissiveRadiance += vec3(1.0, 0.70, 0.38) * pool * uRoadNight * 0.55;
+    totalEmissiveRadiance += vec3(1.0, 0.66, 0.32) * pool * uRoadNight * 0.55;
   }
 `);
   };

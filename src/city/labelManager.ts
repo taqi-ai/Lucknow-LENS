@@ -78,6 +78,8 @@ export const DEFAULT_LABEL_SETTINGS: LabelSettings = {
 const DENSITY = { minimal: { count: 0.5, imp: 1 }, balanced: { count: 1, imp: 0 }, rich: { count: 1.8, imp: -1 } } as const;
 const SIZE = { small: 0.82, medium: 0.95, large: 1.15 } as const;
 const LANDMARK_TYPES = new Set(['landmark', 'monument', 'landmark_and_historical_building']);
+const CITY_LANDMARK = /imambara|darwaza|gate|masjid|mosque|mandir|temple|church|gurudwara|park|memorial|smarak|residency|station|junction|airport|stadium|tower|ghanta|kothi|manzil|maqbara|tomb|baradari|ghat|vidhan|bhawan|university|college|hospital|zoo|museum|gallery|palace|mahal|bridge|riverfront|chowk|bazaar|market|ganj/i;
+const NOT_LANDMARK = /institute|academy|coaching|classes|healthcare|clinic|office|dairy|oyo|hotel|residency inn|pvt|ltd|store|shop|services|consult/i;
 
 // ─── Canvas sprite factory ────────────────────────────────────────────────────
 
@@ -492,6 +494,9 @@ export class LabelManager {
       if (lod <= 1 && (p.type === 'shop' || p.type === 'business' || p.type === 'restaurant' || p.importance < 6)) {
          continue;
       }
+      // At city and district scale only genuine monuments and city landmarks may show: Overture
+      // tags coaching centres, dairies and hotels as "landmark" too (round 3 label clean-up).
+      if (lod <= 1 && (!CITY_LANDMARK.test(p.name) || NOT_LANDMARK.test(p.name))) continue;
       const dist = Math.hypot(p.x - camX, p.z - camZ);
       if (dist > cfg.visRadius) continue;
       const clean = cleanName(p.name);

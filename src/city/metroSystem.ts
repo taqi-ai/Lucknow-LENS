@@ -91,7 +91,7 @@ export class MetroSystem {
   public readonly group = new THREE.Group();
   private concreteMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0, side: THREE.DoubleSide });
   private steelMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.2, side: THREE.DoubleSide });
-  private tunnelMat = new THREE.MeshBasicMaterial({ color: 0xc23a2c, transparent: true, opacity: 0.35, depthWrite: false });
+  private tunnelMat = new THREE.MeshBasicMaterial({ color: 0xc23a2c, transparent: true, opacity: 0.14, depthWrite: false });
   private trainMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.35, emissive: 0x000000 });
   private trains: THREE.InstancedMesh | null = null;
   private routes: Array<{ pts: number[][]; s: number[]; total: number; speed: number; offset: number }> = [];

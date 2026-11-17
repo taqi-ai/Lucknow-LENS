@@ -1,26 +1,226 @@
 {
-  "_doc": "Landmark anchors for scripts/py/build_landmark_sites.py. building = Overture GERS id prefix; place = Overture place name (highest confidence record); xz = app-frame metres taken from a verified Overture place record (the place name is ambiguous); landuse = Overture land_use polygon name. precinct = [u0, u1, v0, v1] metres in the site frame (u along the anchoring footprint's longest edge): every Overture footprint whose centroid is inside is replaced by the model. Coordinates of the Bara Imambara complex agree with the NMA records (26.868447 N, 80.912708 E; Asafi Masjid 26.869550 N, 80.912222 E; Rumi Darwaza 26.871278 N, 80.912225 E) to within 25 m.",
-  "precincts": { "ambedkar": "Ambedkar Memorial Park", "janeshwar": "Janeshwar Mishra Park" },
-  "sites": [
-    { "key": "bara_imambara", "name": "Bara Imambara complex", "building": "d932d835", "precinct": [-118, 118, -262, 48], "height": 20 },
-    { "key": "rumi_darwaza", "name": "Rumi Darwaza", "building": "db8ea74a", "height": 18 },
-    { "key": "chhota_imambara", "name": "Chhota Imambara complex", "building": "5cc03349", "precinct": [-72, 72, -178, 34], "height": 30 },
-    { "key": "clock_tower", "name": "Husainabad Clock Tower", "building": "0c0f3b55", "height": 67 },
-    { "key": "satkhanda", "name": "Satkhanda", "xz": [-4373, -2772], "height": 24 },
-    { "key": "picture_gallery", "name": "Husainabad Picture Gallery", "xz": [-4221, -2794], "height": 12 },
-    { "key": "jama_masjid", "name": "Jama Masjid (Husainabad)", "building": "a3c2a24b", "height": 40 },
-    { "key": "residency", "name": "The Residency", "building": "279b1730", "height": 20 },
-    { "key": "chhatar_manzil", "name": "Chhatar Manzil", "xz": [-1788, -971], "height": 30 },
-    { "key": "safed_baradari", "name": "Safed Baradari, Qaiserbagh", "xz": [-1768, -254], "height": 14 },
-    { "key": "vidhan_sabha", "name": "Vidhan Bhavan", "building": "f52e243d", "height": 42 },
-    { "key": "charbagh", "name": "Charbagh Railway Station", "building": "b7ec50c3", "height": 26 },
-    { "key": "la_martiniere", "name": "La Martiniere (Constantia)", "building": "60114865", "height": 32 },
-    { "key": "dilkusha", "name": "Dilkusha Kothi", "xz": [392, 2112], "height": 16 },
-    { "key": "ambedkar_memorial", "name": "Ambedkar Memorial Park", "landuse": "Ambedkar Memorial Park", "height": 34 },
-    { "key": "taj_hotel", "name": "Taj Mahal Lucknow (hotel)", "xz": [2329, -181], "height": 26 },
-    { "key": "renaissance", "name": "Renaissance Lucknow Hotel", "xz": [2247, -272], "height": 58 },
-    { "key": "ekana", "name": "Ekana Cricket Stadium", "building": "dc04dd91", "height": 36 },
-    { "key": "janeshwar_flag", "name": "National flag, Janeshwar Mishra Park", "xz": [3837, 1738], "snap": false, "exclude": false, "size": 30 },
-    { "key": "dubagga_tv", "name": "Dubagga TV Tower (Doordarshan)", "xz": [-8373, -2609], "snap": true, "precinct": [-34, 34, -34, 34] }
-  ]
+ "_doc": "Landmark anchors for scripts/py/build_landmark_sites.py. building = Overture GERS id prefix; place = Overture place name (highest confidence record); xz = app-frame metres taken from a verified Overture place record (the place name is ambiguous); landuse = Overture land_use polygon name. precinct = [u0, u1, v0, v1] metres in the site frame (u along the anchoring footprint's longest edge): every Overture footprint whose centroid is inside is replaced by the model. Coordinates of the Bara Imambara complex agree with the NMA records (26.868447 N, 80.912708 E; Asafi Masjid 26.869550 N, 80.912222 E; Rumi Darwaza 26.871278 N, 80.912225 E) to within 25 m.",
+ "precincts": {
+  "ambedkar": "Ambedkar Memorial Park",
+  "janeshwar": "Janeshwar Mishra Park"
+ },
+ "sites": [
+  {
+   "key": "bara_imambara",
+   "name": "Bara Imambara complex",
+   "building": "d932d835",
+   "precinct": [
+    -118,
+    118,
+    -262,
+    48
+   ],
+   "height": 20
+  },
+  {
+   "key": "rumi_darwaza",
+   "name": "Rumi Darwaza",
+   "building": "db8ea74a",
+   "height": 18
+  },
+  {
+   "key": "chhota_imambara",
+   "name": "Chhota Imambara complex",
+   "building": "5cc03349",
+   "precinct": [
+    -72,
+    72,
+    -178,
+    34
+   ],
+   "height": 30
+  },
+  {
+   "key": "clock_tower",
+   "name": "Husainabad Clock Tower",
+   "building": "0c0f3b55",
+   "height": 67
+  },
+  {
+   "key": "satkhanda",
+   "name": "Satkhanda",
+   "xz": [
+    -4373,
+    -2772
+   ],
+   "height": 24
+  },
+  {
+   "key": "picture_gallery",
+   "name": "Husainabad Picture Gallery",
+   "xz": [
+    -4221,
+    -2794
+   ],
+   "height": 12
+  },
+  {
+   "key": "jama_masjid",
+   "name": "Jama Masjid (Husainabad)",
+   "building": "a3c2a24b",
+   "height": 40
+  },
+  {
+   "key": "residency",
+   "name": "The Residency",
+   "building": "279b1730",
+   "height": 20,
+   "angle": 0,
+   "precinct": [
+    -190,
+    190,
+    -170,
+    170
+   ],
+   "note": "Precinct covers the whole compound so the dense random canopy and unrelated buildings are removed; the compound is re-planted sparsely in landmarks.ts."
+  },
+  {
+   "key": "chhatar_manzil",
+   "name": "Chhatar Manzil",
+   "xz": [
+    -1788,
+    -971
+   ],
+   "height": 30
+  },
+  {
+   "key": "safed_baradari",
+   "name": "Safed Baradari, Qaiserbagh",
+   "xz": [
+    -1768,
+    -254
+   ],
+   "height": 14
+  },
+  {
+   "key": "vidhan_sabha",
+   "name": "Vidhan Bhavan",
+   "building": "f52e243d",
+   "height": 42
+  },
+  {
+   "key": "charbagh",
+   "name": "Charbagh Railway Station",
+   "building": "b7ec50c3",
+   "height": 26
+  },
+  {
+   "key": "la_martiniere",
+   "name": "La Martiniere (Constantia)",
+   "building": "60114865",
+   "height": 32
+  },
+  {
+   "key": "dilkusha",
+   "name": "Dilkusha Kothi",
+   "xz": [
+    392,
+    2112
+   ],
+   "height": 16
+  },
+  {
+   "key": "ambedkar_memorial",
+   "name": "Ambedkar Memorial Park",
+   "landuse": "Ambedkar Memorial Park",
+   "height": 34
+  },
+  {
+   "key": "taj_hotel",
+   "name": "Taj Mahal Lucknow (hotel)",
+   "xz": [
+    2329,
+    -181
+   ],
+   "height": 26
+  },
+  {
+   "key": "renaissance",
+   "name": "Renaissance Lucknow Hotel",
+   "xz": [
+    2247,
+    -272
+   ],
+   "height": 58
+  },
+  {
+   "key": "ekana",
+   "name": "Ekana Cricket Stadium",
+   "building": "dc04dd91",
+   "height": 36
+  },
+  {
+   "key": "janeshwar_flag",
+   "name": "National flag, Janeshwar Mishra Park",
+   "xz": [
+    3837,
+    1738
+   ],
+   "snap": false,
+   "exclude": false,
+   "size": 30
+  },
+  {
+   "key": "dubagga_tv",
+   "name": "Dubagga TV Tower (Doordarshan)",
+   "xz": [
+    -8373,
+    -2609
+   ],
+   "snap": true,
+   "precinct": [
+    -34,
+    34,
+    -34,
+    34
+   ]
+  },
+  {
+   "key": "teele_wali_masjid",
+   "name": "Teele Wali Masjid",
+   "xz": [
+    -3567.5,
+    -2429.7
+   ],
+   "snap": false,
+   "angle": 3.14159,
+   "precinct": [
+    -80,
+    45,
+    -62,
+    62
+   ],
+   "height": 30,
+   "note": "User-placed pins 1-3 (three domes), local pin tool, 2026-11-17. Footprint and facing are approximate (read from the satellite and oblique photos). Rotated 180 deg (hall faces east); precinct widened to remove the incorrect buildings; domes evenly spaced about pin 1."
+  },
+  {
+   "key": "teele_gate_east",
+   "name": "Teele Wali Masjid east gate",
+   "xz": [
+    -3418.3,
+    -2385.2
+   ],
+   "snap": false,
+   "angle": 1.5708,
+   "size": 34,
+   "note": "User pin 4 (outer gate)."
+  },
+  {
+   "key": "gate_north_of_bara",
+   "name": "Gateway near Bara Imambara court",
+   "xz": [
+    -3596.4,
+    -2346.5
+   ],
+   "snap": false,
+   "angle": 0.3147,
+   "size": 42,
+   "note": "User pin 5 (gate like the Bara Imambara outer gate)."
+  }
+ ]
 }

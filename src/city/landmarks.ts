@@ -294,6 +294,19 @@ class Grounds {
 // Builders
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Monumental gateway block (triple arches, merlons, corner turrets). `du` shifts it along u. */
+function gateBlock(k: Kit, du: number, v: number, h: number, gallery: boolean, hw = 24): void {
+  const a = du - hw, b = du + hw, cu = hw * 0.625;
+  k.box(a, b, 0, h, v - 6, v + 6, S.LIME);
+  k.arcade('v0', v - 6, du - 6, du + 6, 0, 9, h - 3, 1, S.GLASS, true); k.arcade('v1', v + 6, du - 6, du + 6, 0, 9, h - 3, 1, S.GLASS, true);
+  for (const sgn of [-1, 1]) { k.arcade('v0', v - 6, du + sgn * cu - 6, du + sgn * cu + 6, 1, 3.4, 6.4, 1); k.arcade('v1', v + 6, du + sgn * cu - 6, du + sgn * cu + 6, 1, 3.4, 6.4, 1); }
+  if (gallery) { k.box(a + 4, b - 4, h, h + 5, v - 5, v + 5, S.LIME); k.arcade('v0', v - 5, a + 6, b - 6, h + 0.6, 1.8, 3.6, 9); k.arcade('v1', v + 5, a + 6, b - 6, h + 0.6, 1.8, 3.6, 9); }
+  const top = gallery ? h + 5 : h;
+  k.merlons(a, b, v - 6, v + 6, top);
+  for (const su of [a + 3, b - 3]) { k.cylinder(su, v, 2.2, 1.8, 0, top + 4, 8, S.LIME); k.chhatri(su, v, 3, top + 4); }
+  k.chhatri(du, v, 3.2, top);
+}
+
 function baraImambara(k: Kit, g: Grounds, s: LandmarkSite): void {
   // Site frame: u along the hall's long axis (~east), v toward the south. The hall stands at
   // the south end; the courts, the Asafi Masjid (west, facing east), the Shahi Baoli (east)
@@ -328,7 +341,7 @@ function baraImambara(k: Kit, g: Grounds, s: LandmarkSite): void {
   for (let u = -40; u <= 40; u += 10) { g.tree(u, -255, 7, false, seed++); }
   // Long arcaded galleries with small domed kiosks flank the circular court along the north wall.
   for (const sg of [-1, 1]) {
-    const u0 = sg > 0 ? 36 : -106, u1 = sg > 0 ? 106 : -36;
+    const u0 = sg > 0 ? 36 : -106, u1 = sg > 0 ? 106 : -72;
     k.box(u0, u1, 0, 5.5, -262, -250, S.LIME);
     k.arcade('v1', -250, u0 + 1, u1 - 1, 0.5, 2.2, 3.8, Math.round((u1 - u0) / 5));
     k.merlons(u0, u1, -262, -250, 5.5);
@@ -340,23 +353,16 @@ function baraImambara(k: Kit, g: Grounds, s: LandmarkSite): void {
   // A residential lane crosses the east wall near v=-64 (Overture road); leave it open, no wall over a road.
   k.box(114, 116, 0, wallH, -260, -78, S.LIME); k.box(114, 116, 0, wallH, -52, 46, S.LIME);
   k.box(-116, 116, 0, wallH, 44, 46, S.LIME);
-  for (const [u0, u1] of [[-116, -24], [24, 116]]) { k.box(u0, u1, 0, wallH, -260, -258, S.LIME); k.box(u0, u1, 0, wallH, -214, -212, S.LIME); }
+  for (const [u0, u1] of [[-116, -68], [-20, 116]]) k.box(u0, u1, 0, wallH, -260, -258, S.LIME);
+  for (const [u0, u1] of [[-116, -24], [24, 116]]) k.box(u0, u1, 0, wallH, -214, -212, S.LIME);
   k.merlons(-116, 116, -260, 46, wallH);
   // Gateways, per the NMA plan labels: FIRST triple gateway (carries the Naqqar/Naubat Khana
   // gallery) and SECOND triple gateway, giving three forecourts. Rumi Darwaza is the separate
   // external gate on the public road (rumiDarwaza()), not one of these.
-  const gate = (v: number, h: number, gallery: boolean) => {
-    k.box(-24, 24, 0, h, v - 6, v + 6, S.LIME);
-    k.arcade('v0', v - 6, -6, 6, 0, 9, h - 3, 1, S.GLASS, true); k.arcade('v1', v + 6, -6, 6, 0, 9, h - 3, 1, S.GLASS, true);
-    for (const sgn of [-1, 1]) { k.arcade('v0', v - 6, sgn * 15 - 6, sgn * 15 + 6, 1, 3.4, 6.4, 1); k.arcade('v1', v + 6, sgn * 15 - 6, sgn * 15 + 6, 1, 3.4, 6.4, 1); }
-    if (gallery) { k.box(-20, 20, h, h + 5, v - 5, v + 5, S.LIME); k.arcade('v0', v - 5, -18, 18, h + 0.6, 1.8, 3.6, 9); k.arcade('v1', v + 5, -18, 18, h + 0.6, 1.8, 3.6, 9); }
-    const top = gallery ? h + 5 : h;
-    k.merlons(-24, 24, v - 6, v + 6, top);
-    for (const su of [-21, 21]) { k.cylinder(su, v, 2.2, 1.8, 0, top + 4, 8, S.LIME); k.chhatri(su, v, 3, top + 4); }
-    k.chhatri(0, v, 3.2, top);
-  };
-  gate(-259, 15, true);
-  gate(-213, 13, false);
+  // Outer gate (with the Naubat Khana gallery) stands where the user pinned it: 44 m west of the
+  // compound axis. The second gateway keeps the axis.
+  gateBlock(k, -44, -259, 15, true);
+  gateBlock(k, 0, -213, 13, false);
   // Raised platform, steps and the main hall.
   k.box(-66, 66, 0, 2.4, -26, 34, S.LIME);
   for (let i = 0; i < 4; i++) k.box(-22, 22, 0, 2.4 - i * 0.6, -26 - (i + 1) * 0.9, -26 - i * 0.9, S.LIME);
@@ -394,6 +400,39 @@ function baraImambara(k: Kit, g: Grounds, s: LandmarkSite): void {
   k.arcadeAll(bu - 17, bu + 17, bv - 17, bv + 17, 0.4, 2.6, 5.5, 4.2);
   for (let i = 0; i < 5; i++) { const r = 11 - i * 2; g.color(i % 2 ? C.paveSand : C.paveGrey).rect(bu - r, bu + r, bv - r, bv + r, 7.55 - i * 1.4); }
   g.color(C.waterDeep).rect(bu - 2.5, bu + 2.5, bv - 2.5, bv + 2.5, 1.2);
+}
+
+/**
+ * Teele Wali Masjid, from the user's pins and photographs: three WHITE domes in a row (the middle one
+ * larger), two tall white minarets at the ends, an arched west facade, and a large red-paved
+ * platform with red-edged walls and steps running west of the hall. Site frame: u east, v south,
+ * hall facing west. Dimensions are estimates from the oblique photo, not a survey.
+ */
+function teeleWaliMasjid(k: Kit, g: Grounds, s: LandmarkSite): void {
+  k.begin(s, 30, 131); g.frame(s);
+  const RED = 0xb0553f, PAVE = 0xb87764, LIGHT = 0xc9bba4;
+  // Platform and approach.
+  g.color(LIGHT).rect(-76, 14, -30, 30, 0.08);
+  k.box(-66, -8, 0, 2.2, -25, 25, S.REDSTONE, S.REDSTONE);
+  g.color(PAVE).rect(-66, -8, -25, 25, 2.25);
+  g.color(RED).rect(-66, -62, -25, 25, 2.3); g.color(RED).rect(-66, -8, -25, -23.5, 2.3); g.color(RED).rect(-66, -8, 23.5, 25, 2.3);
+  for (let i = 0; i < 6; i++) k.box(-66 - (i + 1) * 0.9, -66 - i * 0.9, 0, 2.2 - (i + 1) * 0.36, -9, 9, S.REDSTONE);   // west steps
+  // Ablution tank and two small kiosks on the platform, as in the photograph.
+  g.color(0x6c8890).rect(-36, -24, -6, 6, 2.32);
+  for (const v of [-18, 18]) { k.box(-60, -55, 2.2, 5.5, v - 2.5, v + 2.5, S.LIME); k.hemi(-57.5, v, 2.6, 5.5, S.DOME, 0.9); }
+  // Prayer hall.
+  k.box(-8, 8, 2.2, 12, -21, 21, S.DOME);
+  k.arcade('u0', -8, -19, 19, 2.6, 2.9, 6.8, 7, S.GLASS, true);
+  k.merlons(-8, 8, -21, 21, 12, S.DOME);
+  // Three domes, evenly spaced (12.6 m) about the middle dome (user pin 1); the side domes are not
+  // taken from pins 2 and 3, which were only approximate.
+  for (const [v, r, hgt] of [[0, 5.6, 8.4], [12.6, 3.9, 6.2], [-12.6, 3.9, 6.2]] as Array<[number, number, number]>) {
+    k.cylinder(0, v, r * 0.92, r * 0.92, 12, 13.6, 18, S.DOME);
+    k.onion(0, v, r, 13.6, hgt, S.DOME, 0.28);
+  }
+  // Two tall minarets at the ends of the facade with chhatri crowns.
+  for (const v of [-22.5, 22.5]) { k.minaret(-6, v, 1.5, 30, 4, S.DOME, 2.2); k.chhatri(-6, v, 3.4, 30, S.DOME); }
+  for (const v of [-21, 21]) k.chhatri(6, v, 2.6, 12, S.DOME);
 }
 
 function chhotaImambara(k: Kit, g: Grounds, s: LandmarkSite): void {
@@ -913,18 +952,81 @@ function clockTower(k: Kit, s: LandmarkSite): void {
   for (const [u, v] of [[-4.2, -4.2], [4.2, -4.2], [4.2, 4.2], [-4.2, 4.2]]) k.cylinder(u, v, 0.55, 0.1, 56, 60, 6, S.REDSTONE);
 }
 
+/**
+ * The Residency (round 3), after the user's satellite and ground photographs. Site frame: u east,
+ * v south (north up as in the satellite view), origin at the Overture building. A walled compound of
+ * ROOFLESS brick ruins (broken parapets, arched openings, partition walls), the round Residency tower
+ * with its turret, the Banqueting Hall facade, Begum Kothi, the 1857 Memorial Museum, brick paths,
+ * open lawn and a sparse planting of mature trees, so the ruins stay visible. Block positions are read
+ * by eye from the satellite view (about 3 px per metre) and are approximate.
+ */
 function residency(k: Kit, s: LandmarkSite): void {
-  k.begin(s, 20, 71);
-  k.box(-10, 10, 0, 5, -9, 9, S.REDSTONE);
-  const tops = [13.5, 11.8, 14.2, 9.6, 12.9, 10.8];
-  for (let i = 0; i < 6; i++) {
-    const u0 = -10 + (20 * i) / 6, u1 = u0 + 20 / 6;
-    k.box(u0, u1, 5, tops[i], -9, -7.6, S.REDSTONE); k.box(u0, u1, 5, tops[(i + 2) % 6] - 1, 7.6, 9, S.REDSTONE);
-  }
-  k.box(-10, -8.6, 5, 12.5, -9, 9, S.REDSTONE); k.box(8.6, 10, 5, 11.2, -9, 9, S.REDSTONE);
-  for (const f of ['v0', 'v1'] as const) { const at = f === 'v0' ? -9 : 9; k.arcade(f, at, -9, 9, 0.6, 1.8, 3.6, 6); k.arcade(f, at, -9, 9, 5.6, 1.4, 3.0, 6); }
-  k.box(6, 10, 0, 19.5, 5, 9, S.REDSTONE); k.box(6.6, 9.4, 19.5, 20.6, 5.6, 8.4, S.REDSTONE);
+  k.begin(s, 26, 71);
+  const BR = S.REDSTONE;
+  const ruin = (u0: number, u1: number, v0: number, v1: number, h: number, seed: number, rooms: number): void => {
+    const rnd = (i: number): number => { const x = Math.sin((seed + i) * 12.9898) * 43758.5453; return x - Math.floor(x); };
+    const T = 1.1;
+    // Four outer walls, built in segments with broken, uneven tops and arched openings.
+    const wall = (a0: number, a1: number, b0: number, b1: number, along: 'u' | 'v'): void => {
+      const len = along === 'u' ? a1 - a0 : b1 - b0, n = Math.max(2, Math.round(len / 4.2));
+      for (let i = 0; i < n; i++) {
+        const t0 = i / n, t1 = (i + 1) / n;
+        const hh = h * (0.55 + 0.45 * rnd(i * 3 + (along === 'u' ? 1 : 7)));
+        if (along === 'u') k.box(a0 + len * t0, a0 + len * t1 - 0.6, 0, hh, b0, b0 + T, BR);
+        else k.box(a0, a0 + T, 0, hh, b0 + len * t0, b0 + len * t1 - 0.6, BR);
+      }
+    };
+    wall(u0, u1, v0, v0 + T, 'u'); wall(u0, u1, v1 - T, v1, 'u');
+    wall(u0, u0 + T, v0, v1, 'v'); wall(u1 - T, u1, v0, v1, 'v');
+    k.arcade('v0', v0, u0 + 2, u1 - 2, 0.4, 2.0, h * 0.6, Math.max(2, Math.round((u1 - u0) / 5.5)), S.GLASS);
+    k.arcade('v1', v1, u0 + 2, u1 - 2, 0.4, 2.0, h * 0.6, Math.max(2, Math.round((u1 - u0) / 5.5)), S.GLASS);
+    // Partition walls make the room grid visible from above.
+    for (let r = 1; r < rooms; r++) { const u = u0 + ((u1 - u0) * r) / rooms; k.box(u - 0.4, u + 0.4, 0, h * (0.35 + 0.3 * rnd(r * 11)), v0 + T, v1 - T, BR); }
+    const mid = (v0 + v1) / 2; k.box(u0 + T, u1 - T, 0, h * 0.4, mid - 0.4, mid + 0.4, BR);
+  };
+  // Main Residency (centre-north), long ruin with a second court, and the round tower at its NW corner.
+  ruin(-22, 34, -62, -22, 15, 1, 7);
+  ruin(34, 56, -58, -30, 9, 21, 3);
+  k.cylinder(-22, -62, 4.2, 3.6, 0, 20, 14, BR); k.cylinder(-22, -62, 4.7, 4.7, 17, 18.2, 14, BR);
+  k.merlons(-26.6, -17.4, -66.6, -57.4, 20, BR);
+  k.cylinder(-24.4, -64.2, 1.9, 1.7, 20, 25.5, 10, BR); k.chhatri(-24.4, -64.2, 3.2, 25.5, S.STONE);
+  // Banqueting Hall: a long arched facade with tall openings (south-west of the main block).
+  ruin(-8, 26, 22, 44, 11, 33, 5);
+  k.arcade('v1', 44, -6, 24, 0.4, 3.0, 8.0, 6, S.GLASS, true);
+  // Eastern rooms (satellite: two adjacent walled enclosures), Treasury and Dr Fayrer's House.
+  ruin(70, 112, -8, 28, 8, 41, 4);
+  ruin(-12, 14, 78, 120, 8, 55, 3);
+  ruin(30, 66, 88, 124, 8, 61, 4);
+  // Begum Kothi (west) and the Memorial Museum (north-west): a roofed hall with a veranda.
+  ruin(-150, -122, 62, 94, 9, 71, 3);
+  k.box(-168, -128, 0, 6, -108, -84, S.DOME);
+  k.arcade('v1', -84, -166, -130, 0.5, 2.2, 4.0, 7, S.GLASS); k.merlons(-168, -128, -108, -84, 6, S.DOME);
+  k.hemi(-148, -96, 4.5, 6, S.DOME, 0.8);
+  // North-west ruin cluster.
+  ruin(-120, -78, -150, -118, 9, 81, 4);
 }
+
+function residencyGrounds(g: Grounds, k: Kit): void {
+  const PAVE = 0xb9a989, DUST = 0x8e9158, LAWN = 0x6f8a45, ORCH = 0x56703a, BRICK = 0xa2604a;
+  g.color(DUST).rect(-190, 190, -170, 170, 0.07);
+  // Open lawns around the ruins, as in the photographs.
+  for (const [u0, u1, v0, v1] of [[-100, -30, -30, 50], [-60, 20, 50, 90], [60, 130, -80, -20], [-190, -130, -60, 30]] as Array<[number, number, number, number]>) g.color(LAWN).rect(u0, u1, v0, v1, 0.1);
+  g.color(0x6a7a48).rect(-150, -110, -20, 4, 0.11);                         // damp lawn patch
+  // Brick-red perimeter path and the winding approach road from the south-west.
+  for (const [u0, u1, v0, v1] of [[-190, 190, 160, 164], [-190, 190, -170, -166], [-190, -186, -170, 170], [186, 190, -170, 170]] as Array<[number, number, number, number]>) g.color(BRICK).rect(u0, u1, v0, v1, 0.12);
+  g.color(PAVE).rect(-190, 190, 6, 14, 0.12); g.color(PAVE).rect(18, 26, -170, 160, 0.12);
+  // Terraced orchard in the south-east corner (rows of small trees).
+  g.color(ORCH).rect(110, 170, 70, 130, 0.12);
+  for (let u = 114; u < 168; u += 8) for (let v = 74; v < 128; v += 8) g.tree(u, v, 3.2, false, 900 + u * 3 + v);
+  // Sparse mature trees: groups on the lawns and along the paths, never over the ruins.
+  let seed = 31;
+  const clump = (cu: number, cv: number, n: number, rad: number): void => { for (let i = 0; i < n; i++) { const a = i * 2.399, r = rad * Math.sqrt((i + 0.5) / n); g.tree(cu + Math.cos(a) * r, cv + Math.sin(a) * r, 9 + (i % 4) * 2, false, seed++); } };
+  clump(-60, 8, 7, 18); clump(80, -50, 6, 16); clump(-165, -20, 6, 14); clump(-40, 120, 7, 20); clump(150, -120, 8, 24); clump(-130, 130, 6, 20); clump(40, 150, 5, 14);
+  for (let u = -180; u < 180; u += 14) { g.tree(u, 156, 8, false, seed++); g.tree(u, -162, 8, false, seed++); }
+  void k;
+}
+
+
 
 function vidhanSabha(k: Kit, s: LandmarkSite): void {
   k.begin(s, 42, 89);
@@ -1002,8 +1104,11 @@ function buildAll(k: Kit, g: Grounds): { flag?: WavingFlag } {
   const b = site('bara_imambara'); if (b) baraImambara(k, g, b);
   const r = site('rumi_darwaza'); if (r) rumiDarwaza(k, r);
   const ch = site('chhota_imambara'); if (ch) chhotaImambara(k, g, ch);
+  const tw = site('teele_wali_masjid'); if (tw) teeleWaliMasjid(k, g, tw);
+  const tge = site('teele_gate_east'); if (tge) { k.begin(tge, 18, 133); gateBlock(k, 0, 0, 12, false, 17); }
+  const tgn = site('gate_north_of_bara'); if (tgn) { k.begin(tgn, 20, 137); gateBlock(k, 0, 0, 14, true, 20); }
   const ct = site('clock_tower'); if (ct) clockTower(k, ct);
-  const re = site('residency'); if (re) residency(k, re);
+  const re = site('residency'); if (re) { residency(k, re); g.frame(re); residencyGrounds(g, k); }
   const vs = site('vidhan_sabha'); if (vs) vidhanSabha(k, vs);
   const am = site('ambedkar_memorial'); if (am) ambedkarMemorial(k, g, am);
   const sk = site('satkhanda');
@@ -1016,10 +1121,10 @@ function buildAll(k: Kit, g: Grounds): { flag?: WavingFlag } {
     }
     k.merlons(-3.8, 3.8, -3.8, 3.8, 24, S.STONE);
   }
-  // Husainabad Talab (beside the Picture Gallery): a dry octagonal LAWN, not water, with a stone
+  // [disabled: the user confirmed this is a pond] Husainabad Talab lawn, not water, with a stone
   // surround, three steps and a pale pitch strip, after the satellite reference. (Overture maps it as
   // a reservoir; that polygon is removed in data/overrides/water_overrides.geojson.)
-  {
+  if (false as boolean) {
     const oct = (cx: number, cz: number, r: number, rot: number): number[][] => Array.from({ length: 8 }, (_, i) => {
       const a = rot + (i / 8) * Math.PI * 2 + Math.PI / 8; return [cx + Math.cos(a) * r, cz + Math.sin(a) * r];
     });

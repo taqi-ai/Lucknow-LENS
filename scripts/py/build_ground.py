@@ -224,6 +224,17 @@ def main():
     cls[stale & near] = 13
     cls[stale & ~near] = 7
     cls[water] = 6
+    # Tree clearings (data/overrides/tree_clearings.json): patches of bare, dusty ground inside woodland.
+    ovr = os.path.join(ROOT, 'data', 'overrides', 'tree_clearings.json') if 'ROOT' in globals() else os.path.join(os.getcwd(), 'data', 'overrides', 'tree_clearings.json')
+    if os.path.exists(ovr):
+        gyy, gxx = np.mgrid[0:N, 0:N].astype(np.float32)
+        wx = X0 + (gxx + 0.5) * CELL; wz = Z0 + (gyy + 0.5) * CELL
+        patch = value_noise(7, 5)
+        for c in json.load(open(ovr, encoding='utf8')).get('circles', []):
+            d = np.hypot(wx - c['x'], wz - c['z'])
+            inside = (d < c['r']) & ((cls == 2) | (cls == 8) | (cls == 4) | (cls == 3) | (cls == 12))
+            bare = inside & (patch < c.get('bare', 0.6) * (1.15 - d / c['r'] * 0.6))
+            cls[bare] = 0
     # WorldCover water stays water too (seasonal channel); bare/sand next to water = sand bank.
     near_water = box_blur(water.astype(np.float32), 18) > 0.02  # ~200 m
     cls[(cls == 0) & near_water] = 13

@@ -579,7 +579,14 @@ export function buildOverlay(src: OverlaySource): OverlayBuild {
   // blue patches. Genuine rivers, canals, lakes, reservoirs and ponds remain.
   const NOT_OPEN_WATER = new Set(['wastewater', 'basin']);
   const waterways = (src.waterways ?? []).filter((w) => !(w as { cls?: string }).cls || !NOT_OPEN_WATER.has((w as { cls?: string }).cls!));
-  const greenAreas = src.greenAreas ?? [];
+  // Tree clearings (data/overrides/tree_clearings.json, mirrored here): a park whose centroid lies in
+  // a clearing is open dusty ground in the satellite view, not lawn, so it is not painted green.
+  const CLEARINGS = [{ x: -4176, z: -2675, r: 150 }, { x: -4150, z: -2745, r: 120 }];
+  const greenAreas = (src.greenAreas ?? []).filter((a) => {
+    const p = a?.points; if (!p || p.length < 3) return true;
+    const cx = p.reduce((m, q) => m + q.x, 0) / p.length, cz = p.reduce((m, q) => m + q.z, 0) / p.length;
+    return !CLEARINGS.some((c) => Math.hypot(cx - c.x, cz - c.z) < c.r);
+  });
 
   // ── Elevation ────────────────────────────────────────────────────────────
   // Real Overture level / isElevated drives a ramp-hold-ramp profile per feature.

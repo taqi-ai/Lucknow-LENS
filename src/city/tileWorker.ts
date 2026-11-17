@@ -240,8 +240,13 @@ self.onmessage = async (e: MessageEvent<TileWorkerRequest>) => {
     const bldgList: BuildingInput[] = src?.buildings || [];
     const roadList: RoadIn[] = src?.roads || [];
     const waterList: AreaIn[] = (data.lod2?.waterways || data.lod1?.waterways || []).filter((w: any) => w.isPolygon);
-    const parkList: AreaIn[] = data.lod2?.greenAreas || data.lod1?.greenAreas || [];
-    const treeList: Array<{ x: number; y: number; z: number; scale: number; k?: number }> = data.lod2?.trees || [];
+    const CLEARINGS = [{ x: -4176, z: -2675, r: 150 }, { x: -4150, z: -2745, r: 120 }]; // data/overrides/tree_clearings.json
+    const parkList: AreaIn[] = ((data.lod2?.greenAreas || data.lod1?.greenAreas || []) as AreaIn[]).filter((a) => {
+      const pts = a.points; if (!pts?.length) return true;
+      const cx = pts.reduce((m, q) => m + q.x, 0) / pts.length, cz = pts.reduce((m, q) => m + q.z, 0) / pts.length;
+      return !CLEARINGS.some((c) => Math.hypot(cx - c.x, cz - c.z) < c.r);
+    });
+    const treeList: Array<{ x: number; y: number; z: number; scale: number; k?: number }> = ((data.lod2?.trees || []) as Array<{ x: number; y: number; z: number; scale: number; k?: number }>).filter((t) => !isLandmarkSite(t.x, t.z));
 
     if (req.kind === 'detail') {
       const sink = new FloatSink(Math.max(4096, bldgList.length * 120));

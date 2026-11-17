@@ -1,0 +1,23 @@
+{
+ "_doc": "Open-ground clearings inside otherwise wooded land. Inside each circle, a tree candidate survives with probability `keep`, and the ground raster turns bare/dusty (scripts/py/build_ground.py) over `bare` of the area. Evidence: satellite views supplied by the user show open dusty ground with groves in patches.",
+ "circles": [
+  {
+   "id": "clock_tower_plaza",
+   "x": -4176,
+   "z": -2675,
+   "r": 150,
+   "keep": 0.08,
+   "bare": 0.7,
+   "note": "User satellite view of the Husainabad Clock Tower / Picture Gallery area, 2026-11-17."
+  },
+  {
+   "id": "husainabad_talab_surroundings",
+   "x": -4150,
+   "z": -2745,
+   "r": 120,
+   "keep": 0.12,
+   "bare": 0.6,
+   "note": "Same view: dusty open ground with tree patches around the tank."
+  }
+ ]
+}

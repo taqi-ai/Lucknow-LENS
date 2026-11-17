@@ -1,15 +1,5 @@
 {
  "type": "FeatureCollection",
  "_doc": "Local water corrections applied by scripts/py/build_hydrology.py on every rebuild. Actions: remove (by id, or every feature whose interior point is inside a Polygon), reclass (id + class + width), add (geometry + class + name). Every entry needs a 'note' with its evidence.",
- "features": [
-  {
-   "type": "Feature",
-   "properties": {
-    "action": "remove",
-    "id": "134c6e0e-1b49-3ebf-af8f-97d7533d4790",
-    "note": "Husainabad Talab beside the Picture Gallery: the user-supplied satellite view shows a dry octagonal grass lawn with a stone surround and a pitch, not open water. Replaced by an octagonal lawn in landmarks.ts."
-   },
-   "geometry": null
-  }
- ]
+ "features": []
 }

@@ -137,6 +137,16 @@ function onHedge(x: number, z: number): boolean {
   return PARCEL_BORDER[j * GROUND_META.size + i] === 1;
 }
 
+// Open clearings (data/overrides/tree_clearings.json): inside a circle only `keep` of the tree
+// candidates survive, so wooded land can show dusty open ground in patches.
+interface Clearing { x: number; z: number; r: number; keep: number; bare?: number }
+const CLEAR_FILE = path.join(process.cwd(), 'data/overrides/tree_clearings.json');
+const CLEARINGS: Clearing[] = fs.existsSync(CLEAR_FILE) ? JSON.parse(fs.readFileSync(CLEAR_FILE, 'utf8')).circles ?? [] : [];
+function clearKeep(x: number, z: number): number {
+  for (const c of CLEARINGS) { const d = Math.hypot(x - c.x, z - c.z); if (d < c.r) return c.keep + (1 - c.keep) * Math.max(0, (d - c.r * 0.6) / (c.r * 0.4)); }
+  return 1;
+}
+
 function main(): void {
   const overview = JSON.parse(fs.readFileSync(path.join(TILES_DIR, 'overview.json'), 'utf8'));
 
@@ -363,6 +373,7 @@ function main(): void {
     const push = (x: number, z: number, kind: 'park' | 'verge' | 'open' | 'yard' | 'orchard' | 'palm'): void => {
       // Landmark precincts get their own formal planting (src/city/landmarks.ts).
       if (isLandmarkSite(x, z) || inAirport(x, z)) { stat.rejected++; return; }
+      if (CLEARINGS.length && hash2(x * 3.1, z * 1.7) > clearKeep(x, z)) { stat.rejected++; return; }
       if (blocked(x, z) || onBuilding(x, z) || (kind !== 'yard' && nearBuilding(x, z, BUILDING_PAD))) { stat.rejected++; return; }
       const h = hash2(x, z);
       // Park trees run larger and more varied; street trees are pruned to a

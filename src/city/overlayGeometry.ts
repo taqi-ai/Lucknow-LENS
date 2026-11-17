@@ -326,19 +326,30 @@ function appendBridge(c: Crossing, deck: number[], pier: number[], rail: number[
     }
   }
 
-  const pierCount = span > 90 ? 4 : 2;
+  // River bridge (round 3): a deep girder, a pier every ~30 m standing in the water on a
+  // pointed cutwater footing, pier caps across the deck, parapets with posts and deck lamps.
+  box(pier, -span, span, DECK_Y - 2.2, DECK_Y - 0.55, -half + 0.4, half - 0.4);
+  const pierCount = Math.max(2, Math.round((span * 2) / 30));
   for (let i = 0; i < pierCount; i++) {
-    const tt = (i + 0.5) / pierCount;
-    const pu = -span + tt * span * 2;
-    for (const sv of [-1, 1]) {
-      const pv = sv * half * 0.62;
-      box(pier, pu - 1.6, pu + 1.6, -0.6, DECK_Y - 0.5, pv - 2.2, pv + 2.2);
+    const pu = -span + ((i + 0.5) / pierCount) * span * 2;
+    box(pier, pu - 1.3, pu + 1.3, -1.5, DECK_Y - 2.2, -half * 0.75, half * 0.75);   // wall pier
+    box(pier, pu - 1.8, pu + 1.8, -1.5, 1.2, -half * 0.8 - 1, half * 0.8 + 1);     // footing
+    for (const sv of [-1, 1]) {                                                   // pointed cutwaters
+      const v0 = sv * (half * 0.8 + 1), v1 = sv * (half * 0.8 + 3.2);
+      const q = (a: number[], b: number[], c2: number[]) => { W(a[0], a[1], a[2], pier); W(b[0], b[1], b[2], pier); W(c2[0], c2[1], c2[2], pier); };
+      for (const y of [-1.5, 1.2]) q([pu - 1.8, y, v0], [pu + 1.8, y, v0], [pu, y, v1]);
+      q([pu - 1.8, -1.5, v0], [pu, -1.5, v1], [pu, 1.2, v1]); q([pu - 1.8, -1.5, v0], [pu, 1.2, v1], [pu - 1.8, 1.2, v0]);
+      q([pu + 1.8, -1.5, v0], [pu, 1.2, v1], [pu, -1.5, v1]); q([pu + 1.8, -1.5, v0], [pu + 1.8, 1.2, v0], [pu, 1.2, v1]);
     }
+    box(pier, pu - 1.6, pu + 1.6, DECK_Y - 2.9, DECK_Y - 2.2, -half - 0.3, half + 0.3);  // cap
   }
 
   for (const sv of [-1, 1]) {
     const pv = sv * half;
-    box(rail, -span, span, DECK_Y + 0.55, DECK_Y + 1.85, pv - 0.25, pv + 0.25);
+    box(rail, -span, span, DECK_Y + 0.55, DECK_Y + 0.85, pv - 0.3, pv + 0.3);
+    box(rail, -span, span, DECK_Y + 1.6, DECK_Y + 1.8, pv - 0.18, pv + 0.18);
+    for (let u = -span; u <= span; u += 3) box(rail, u - 0.12, u + 0.12, DECK_Y + 0.85, DECK_Y + 1.6, pv - 0.12, pv + 0.12);
+    for (let u = -span + 10; u < span; u += 30) box(rail, u - 0.12, u + 0.12, DECK_Y + 0.55, DECK_Y + 9, pv - 0.12, pv + 0.12);
   }
 }
 

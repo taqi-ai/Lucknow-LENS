@@ -139,6 +139,19 @@ const LIT_ROAD_SPACING: Partial<Record<string, number>> = {
 
 function buildStreetlights(roads: RoadIn[], originX: number, originZ: number): Float32Array {
   const out: number[] = [];
+  // Deck corridors: a ground lamp under or beside a raised deck would pierce it.
+  const decks: Array<[number, number, number, number, number]> = [];
+  for (const r of roads) {
+    if (!r?.points || !(r.isElevated || (r.level ?? 0) > 0)) continue;
+    const h = roadHalfWidth(classifyRoad(r.type, r.subtype, r.level, r.isElevated), r.type, r.id) + 4;
+    for (let i = 0; i < r.points.length - 1; i++) decks.push([r.points[i].x, r.points[i].z, r.points[i + 1].x, r.points[i + 1].z, h]);
+  }
+  const underDeck = (x: number, z: number): boolean => decks.some(([ax, az, bx, bz, h]) => {
+    const dx = bx - ax, dz = bz - az, L = dx * dx + dz * dz || 1;
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / L));
+    return Math.hypot(ax + t * dx - x, az + t * dz - z) < h;
+  });
+  const push = (x: number, z: number, a: number) => { if (!underDeck(x + originX, z + originZ)) out.push(x, z, a); };
 
   for (const road of roads) {
     if (!road?.points || road.points.length < 2) continue;
@@ -171,11 +184,11 @@ function buildStreetlights(roads: RoadIn[], originX: number, originZ: number): F
         const cx = p1.x + ux * d - originX;
         const cz = p1.z + uz * d - originZ;
         if (bothSides) {
-          out.push(cx + nx * half, cz + nz * half, angle);
-          out.push(cx - nx * half, cz - nz * half, angle + Math.PI);
+          push(cx + nx * half, cz + nz * half, angle);
+          push(cx - nx * half, cz - nz * half, angle + Math.PI);
         } else {
           const s = flip ? 1 : -1;
-          out.push(cx + nx * half * s, cz + nz * half * s, flip ? angle : angle + Math.PI);
+          push(cx + nx * half * s, cz + nz * half * s, flip ? angle : angle + Math.PI);
           flip = !flip;
         }
       }

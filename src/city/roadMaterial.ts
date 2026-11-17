@@ -38,7 +38,7 @@ export const ROAD_NIGHT: Record<RoadClass, number> = {
 const POOL: Record<RoadClass, [number, number]> = {
   motorway: [1.0, 39], trunk: [0.95, 38], primary: [0.85, 36], secondary: [0.7, 34],
   tertiary: [0.5, 47], residential: [0.28, 60], service: [0.15, 70], footway: [0.0, 1],
-  railway: [0.0, 1], flyover: [1.0, 39],
+  railway: [0.0, 1], flyover: [0.42, 36],
 };
 
 /**

@@ -815,13 +815,35 @@
    "key": "hazratganj_statue",
    "name": "Statue pavilion, Hazratganj chauraha",
    "xz": [
-    -383,
-    372
+    -361.4,
+    409
    ],
    "snap": false,
    "angle": 0,
-   "size": 26,
-   "note": "User street-view: white arched canopy with a gold statue at the Hazratganj chauraha. Position is the chauraha label point; confirm with a pin."
+   "size": 14,
+   "note": "User pin 3; smaller canopy so it stays off the carriageway."
+  },
+  {
+   "key": "ganj_clear_1",
+   "name": "Removed building (user pin)",
+   "xz": [
+    -364.1,
+    399.6
+   ],
+   "snap": true,
+   "size": 14,
+   "note": "User pin 1: incorrect building removed."
+  },
+  {
+   "key": "ganj_clear_2",
+   "name": "Removed building (user pin)",
+   "xz": [
+    -363.5,
+    410
+   ],
+   "snap": true,
+   "size": 14,
+   "note": "User pin 2: incorrect building removed."
   }
  ]
 }

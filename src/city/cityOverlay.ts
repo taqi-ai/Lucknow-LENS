@@ -373,7 +373,7 @@ export class CityOverlay {
     if (this.flyoverPierMesh) this.flyoverPierMesh.visible = this.roadsEnabled && altitude <= 6000;
     if (this.flyoverBarrierMesh) this.flyoverBarrierMesh.visible = this.roadsEnabled && altitude <= 6000;
     for (const m of this.medianMeshes) m.visible = this.roadsEnabled && altitude <= 6000;
-    if (this.markingMesh) this.markingMesh.visible = this.roadsEnabled && altitude <= 1500;
+    if (this.markingMesh) this.markingMesh.visible = this.roadsEnabled && altitude <= 700;
     this.markingMat.color.setHex(this.isNight ? 0x6e6b64 : 0xe6e3da);
 
     // The bed carries the line at every altitude; rails and sleepers are detail

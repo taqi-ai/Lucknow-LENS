@@ -151,21 +151,31 @@ function buildStreetlights(roads: RoadIn[], originX: number, originZ: number): F
     const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / L));
     return Math.hypot(ax + t * dx - x, az + t * dz - z) < h;
   });
-  const push = (x: number, z: number, a: number) => { if (!underDeck(x + originX, z + originZ)) out.push(x, z, a); };
+  // Minimum spacing: roads start a fresh lamp row at every junction and paired carriageways each get
+  // their own, which stacked lamps on top of each other. A 17 m grid hash keeps one lamp per spot.
+  const taken = new Map<string, Array<[number, number]>>();
+  const push = (x: number, z: number, a: number) => {
+    if (underDeck(x + originX, z + originZ)) return;
+    const gx = Math.floor(x / 17), gz = Math.floor(z / 17);
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++)
+      for (const q of taken.get(`${gx + dx},${gz + dz}`) ?? []) if (Math.hypot(q[0] - x, q[1] - z) < 17) return;
+    const k = `${gx},${gz}`; let l = taken.get(k); if (!l) taken.set(k, (l = [])); l.push([x, z]);
+    out.push(x, z, a);
+  };
 
   for (const road of roads) {
     if (!road?.points || road.points.length < 2) continue;
     if (road.isElevated || (road.level ?? 0) > 0) continue; // no lamps on the ground under a deck
     const cls = classifyRoad(road.type);
-    const p0 = road.points[0], inGanj = Math.hypot(p0.x + 420, p0.z - 340) < 420 && cls !== 'footway' && cls !== 'service' && cls !== 'railway';
-    const spacing = inGanj ? 22 : LIT_ROAD_SPACING[cls];
+    const p0 = road.points[0], inGanj = Math.hypot(p0.x + 420, p0.z - 340) < 420 && (cls === 'primary' || cls === 'secondary');
+    const spacing = inGanj && (cls === 'primary' || cls === 'secondary') ? 34 : LIT_ROAD_SPACING[cls];
     if (!spacing) continue;
 
     const half = roadHalfWidth(cls, road.type, road.id) + 1.2;
     // Only genuine dual-carriageway classes are lit from both sides. Primary used
     // to be included, which doubled the mast count on ordinary city avenues that
     // in reality carry a single staggered row.
-    const bothSides = cls === 'motorway' || cls === 'trunk' || inGanj;
+    const bothSides = cls === 'motorway' || cls === 'trunk' || (inGanj && (cls === 'primary' || cls === 'secondary'));
 
     let carry = 0;
     let flip = false;

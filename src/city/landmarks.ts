@@ -1452,16 +1452,17 @@ function tomb(k: Kit, g: Grounds, s: LandmarkSite, scale: number, seed: number):
 /** Hazratganj chauraha statue (user street view): a white canopy of two columns and a pointed arch
  *  over a gold standing statue on a plinth, inside a low red-brick enclosure with railings. */
 function statueCanopy(k: Kit, g: Grounds, s: LandmarkSite): void {
-  k.begin(s, 14, 251, 0); g.frame(s, 0);
-  g.color(0xa65a44).disc(0, 0, 11, 0.14, 32); g.color(0xcfc6b4).disc(0, 0, 9, 0.16, 32);
-  k.box(-6, 6, 0, 0.9, -2.5, 2.5, S.STONE);
-  for (const x of [-4.6, 4.6]) { k.box(x - 0.9, x + 0.9, 0.9, 9.5, -1.2, 1.2, S.LIME); k.box(x - 1.15, x + 1.15, 9.5, 10.2, -1.45, 1.45, S.LIME); }
-  k.box(-5.8, 5.8, 10.2, 11.4, -1.5, 1.5, S.LIME);
-  k.arcade('v0', -1.5, -3.6, 3.6, 7.2, 7.2, 3.4, 1, S.GLASS, true); k.arcade('v1', 1.5, -3.6, 3.6, 7.2, 7.2, 3.4, 1, S.GLASS, true);
-  k.hemi(0, 0, 3.0, 11.4, S.LIME, 0.6);
-  k.box(-1.6, 1.6, 0.9, 2.6, -1.3, 1.3, S.STONE);
-  k.box(-0.5, 0.5, 2.6, 4.7, -0.35, 0.35, S.GILT); k.box(-0.75, 0.75, 4.7, 7.0, -0.45, 0.45, S.GILT); k.cylinder(0, 0, 0.4, 0.4, 7.0, 7.9, 10, S.GILT);
-  for (let a = 0; a < 20; a++) { const t = (a / 20) * Math.PI * 2; k.box(Math.cos(t) * 10 - 0.08, Math.cos(t) * 10 + 0.08, 0.2, 1.3, Math.sin(t) * 10 - 0.08, Math.sin(t) * 10 + 0.08, S.METAL); }
+  k.begin(s, 9, 251, 0); g.frame(s, 0);
+  const f = 0.55;   // scaled down so the whole pavilion fits inside the pinned plot, clear of the road
+  g.color(0xa65a44).disc(0, 0, 6.2, 0.14, 28); g.color(0xcfc6b4).disc(0, 0, 5.0, 0.16, 28);
+  k.box(-3.4, 3.4, 0, 0.6, -1.5, 1.5, S.STONE);
+  for (const x of [-2.6, 2.6]) { k.box(x - 0.5, x + 0.5, 0.6, 5.6, -0.7, 0.7, S.LIME); k.box(x - 0.65, x + 0.65, 5.6, 6.0, -0.85, 0.85, S.LIME); }
+  k.box(-3.3, 3.3, 6.0, 6.7, -0.9, 0.9, S.LIME);
+  k.arcade('v0', -0.9, -2.0, 2.0, 4.2, 4.0, 2.0, 1, S.GLASS, true); k.arcade('v1', 0.9, -2.0, 2.0, 4.2, 4.0, 2.0, 1, S.GLASS, true);
+  k.hemi(0, 0, 1.7, 6.7, S.LIME, 0.6);
+  k.box(-0.9, 0.9, 0.6, 1.5, -0.7, 0.7, S.STONE);
+  k.box(-0.28, 0.28, 1.5, 2.8, -0.2, 0.2, S.GILT); k.box(-0.42, 0.42, 2.8, 4.1, -0.25, 0.25, S.GILT); k.cylinder(0, 0, 0.22, 0.22, 4.1, 4.6, 8, S.GILT);
+  void f;
 }
 
 function buildAll(k: Kit, g: Grounds): { flag?: WavingFlag } {

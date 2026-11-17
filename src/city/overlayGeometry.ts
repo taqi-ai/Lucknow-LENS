@@ -557,26 +557,6 @@ function buildMediansAndMarkings(roads: OverlayRoad[], kerb: number[], grass: nu
     }
   }
 
-  // Hazratganj kerbs: the black-and-white painted kerb stones of the main street, as alternating
-  // white blocks along both road edges (the black shows as the asphalt between them).
-  for (const r of ground) {
-    const cls = classifyRoad(r.type, r.subtype, r.level, r.isElevated);
-    if (!['primary', 'secondary', 'tertiary'].includes(cls)) continue;
-    const m = r.points[r.points.length >> 1];
-    if (Math.hypot(m.x + 420, m.z - 340) > 420) continue;
-    const half = roadHalfWidth(cls, r.type, (r as { id?: string }).id), y = ROAD_LAYER_Y[cls] + 0.1;
-    for (let i = 0; i < r.points.length - 1; i++) {
-      const a = r.points[i], b = r.points[i + 1], dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz);
-      if (L < 3) continue;
-      const ux = dx / L, uz = dz / L, nx = -uz, nz = ux;
-      for (let t = 1; t < L - 2; t += 2) for (const sg of [-1, 1]) {
-        const o0 = (half - 0.15) * sg, o1 = (half + 0.45) * sg;
-        const P = (al: number, o: number) => [a.x + ux * al + nx * o, y, a.z + uz * al + nz * o];
-        quad(marks, P(t, o0), P(t + 1, o0), P(t + 1, o1), P(t, o1));
-      }
-    }
-  }
-
   // Junction nodes: endpoints of ground major roads, quantised to 3 m.
   const node = new Map<string, number>();
   const key = (x: number, z: number) => Math.round(x / 3) + ',' + Math.round(z / 3);
@@ -585,6 +565,7 @@ function buildMediansAndMarkings(roads: OverlayRoad[], kerb: number[], grass: nu
     if (cls === 'railway' || cls === 'footway' || cls === 'service') continue;
     for (const p of [r.points[0], r.points[r.points.length - 1]]) node.set(key(p.x, p.z), (node.get(key(p.x, p.z)) ?? 0) + 1);
   }
+  const placed: Array<[number, number]> = [];
   for (const r of ground) {
     const cls = classifyRoad(r.type, r.subtype, r.level, r.isElevated);
     if (!['motorway', 'trunk', 'primary', 'secondary', 'tertiary'].includes(cls)) continue;
@@ -592,11 +573,14 @@ function buildMediansAndMarkings(roads: OverlayRoad[], kerb: number[], grass: nu
     const ends: Array<[number, number]> = [[0, 1], [r.points.length - 1, r.points.length - 2]];
     for (const [i0, i1] of ends) {
       const a = r.points[i0], b = r.points[i1];
-      if ((node.get(key(a.x, a.z)) ?? 0) < 3) continue;
+      const deg = node.get(key(a.x, a.z)) ?? 0;
+      if (deg < 3 || deg > 4) continue;                       // plain junctions only; roundabouts and fan-outs stay clean
+      if (placed.some(([px, pz]) => Math.hypot(px - a.x, pz - a.z) < 16)) continue;   // one crossing per approach cluster
       const dx = b.x - a.x, dz = b.z - a.z, len = Math.hypot(dx, dz);
       if (len < 16) continue;
+      placed.push([a.x, a.z]);
       const ux = dx / len, uz = dz / len, nx = -uz, nz = ux;
-      const y = ROAD_LAYER_Y[cls] + 0.12, c0 = 7, c1 = 10.5;
+      const y = ROAD_LAYER_Y[cls] + 0.32, c0 = 7, c1 = 10.5;   // clear of the road surface: no z-fighting while the camera moves
       for (let o = -half + 0.6; o < half - 0.4; o += 1.1) {                        // zebra bars
         const P = (along: number, off: number) => [a.x + ux * along + nx * off, y, a.z + uz * along + nz * off];
         quad(marks, P(c0, o), P(c1, o), P(c1, o + 0.55), P(c0, o + 0.55));

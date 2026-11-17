@@ -7,36 +7,20 @@
   "appGpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Laptop GPU (0x00002860) Direct3D11 vs_5_0 ps_5_0, D3D11)",
   "results": [
     {
-      "shot": "w_vidhan2",
-      "fps": 152,
-      "frameMsP50": 6.6,
-      "frameMsP95": 8.4,
-      "drawCalls": 488,
-      "triangles": 8769857,
-      "geometries": 255,
-      "textures": 51,
+      "shot": "x_statue",
+      "fps": 219,
+      "frameMsP50": 4.5,
+      "frameMsP95": 6.1,
+      "drawCalls": 349,
+      "triangles": 7167380,
+      "geometries": 212,
+      "textures": 31,
       "programs": 70,
-      "tiles": 204,
-      "buildings": 328647,
+      "tiles": 189,
+      "buildings": 83978,
       "lod": 3,
       "scale": "STREET",
-      "jsHeapMB": 374
-    },
-    {
-      "shot": "w_vidhan2_top",
-      "fps": 239,
-      "frameMsP50": 4.2,
-      "frameMsP95": 5.6,
-      "drawCalls": 149,
-      "triangles": 4396656,
-      "geometries": 257,
-      "textures": 51,
-      "programs": 70,
-      "tiles": 204,
-      "buildings": 75998,
-      "lod": 3,
-      "scale": "STREET",
-      "jsHeapMB": 368
+      "jsHeapMB": 355
     }
   ],
   "errors": []

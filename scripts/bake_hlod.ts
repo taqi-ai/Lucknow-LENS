@@ -378,6 +378,9 @@ function bakeOverlay(): void {
   if (built.bridgeRail.length) sections.push({ name: 'bridgeRail', data: built.bridgeRail });
   if (built.flyoverPiers.length) sections.push({ name: 'flyoverPiers', data: built.flyoverPiers });
   if (built.flyoverBarriers.length) sections.push({ name: 'flyoverBarriers', data: built.flyoverBarriers });
+  if (built.medianKerb.length) sections.push({ name: 'medianKerb', data: built.medianKerb });
+  if (built.medianGrass.length) sections.push({ name: 'medianGrass', data: built.medianGrass });
+  if (built.markings.length) sections.push({ name: 'markings', data: built.markings });
   if (built.railBed.length) sections.push({ name: 'railBed', data: built.railBed });
   if (built.railRails.length) sections.push({ name: 'railRails', data: built.railRails });
   if (built.metroDeck.length) sections.push({ name: 'metroDeck', data: built.metroDeck });

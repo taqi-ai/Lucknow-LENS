@@ -24,6 +24,11 @@ export class CityOverlay {
   private roadMaterials = new Map<RoadClass, THREE.MeshStandardMaterial>();
   private flyoverPierMesh: THREE.Mesh | null = null;
   private flyoverBarrierMesh: THREE.Mesh | null = null;
+  private medianMeshes: THREE.Mesh[] = [];
+  private markingMesh: THREE.Mesh | null = null;
+  private medianKerbMat = new THREE.MeshStandardMaterial({ color: 0xbdb7aa, roughness: 0.9, side: THREE.DoubleSide });
+  private medianGrassMat = new THREE.MeshStandardMaterial({ color: 0x6a7a44, roughness: 1, side: THREE.DoubleSide });
+  private markingMat = new THREE.MeshStandardMaterial({ color: 0xe6e3da, roughness: 0.75, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 });
   private flyoverPierMat: THREE.MeshStandardMaterial;
   private flyoverBarrierMat: THREE.MeshStandardMaterial;
   private railBedMesh: THREE.Mesh | null = null;
@@ -289,6 +294,12 @@ export class CityOverlay {
           this.bridges.addSection(pos, 'rail');
         } else if (sec.name === 'flyoverPiers') {
           this.flyoverPierMesh = this.makeMesh(pos, this.flyoverPierMat, 'flyoverPiers');
+        } else if (sec.name === 'medianKerb') {
+          this.medianMeshes.push(this.makeMesh(pos, this.medianKerbMat, 'roads'));
+        } else if (sec.name === 'medianGrass') {
+          this.medianMeshes.push(this.makeMesh(pos, this.medianGrassMat, 'roads'));
+        } else if (sec.name === 'markings') {
+          this.markingMesh = this.makeMesh(pos, this.markingMat, 'roads');
         } else if (sec.name === 'flyoverBarriers') {
           this.flyoverBarrierMesh = this.makeMesh(pos, this.flyoverBarrierMat, 'flyoverBarriers');
         } else if (sec.name === 'railBed') {
@@ -358,6 +369,9 @@ export class CityOverlay {
 
     if (this.flyoverPierMesh) this.flyoverPierMesh.visible = this.roadsEnabled && altitude <= 6000;
     if (this.flyoverBarrierMesh) this.flyoverBarrierMesh.visible = this.roadsEnabled && altitude <= 6000;
+    for (const m of this.medianMeshes) m.visible = this.roadsEnabled && altitude <= 6000;
+    if (this.markingMesh) this.markingMesh.visible = this.roadsEnabled && altitude <= 1500;
+    this.markingMat.color.setHex(this.isNight ? 0x6e6b64 : 0xe6e3da);
 
     // The bed carries the line at every altitude; rails and sleepers are detail
     // that stops resolving well before it stops costing anything.
@@ -395,6 +409,8 @@ export class CityOverlay {
       for (const mesh of this.roadMeshes.values()) mesh.visible = false;
       if (this.flyoverPierMesh) this.flyoverPierMesh.visible = false;
       if (this.flyoverBarrierMesh) this.flyoverBarrierMesh.visible = false;
+      for (const m of this.medianMeshes) m.visible = false;
+      if (this.markingMesh) this.markingMesh.visible = false;
       if (this.railBedMesh) this.railBedMesh.visible = false;
       if (this.railSleeperMesh) this.railSleeperMesh.visible = false;
       if (this.railRailsMesh) this.railRailsMesh.visible = false;

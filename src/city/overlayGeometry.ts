@@ -57,6 +57,12 @@ export interface OverlayBuild {
   bridgeRail: Float32Array;
   flyoverPiers: Float32Array;
   flyoverBarriers: Float32Array;
+  /** Raised median kerbs between paired one-way carriageways. */
+  medianKerb: Float32Array;
+  /** Planted median infill. */
+  medianGrass: Float32Array;
+  /** Zebra crossings and stop lines at junctions. */
+  markings: Float32Array;
   /** Ballast prism at grade / box girder on viaduct. */
   railBed: Float32Array;
   /** Concrete sleepers — street-level detail. */
@@ -462,6 +468,102 @@ function buildElevatedSupports(
   }
 }
 
+
+/**
+ * Medians: Lucknow's dual carriageways are mapped as two one-way roads. Where a major road runs
+ * anti-parallel to another of the same class with a gap between their edges of 0.6-14 m, the gap
+ * is filled with a raised kerbed median with planting. Matching is per 6 m sample, so medians
+ * follow the real geometry and stop where the carriageways merge.
+ *
+ * Junction markings: where three or more ground-level major roads meet, each approach gets a
+ * zebra crossing about 9 m back from the node and a stop line just behind it.
+ */
+const MEDIAN_CLASSES = new Set(['motorway', 'trunk', 'primary', 'secondary']);
+function buildMediansAndMarkings(roads: OverlayRoad[], kerb: number[], grass: number[], marks: number[]): void {
+  type Seg = { r: number; ax: number; az: number; bx: number; bz: number; ux: number; uz: number; len: number; half: number; cls: RoadClass };
+  const ground = roads.filter((r) => r?.points?.length >= 2 && !r.isElevated && !((r.level ?? 0) > 0));
+  const segs: Seg[] = [];
+  const grid = new Map<string, number[]>();
+  const G = 40;
+  ground.forEach((r, ri) => {
+    const cls = classifyRoad(r.type, r.subtype, r.level, r.isElevated);
+    if (!MEDIAN_CLASSES.has(cls)) return;
+    const half = roadHalfWidth(cls, r.type, (r as { id?: string }).id);
+    for (let i = 0; i < r.points.length - 1; i++) {
+      const a = r.points[i], b = r.points[i + 1], dx = b.x - a.x, dz = b.z - a.z, len = Math.hypot(dx, dz);
+      if (len < 2) continue;
+      const k = segs.length;
+      segs.push({ r: ri, ax: a.x, az: a.z, bx: b.x, bz: b.z, ux: dx / len, uz: dz / len, len, half, cls });
+      const x0 = Math.floor(Math.min(a.x, b.x) / G) - 1, x1 = Math.floor(Math.max(a.x, b.x) / G) + 1;
+      const z0 = Math.floor(Math.min(a.z, b.z) / G) - 1, z1 = Math.floor(Math.max(a.z, b.z) / G) + 1;
+      for (let gx = x0; gx <= x1; gx++) for (let gz = z0; gz <= z1; gz++) { const key = gx + ',' + gz; let l = grid.get(key); if (!l) grid.set(key, (l = [])); l.push(k); }
+    }
+  });
+  const quad = (out: number[], a: number[], b: number[], c: number[], d: number[]) => { out.push(...a, ...b, ...c, ...a, ...c, ...d); };
+  for (const sA of segs) {
+    let prev: { l: number[]; r: number[] } | null = null;
+    for (let d = 0; d <= sA.len; d += 6) {
+      const mx = sA.ax + sA.ux * d, mz = sA.az + sA.uz * d;
+      let best: { dist: number; px: number; pz: number; half: number } | null = null;
+      for (const k of grid.get(Math.floor(mx / G) + ',' + Math.floor(mz / G)) ?? []) {
+        const sB = segs[k];
+        if (sB.r === sA.r || sB.cls !== sA.cls || sB.r < sA.r) continue;      // each pair once
+        if (sA.ux * sB.ux + sA.uz * sB.uz > -0.92) continue;                    // opposite directions
+        const t = Math.max(0, Math.min(sB.len, (mx - sB.ax) * sB.ux + (mz - sB.az) * sB.uz));
+        if (t <= 0 || t >= sB.len) continue;
+        const px = sB.ax + sB.ux * t, pz = sB.az + sB.uz * t, dist = Math.hypot(px - mx, pz - mz);
+        const gap = dist - sA.half - sB.half;
+        if (gap < 0.6 || gap > 14) continue;
+        if (!best || dist < best.dist) best = { dist, px, pz, half: sB.half };
+      }
+      if (!best) { prev = null; continue; }
+      const nx = (best.px - mx) / best.dist, nz = (best.pz - mz) / best.dist;
+      const l = [mx + nx * sA.half, 0.3, mz + nz * sA.half];
+      const r = [best.px - nx * best.half, 0.3, best.pz - nz * best.half];
+      if (prev) {
+        const H = 0.32;
+        quad(kerb, [prev.l[0], H, prev.l[2]], [l[0], H, l[2]], [r[0], H, r[2]], [prev.r[0], H, prev.r[2]]);
+        const inset = (p: number[], q: number[], f: number) => [p[0] + (q[0] - p[0]) * f, H + 0.03, p[2] + (q[2] - p[2]) * f];
+        const w = Math.hypot(r[0] - l[0], r[2] - l[2]);
+        if (w > 1.6) { const f = 0.45 / w; quad(grass, inset(prev.l, prev.r, f), inset(l, r, f), inset(r, l, f), inset(prev.r, prev.l, f)); }
+        // kerb faces
+        quad(kerb, [prev.l[0], 0.12, prev.l[2]], [l[0], 0.12, l[2]], [l[0], H, l[2]], [prev.l[0], H, prev.l[2]]);
+        quad(kerb, [prev.r[0], 0.12, prev.r[2]], [r[0], 0.12, r[2]], [r[0], H, r[2]], [prev.r[0], H, prev.r[2]]);
+      }
+      prev = { l, r };
+    }
+  }
+
+  // Junction nodes: endpoints of ground major roads, quantised to 3 m.
+  const node = new Map<string, number>();
+  const key = (x: number, z: number) => Math.round(x / 3) + ',' + Math.round(z / 3);
+  for (const r of ground) {
+    const cls = classifyRoad(r.type, r.subtype, r.level, r.isElevated);
+    if (cls === 'railway' || cls === 'footway' || cls === 'service') continue;
+    for (const p of [r.points[0], r.points[r.points.length - 1]]) node.set(key(p.x, p.z), (node.get(key(p.x, p.z)) ?? 0) + 1);
+  }
+  for (const r of ground) {
+    const cls = classifyRoad(r.type, r.subtype, r.level, r.isElevated);
+    if (!['motorway', 'trunk', 'primary', 'secondary', 'tertiary'].includes(cls)) continue;
+    const half = roadHalfWidth(cls, r.type, (r as { id?: string }).id);
+    const ends: Array<[number, number]> = [[0, 1], [r.points.length - 1, r.points.length - 2]];
+    for (const [i0, i1] of ends) {
+      const a = r.points[i0], b = r.points[i1];
+      if ((node.get(key(a.x, a.z)) ?? 0) < 3) continue;
+      const dx = b.x - a.x, dz = b.z - a.z, len = Math.hypot(dx, dz);
+      if (len < 16) continue;
+      const ux = dx / len, uz = dz / len, nx = -uz, nz = ux;
+      const y = ROAD_LAYER_Y[cls] + 0.12, c0 = 7, c1 = 10.5;
+      for (let o = -half + 0.6; o < half - 0.4; o += 1.1) {                        // zebra bars
+        const P = (along: number, off: number) => [a.x + ux * along + nx * off, y, a.z + uz * along + nz * off];
+        quad(marks, P(c0, o), P(c1, o), P(c1, o + 0.55), P(c0, o + 0.55));
+      }
+      const S = (along: number, off: number) => [a.x + ux * along + nx * off, y, a.z + uz * along + nz * off];
+      quad(marks, S(c1 + 1.2, -half + 0.3), S(c1 + 1.6, -half + 0.3), S(c1 + 1.6, half - 0.3), S(c1 + 1.2, half - 0.3));  // stop line
+    }
+  }
+}
+
 /**
  * Elevated metro stations, snapped onto the real viaduct.
  *
@@ -684,6 +786,10 @@ export function buildOverlay(src: OverlaySource): OverlayBuild {
   const flyoverBarriers: number[] = [];
   buildElevatedSupports(roads, profiles, flyoverPiers, flyoverBarriers);
 
+  // ── Medians and junction markings (round 3) ─────────────────────────────
+  const medianKerb: number[] = [], medianGrass: number[] = [], markings: number[] = [];
+  buildMediansAndMarkings(roads, medianKerb, medianGrass, markings);
+
   // ── Metro stations ────────────────────────────────────────────────────────
   const metroDeck: number[] = [];
   const metroCanopy: number[] = [];
@@ -739,6 +845,9 @@ export function buildOverlay(src: OverlaySource): OverlayBuild {
     bridgeRail: new Float32Array(rail),
     flyoverPiers: new Float32Array(flyoverPiers),
     flyoverBarriers: new Float32Array(flyoverBarriers),
+    medianKerb: new Float32Array(medianKerb),
+    medianGrass: new Float32Array(medianGrass),
+    markings: new Float32Array(markings),
     railBed: new Float32Array(railSinks.bed),
     railSleepers: new Float32Array(railSinks.sleepers),
     railRails: new Float32Array(railSinks.rails),

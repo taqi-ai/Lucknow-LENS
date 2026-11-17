@@ -1280,6 +1280,57 @@ function renaissanceHotel(k: Kit, g: Grounds, s: LandmarkSite): void {
   k.box(-hu * 0.5, hu * 0.5, H + 0.6, H + 5, -hv * 0.5, hv * 0.5, S.STONE);
 }
 
+/**
+ * JPNIC (Jayaprakash Narayan International Centre), from the user's pins and photographs: an orange
+ * (Corten-red) building with a tall sweeping wing wall and comb-like fins along the top, a circular
+ * helipad deck on a tower at the south-west end, a grey shell dome, and green roof terraces stepping
+ * down to the east. The annexe to the south is a lower orange block with a striped glass front.
+ */
+function jpnic(k: Kit, g: Grounds, s: LandmarkSite, annex?: LandmarkSite): void {
+  k.begin(s, 70, 211, 0); g.frame(s, 0);
+  const O = S.REDSTONE;
+  if (s.bound) { g.color(0x8c8a80); g.polyWorld(s.bound, 0.08); }
+  const L = s.bound ? s.bound.map(([x, z]) => k.local(x, z)) : [[-40, -50], [40, -50], [40, 50], [-40, 50]];
+  const us = L.map((q) => q[0]), vs = L.map((q) => q[1]);
+  const u0 = Math.min(...us) + 3, u1 = Math.max(...us) - 3, v0 = Math.min(...vs) + 3, v1 = Math.max(...vs) - 3;
+  // Main mass with green terraces stepping east.
+  k.box(u0, u1, 0, 22, v0, v1, O);
+  for (let i = 0; i < 3; i++) { const a = u0 + (u1 - u0) * (0.45 + i * 0.18); k.box(a, u1, 22 + i * 0, 22.4, v0 + 4, v1 - 4, S.ROOF); g.color(0x6f8f48).rect(a + 1 - (u0 + u1) / 2 * 0, u1 - 1, v0 + 5, v1 - 5, 22.5 + i * 0.01); }
+  // Tall west wing wall rising to the north, with comb fins.
+  const wu = u0 + 4;
+  for (let t = 0; t < 12; t++) {
+    const v = v0 + ((v1 - v0) * t) / 12, h = 24 + 46 * Math.pow(t / 11, 1.4);
+    k.box(wu - 4, wu + 4, 0, h, v, v + (v1 - v0) / 12 + 0.2, O);
+    if (t > 3) k.box(wu - 3, wu + 3, h, h + 6, v + 1, v + 3, O);
+  }
+  // Helipad tower at the south-west corner.
+  k.cylinder(wu + 4, v1 - 10, 7, 7, 0, 52, 16, O);
+  k.cylinder(wu + 4, v1 - 10, 12, 12, 52, 53.2, 24, S.STONE);
+  // Shell dome (grey) in the middle of the roof.
+  k.hemi((u0 + u1) / 2 - 4, (v0 + v1) / 2, Math.min(u1 - u0, v1 - v0) * 0.24, 22, S.METAL, 0.55);
+  if (annex) {
+    k.begin(annex, 20, 213, 0); g.frame(annex, 0);
+    if (annex.bound) { g.color(0x8c8a80); g.polyWorld(annex.bound, 0.08); }
+    const A = annex.bound ? annex.bound.map(([x, z]) => k.local(x, z)) : [[-20, -20], [20, -20], [20, 20], [-20, 20]];
+    const au = A.map((q) => q[0]), av = A.map((q) => q[1]);
+    const a0 = Math.min(...au) + 3, a1 = Math.max(...au) - 3, b0 = Math.min(...av) + 3, b1 = Math.max(...av) - 3;
+    k.box(a0, a1, 0, 16, b0, b1, O);
+    for (let y = 2; y < 15; y += 3) k.box(a0 + 2, a1 - 2, y, y + 1.6, b1 - 0.1, b1 + 0.2, S.GLASS);
+    g.color(0x6f8f48).rect(a0 + 2, a1 - 2, b0 + 2, b1 - 2, 16.1);
+  }
+}
+
+/** A statue of a standing figure on a stepped platform (Janeshwar Mishra Park). */
+function statuePlatform(k: Kit, g: Grounds, s: LandmarkSite): void {
+  k.begin(s, 12, 223, 0); g.frame(s, 0);
+  g.color(0xcfc4ae).disc(0, 0, 18, 0.1, 40);
+  for (let i = 0; i < 3; i++) k.box(-10 + i * 2.5, 10 - i * 2.5, i * 0.6, (i + 1) * 0.6, -10 + i * 2.5, 10 - i * 2.5, S.STONE);
+  k.box(-2.4, 2.4, 1.8, 5.2, -2.4, 2.4, S.STONE);
+  // figure: legs, coat, shoulders, head (bronze)
+  k.box(-0.55, 0.55, 5.2, 7.2, -0.35, 0.35, S.GILT); k.box(-0.8, 0.8, 7.2, 9.4, -0.5, 0.5, S.GILT);
+  k.box(-1.0, 1.0, 9.0, 9.6, -0.55, 0.55, S.GILT); k.cylinder(0, 0, 0.42, 0.42, 9.6, 10.5, 10, S.GILT);
+}
+
 function buildAll(k: Kit, g: Grounds): { flag?: WavingFlag } {
   const res: { flag?: WavingFlag } = {};
   const b = site('bara_imambara'); if (b) baraImambara(k, g, b);
@@ -1288,6 +1339,8 @@ function buildAll(k: Kit, g: Grounds): { flag?: WavingFlag } {
   for (const key of ['chhota_gate_1', 'chhota_gate_2']) { const cg = site(key); if (cg) { k.begin(cg, 12, 191); smallGate(k, key.endsWith('1') ? 7 : 5.5, 8.5, S.BLUE); } }
   const pgg = site('pudiya_ghat_gate'); if (pgg) { k.begin(pgg, 12, 193); smallGate(k, 7, 9, S.LIME); }
   const hp = site('husainabad_park'); if (hp) cityPark(k, g, hp);
+  const jp = site('jpnic'); if (jp) jpnic(k, g, jp, site('jpnic_annex'));
+  const st = site('jmp_statue'); if (st) statuePlatform(k, g, st);
   const dw = site('dariya_wali_masjid'); if (dw) dariyaWaliMasjid(k, g, dw);
   const tw = site('teele_wali_masjid'); if (tw) teeleWaliMasjid(k, g, tw);
   const tge = site('teele_gate_east'); if (tge) { k.begin(tge, 18, 133); gateBlock(k, 0, 0, 12, false, 17); }
@@ -1334,11 +1387,23 @@ function buildAll(k: Kit, g: Grounds): { flag?: WavingFlag } {
     for (const du of [-hu, hu]) k.minaret(du, -hv, 1.8, 40, 5, S.DOME, 3);
   }
   const cm = site('chhatar_manzil');
-  if (cm) ringMonument(k, cm, 18, S.STONE, 79, (kk, hu) => {
-    kk.arcadeAll(-hu, hu, -hu, hu, 0.5, 2.4, 6, 4);
-    kk.cylinder(0, 0, 5, 5, 18, 23, 8, S.STONE);
-    kk.lathe(0, 0, [[6.8, 23], [5.4, 25], [3.2, 27.5], [0.8, 29.5], [0, 31]], 16, S.GILT);  // gilded umbrella dome
-  });
+  if (cm) {
+    // Chhatar Manzil (user photo): a long pale-yellow palace with stacked arcaded storeys,
+    // balustrades, corner turret pavilions and a ribbed dome topped by a gilt umbrella (chhatar).
+    k.begin(cm, 32, 79); k.domeDefault = S.LIME;
+    const hu = Math.max(14, cm.ext[0] / 2), hv = Math.max(10, cm.ext[1] / 2);
+    for (let f = 0; f < 3; f++) {
+      const y0 = f * 5.5, i = f * 1.2;
+      k.box(-hu + i, hu - i, y0, y0 + 5.5, -hv + i, hv - i, S.LIME);
+      k.arcadeAll(-hu + i, hu - i, -hv + i, hv - i, y0 + 0.4, 2.2, 4.2, 3.6);
+      k.merlons(-hu + i, hu - i, -hv + i, hv - i, y0 + 5.5, S.LIME);
+    }
+    for (const u of [-hu + 2, hu - 2]) for (const v of [-hv + 2, hv - 2]) { k.box(u - 2.4, u + 2.4, 16.5, 21, v - 2.4, v + 2.4, S.LIME); k.chhatri(u, v, 3, 21, S.LIME); }
+    k.cylinder(0, 0, 6, 6, 16.5, 21.5, 16, S.LIME);
+    k.lathe(0, 0, [[6.4, 21.5], [6.2, 23.5], [5, 26], [2.6, 28], [0.6, 29], [0, 29.4]], 16, S.LIME);
+    k.cylinder(0, 0, 0.5, 0.5, 29.4, 31, 8, S.GILT);
+    k.lathe(0, 0, [[3.2, 31], [2.2, 31.8], [0.8, 32.6], [0, 33.4]], 12, S.GILT);
+  }
   const sb = site('safed_baradari');
   if (sb) ringMonument(k, sb, 10, S.DOME, 83, (kk, hu, hv) => { kk.arcadeAll(-hu, hu, -hv, hv, 0.6, 2.8, 7, 4.2, S.GLASS); kk.merlons(-hu, hu, -hv, hv, 10, S.DOME); for (const u of [-hu, hu]) for (const v of [-hv, hv]) kk.chhatri(u, v, 2.2, 10); });
   const cb = site('charbagh');
@@ -1392,6 +1457,9 @@ export function buildLandmarkLayer(material: THREE.Material): LandmarkLayer {
   geo.setAttribute('position', new THREE.BufferAttribute(arch.pos, 3));
   geo.setAttribute('aPack', new THREE.Uint8BufferAttribute(arch.pack, 4, true));
   geo.computeBoundingSphere();
+  // Landmark solids are built from open shells (lathes, single walls); render both faces so a
+  // stadium bowl or a curved wing is never see-through from inside.
+  (material as THREE.Material).side = THREE.DoubleSide;
   const mesh = new THREE.Mesh(geo, material);
   mesh.name = 'landmarkArchitecture'; mesh.castShadow = true; mesh.receiveShadow = true;
   group.add(mesh);

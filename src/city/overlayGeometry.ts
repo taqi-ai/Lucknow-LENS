@@ -702,12 +702,34 @@ function polyArea(p: Array<{ x: number; z: number }>): number {
   return Math.abs(a) / 2;
 }
 
+/**
+ * Ground roads that cross the Gomti (or a canal) are bridges in reality but are often not tagged
+ * as such. They are lifted to level 1 so the elevation profile gives them a deck ~7.5 m above the
+ * water with ramps, piers and parapets, instead of a road lying on the river surface.
+ */
+export function liftRiverCrossings<T extends { points: Array<{ x: number; z: number }>; type?: string; subtype?: string; level?: number; isElevated?: boolean }>(
+  roads: T[], waterways: Array<{ points: Array<{ x: number; z: number }>; isPolygon?: boolean; cls?: string }>,
+): T[] {
+  const rivers = waterways.filter((w) => w.isPolygon && (w.cls === 'river_poly' || w.cls === 'canal_poly') && w.points?.length > 2);
+  const inside = (x: number, z: number, P: Array<{ x: number; z: number }>) => { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const a = P[i], b = P[j]; if ((a.z > z) !== (b.z > z) && x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z) + a.x) c = !c; } return c; };
+  const boxes = rivers.map((w) => { let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity; for (const p of w.points) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z); } return { w, x0, x1, z0, z1 }; });
+  return roads.map((r) => {
+    if (r.subtype === 'rail' || r.type === 'subway' || r.type === 'footway' || r.type === 'path') return r;
+    const pts = r.points; let wet = false;
+    for (let i = 0; i < pts.length - 1 && !wet; i++) for (const t of [0.25, 0.5, 0.75]) {
+      const x = pts[i].x + (pts[i + 1].x - pts[i].x) * t, z = pts[i].z + (pts[i + 1].z - pts[i].z) * t;
+      if (boxes.some((b) => x >= b.x0 && x <= b.x1 && z >= b.z0 && z <= b.z1 && inside(x, z, b.w.points))) { wet = true; break; }
+    }
+    return wet ? { ...r, isElevated: true, level: Math.max(1, r.level ?? 1), riverBridge: true } : r;
+  });
+}
+
 export function buildOverlay(src: OverlaySource): OverlayBuild {
   // Deterministic feature identity: one physical carriageway, one surface. Overture
   // occasionally ships the same polyline twice under different ids; identical
   // quantised endpoints + vertex count + level + class are the same road.
   const seenRoad = new Set<string>();
-  const roads = (src.majorRoads ?? []).filter((r) => {
+  const roads0 = (src.majorRoads ?? []).filter((r) => {
     const p = r?.points;
     if (!p || p.length < 2) return true;
     const a = p[0], b = p[p.length - 1];
@@ -717,6 +739,7 @@ export function buildOverlay(src: OverlaySource): OverlayBuild {
     seenRoad.add(key);
     return true;
   });
+  const roads = liftRiverCrossings(roads0, (src.waterways ?? []) as never);
   // Sewage lagoons and treatment basins are not open water; they read as false
   // blue patches. Genuine rivers, canals, lakes, reservoirs and ponds remain.
   const NOT_OPEN_WATER = new Set(['wastewater', 'basin']);
@@ -732,7 +755,7 @@ export function buildOverlay(src: OverlaySource): OverlayBuild {
 
   // ── Elevation ────────────────────────────────────────────────────────────
   // Real Overture level / isElevated drives a ramp-hold-ramp profile per feature.
-  const profiles = buildElevationProfiles(roads);
+  const profiles = buildElevationProfiles(roads);  // roads already lifted at river crossings
 
   // ── Roads ────────────────────────────────────────────────────────────────
   const byClass = new Map<RoadClass, number[]>();

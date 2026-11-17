@@ -594,9 +594,9 @@ export function emitDetail(sink: VertexSink, p: Prepared, ox: number, oz: number
         const yb = p.minH + f * fh;
         if (inGanj && f === 0 && len > 6) {
           // Colonnade: 3 m deep arcade roof with square columns every 3.6 m.
-          slab(yb + 3.6, 3.0, 0, len, 0.35, SURFACE.STONE);
+          slab(yb + 3.6, 1.6, 0, len, 0.3, SURFACE.STONE);
           for (let t = 0.6; t < len - 0.3; t += 3.6) {
-            const cx = a.x + ux * t + nx * 2.8 * s, cz = a.z + uz * t + nz * 2.8 * s, w = 0.22;
+            const cx = a.x + ux * t + nx * 1.45 * s, cz = a.z + uz * t + nz * 1.45 * s, w = 0.2;
             for (const [ax, az, bx, bz] of [[cx - ux * w - nx * w, cz - uz * w - nz * w, cx + ux * w - nx * w, cz + uz * w - nz * w], [cx + ux * w - nx * w, cz + uz * w - nz * w, cx + ux * w + nx * w, cz + uz * w + nz * w], [cx + ux * w + nx * w, cz + uz * w + nz * w, cx - ux * w + nx * w, cz - uz * w + nz * w], [cx - ux * w + nx * w, cz - uz * w + nz * w, cx - ux * w - nx * w, cz - uz * w - nz * w]])
               e.wall(ax, az, bx, bz, yb, yb + 3.6, 10, 14, SURFACE.STONE);
           }

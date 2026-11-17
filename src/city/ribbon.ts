@@ -366,7 +366,8 @@ export function buildElevationProfiles(
   for (const { road } of elevated) {
     const deck = deckHeightFor(road.level ?? 1);
     const span = compLen.get(find(road)) ?? 0;
-    const eff = span < 45 ? 0.6 : span < 140 ? Math.min(deck, 1.0 + (span - 45) * 0.07) : deck;
+    // River bridges always clear the water by a full deck height, however short the mapped piece.
+    const eff = (road as { riverBridge?: boolean }).riverBridge ? Math.max(deck, 8.5) : span < 45 ? 0.6 : span < 140 ? Math.min(deck, 1.0 + (span - 45) * 0.07) : deck;
     effDeckMap.set(road, eff);
   }
 

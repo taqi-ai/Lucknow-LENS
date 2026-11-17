@@ -73,6 +73,8 @@ export const TourGuide: React.FC<Props> = ({ controller, night, onNight, hidden 
   const [card, setCard] = useState<{ kicker: string; title: string; text: string } | null>(null);
   const token = useRef(0);
   const pausedRef = useRef(false);
+  /** Pending jump: stop index to go to (Back / Next). */
+  const jumpRef = useRef<number | null>(null);
   const nightRef = useRef(night);
   const startNight = useRef(night);
   const metroPoint = useRef<{ x: number; z: number; az: number } | null>(null);
@@ -113,7 +115,7 @@ export const TourGuide: React.FC<Props> = ({ controller, night, onNight, hidden 
     const alive = () => token.current === my;
     const wait = async (ms: number) => {
       let left = ms;
-      while (left > 0 && alive()) { await sleep(100); if (!pausedRef.current) left -= 100; }
+      while (left > 0 && alive() && jumpRef.current === null) { await sleep(100); if (!pausedRef.current) left -= 100; }
     };
     startNight.current = nightRef.current;
     setRunning(true); setPaused(false); setIdx(-1);
@@ -125,6 +127,7 @@ export const TourGuide: React.FC<Props> = ({ controller, night, onNight, hidden 
     await wait(4200);
 
     for (let i = 0; i < STOPS.length && alive(); i++) {
+      if (jumpRef.current !== null) { i = Math.max(0, Math.min(STOPS.length - 1, jumpRef.current)); jumpRef.current = null; }
       const s = STOPS[i];
       let x: number | undefined, z: number | undefined, az = s.az;
       if (s.dest === 'metro') {
@@ -208,6 +211,8 @@ export const TourGuide: React.FC<Props> = ({ controller, night, onNight, hidden 
               <div className="flex flex-1 gap-1" aria-label={`Stop ${Math.max(0, Math.min(idx + 1, total))} of ${total}`}>
                 {STOPS.map((s, i) => <span key={s.id} className={`h-1 flex-1 rounded-full ${i < idx ? 'bg-[#d8b66a]' : i === idx ? 'bg-[#f6ead2]' : 'bg-white/20'}`} />)}
               </div>
+              <button onClick={() => { jumpRef.current = Math.max(0, idx - 1); }} aria-label="Previous stop" className="rounded-lg bg-white/10 px-2.5 py-1 text-[12px] font-semibold hover:bg-white/20">Back</button>
+              <button onClick={() => { jumpRef.current = idx + 1; }} aria-label="Next stop" className="rounded-lg bg-white/10 px-2.5 py-1 text-[12px] font-semibold hover:bg-white/20">Next</button>
               <button onClick={() => setPaused((p) => !p)} className="rounded-lg bg-white/10 px-2.5 py-1 text-[12px] font-semibold hover:bg-white/20">{paused ? 'Resume' : 'Pause'}</button>
               <button onClick={stop} className="rounded-lg bg-white/10 px-2.5 py-1 text-[12px] font-semibold hover:bg-white/20">End</button>
             </div>

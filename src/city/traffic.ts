@@ -11,6 +11,7 @@ import * as THREE from 'three';
 import { loadJSON } from '../data/resourceCache';
 import { buildElevationProfiles, classifyRoad, roadHalfWidth, ROAD_LAYER_Y, type RoadClass } from './ribbon';
 import { getDeviceProfile } from './deviceProfile';
+import { liftRiverCrossings } from './overlayGeometry';
 
 interface Pt { x: number; z: number; y?: number }
 interface Lane { pts: Pt[]; s: number[]; total: number; speed: number; cx: number; cz: number; r: number }
@@ -44,13 +45,18 @@ export class TrafficSystem {
     const q = getDeviceProfile().quality;
     this.max = q === 'low' ? 0 : q === 'medium' ? 700 : 1500;
     if (!this.max) return;
-    let ov: { majorRoads: Array<{ points: Pt[]; type?: string; subtype?: string; level?: number; isElevated?: boolean; id?: string }> };
+    let ov: { majorRoads: Array<{ points: Pt[]; type?: string; subtype?: string; level?: number; isElevated?: boolean; id?: string }>; waterways: never[]; greenAreas: Array<{ points: Pt[] }> };
     try { ov = await loadJSON('/overture_tiles_full/overview.json'); } catch { return; }
-    const roads = ov.majorRoads.filter((r) => r.points?.length >= 2);
+    const MOTOR = /^(motorway|trunk|primary|secondary|tertiary)(_link)?$/;
+    const roads = liftRiverCrossings(ov.majorRoads.filter((r) => r.points?.length >= 2 && r.subtype !== 'rail' && MOTOR.test(r.type ?? '')), ov.waterways ?? []);
+    const parks = (ov.greenAreas ?? []).filter((g) => g.points?.length > 2 && areaOf(g.points) > 15e4);
+    const inPark = (x: number, z: number) => parks.some((g) => { const P = g.points; let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const a = P[i], b = P[j]; if ((a.z > z) !== (b.z > z) && x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z) + a.x) c = !c; } return c; });
     const profiles = buildElevationProfiles(roads as never);
     for (const r of roads) {
       const cls = classifyRoad(r.type, r.subtype, r.level, r.isElevated);
       if (!CLASSES.has(cls)) continue;
+      const mid = r.points[r.points.length >> 1];
+      if (inPark(mid.x, mid.z)) continue;
       const base = (profiles.get(r as never) as Pt[] | undefined) ?? r.points;
       const half = roadHalfWidth(cls, r.type, r.id);
       for (const dir of [1, -1]) {
@@ -74,11 +80,22 @@ export class TrafficSystem {
     // Geometry per kind, with vertex colours: body, glass band, dark wheels.
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.25 });
     for (const k of KINDS) {
-      const g = new THREE.BoxGeometry(k.L, k.H * 0.62, k.W);
-      g.translate(0, k.H * 0.31 + 0.3, 0);
-      const cab = new THREE.BoxGeometry(k.L * (k.L > 8 ? 0.98 : 0.55), k.H * 0.38, k.W * 0.94);
-      cab.translate(k.L > 8 ? 0 : -k.L * 0.05, k.H * 0.81 + 0.3, 0);
-      const merged = mergeColored([[g, 0xffffff], [cab, k.L > 8 ? 0x9fb4c2 : 0x2a3540]]);
+      // Body (paint), tapered cabin/glass, wheels, lights; buses get a window band, two-wheelers a rider.
+      const parts: Array<[THREE.BufferGeometry, number]> = [];
+      const bus = k.L > 8, bike = k.W < 1;
+      const body = new THREE.BoxGeometry(k.L, k.H * (bus ? 0.78 : 0.5), k.W); body.translate(0, k.H * (bus ? 0.39 : 0.25) + 0.35, 0); parts.push([body, 0xffffff]);
+      if (bus) { const w = new THREE.BoxGeometry(k.L * 0.96, k.H * 0.22, k.W * 1.01); w.translate(0, k.H * 0.6 + 0.35, 0); parts.push([w, 0x26343d]); }
+      else if (!bike) {
+        const cab = new THREE.CylinderGeometry(0.5, 0.5, 1, 4, 1); cab.rotateY(Math.PI / 4); cab.scale(k.L * 0.62, k.H * 0.42, k.W * 0.92 * 1.41); cab.translate(-k.L * 0.04, k.H * 0.71 + 0.35, 0); parts.push([cab, 0x2a3540]);
+      } else { const rider = new THREE.BoxGeometry(0.45, 0.8, 0.45); rider.translate(-0.1, 1.35, 0); parts.push([rider, 0x5a4a3a]); }
+      for (const fx of bike ? [-0.65, 0.65] : [-k.L * 0.32, k.L * 0.32]) for (const fz of bike ? [0] : [-k.W * 0.46, k.W * 0.46]) {
+        const wh = new THREE.CylinderGeometry(bike ? 0.32 : 0.36, bike ? 0.32 : 0.36, bike ? 0.12 : 0.25, 10); wh.rotateX(Math.PI / 2); wh.translate(fx, 0.36, fz); parts.push([wh, 0x161616]);
+      }
+      for (const fz of bike ? [0] : [-k.W * 0.35, k.W * 0.35]) {
+        const hl = new THREE.BoxGeometry(0.05, 0.16, 0.3); hl.translate(k.L / 2, 0.75, fz); parts.push([hl, 0xfff3d0]);
+        const tl = new THREE.BoxGeometry(0.05, 0.16, 0.3); tl.translate(-k.L / 2, 0.75, fz); parts.push([tl, 0xb3261e]);
+      }
+      const merged = mergeColored(parts);
       const m = new THREE.InstancedMesh(merged, mat, this.max);
       m.count = 0; m.frustumCulled = false; m.castShadow = getDeviceProfile().quality === 'high';
       this.bodies.push(m); this.group.add(m);
@@ -160,6 +177,8 @@ export class TrafficSystem {
     void this.v;
   }
 }
+
+function areaOf(p: Pt[]): number { let a = 0; for (let i = 0; i < p.length; i++) { const j = (i + 1) % p.length; a += p[i].x * p[j].z - p[j].x * p[i].z; } return Math.abs(a) / 2; }
 
 function mergeColored(parts: Array<[THREE.BufferGeometry, number]>): THREE.BufferGeometry {
   const pos: number[] = [], nrm: number[] = [], col: number[] = [];

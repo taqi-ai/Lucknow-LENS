@@ -288,6 +288,9 @@ const FRAG_COLOR = /* glsl */ `
       vec3 plaster = vec3(0.70, 0.53, 0.33);
       float rumi = 1.0 - smoothstep(40.0, 70.0, length(vWorldPos.xz - vec2(-3758.0, -2364.0)));
       plaster = mix(plaster, vec3(0.83, 0.60, 0.30), rumi);
+      // Chhatar Manzil: pale yellow lime wash.
+      float cmz = 1.0 - smoothstep(60.0, 90.0, length(vWorldPos.xz - vec2(-1770.7, -988.5)));
+      plaster = mix(plaster, vec3(0.86, 0.78, 0.50), cmz);
       baseCol = plaster * (0.93 + 0.10 * vnoise(vWorldPos.xz * 0.5 + vWorldPos.y * 0.3)) * (1.0 - 0.08 * mould);
       baseCol *= 1.0 - 0.10 * vnoise(vec2(fuv.x * 0.8, vWorldPos.y * 0.15));
       rough = 0.9;

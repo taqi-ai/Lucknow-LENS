@@ -13,6 +13,7 @@ import { GroundSurface } from './groundSurface';
 import { buildLandmarkLayer, type LandmarkLayer } from './landmarks';
 import { MetroSystem } from './metroSystem';
 import { TrafficSystem } from './traffic';
+import { RailAirSystem } from './railAir';
 import { buildTreePrototypes, createTreeMaterial, pickSpecies, SPECIES, SPECIES_COUNT } from './treePrototypes';
 import type { TileWorkerRequest, TileWorkerResponse } from './tileWorker';
 import { getDeviceProfile } from './deviceProfile';
@@ -138,6 +139,7 @@ export class TileStreamer {
   private landmarks: LandmarkLayer;
   private metro = new MetroSystem();
   private traffic = new TrafficSystem();
+  private railAir = new RailAirSystem();
 
   private lampMastGeo!: THREE.BufferGeometry;
   private lampHeadGeo!: THREE.BufferGeometry;
@@ -384,6 +386,7 @@ export class TileStreamer {
     this.metro.setNightMode(this.isNight);
     await this.traffic.init(this.scene).catch((e) => console.warn('[TileStreamer] traffic init failed:', e));
     this.traffic.setNightMode(this.isNight);
+    await this.railAir.init(this.scene).catch((e) => console.warn('[TileStreamer] rail/air init failed:', e));
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -397,6 +400,7 @@ export class TileStreamer {
 
     // Traffic animates every frame (the rest of the streamer is throttled).
     this.traffic.update(now / 1000, camera, camera.position.y);
+    this.railAir.update(now / 1000, camera.position.y);
     if (now - this.lastUpdateTime < this.UPDATE_INTERVAL) {
       this.cullLoadedTiles();
       return;

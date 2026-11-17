@@ -488,8 +488,8 @@
    "key": "janeshwar_flag",
    "name": "National flag, Janeshwar Mishra Park",
    "xz": [
-    3837,
-    1738
+    3243.9,
+    1768.3
    ],
    "snap": false,
    "exclude": false,
@@ -714,6 +714,78 @@
    "snap": false,
    "angle": 0,
    "size": 50
+  },
+  {
+   "key": "jpnic",
+   "name": "Jayaprakash Narayan International Centre",
+   "xz": [
+    2506.4,
+    -364.2
+   ],
+   "snap": false,
+   "angle": 0,
+   "exclPoly": [
+    [
+     2460.7,
+     -417.1
+    ],
+    [
+     2547.7,
+     -416.6
+    ],
+    [
+     2550.9,
+     -311.6
+    ],
+    [
+     2466.3,
+     -311.6
+    ]
+   ],
+   "height": 70,
+   "note": "User pins 1-5."
+  },
+  {
+   "key": "jpnic_annex",
+   "name": "JPNIC annexe",
+   "xz": [
+    2564.4,
+    -494.5
+   ],
+   "snap": false,
+   "angle": 0,
+   "exclPoly": [
+    [
+     2520.5,
+     -534.8
+    ],
+    [
+     2597,
+     -538.4
+    ],
+    [
+     2600,
+     -452.5
+    ],
+    [
+     2540.1,
+     -452.5
+    ]
+   ],
+   "height": 20,
+   "note": "User pins 6-8."
+  },
+  {
+   "key": "jmp_statue",
+   "name": "Statue platform, Janeshwar Mishra Park",
+   "xz": [
+    4389.6,
+    1323.1
+   ],
+   "snap": false,
+   "angle": 0,
+   "size": 40,
+   "note": "User pin: platform with a statue, not a building."
   }
  ]
 }

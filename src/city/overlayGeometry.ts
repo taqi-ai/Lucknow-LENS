@@ -57,6 +57,8 @@ export interface OverlayBuild {
   bridgeRail: Float32Array;
   flyoverPiers: Float32Array;
   flyoverBarriers: Float32Array;
+  /** Gomti riverfront promenade (paved walk outside the embankment). */
+  promenade: Float32Array;
   /** Raised median kerbs between paired one-way carriageways. */
   medianKerb: Float32Array;
   /** Planted median infill. */
@@ -770,6 +772,7 @@ export function buildOverlay(src: OverlaySource): OverlayBuild {
   // ── Water ────────────────────────────────────────────────────────────────
   const water: number[] = [];
   const riverBank: number[] = [];
+  const promenade: number[] = [];
   for (const w of waterways) {
     if (!w?.points || w.points.length < 2) continue;
     if (w.isPolygon && w.points.length >= 3) {
@@ -781,7 +784,28 @@ export function buildOverlay(src: OverlaySource): OverlayBuild {
       // Stone-stepped bank along still water over 1 ha (as at Janeshwar Mishra Park).
       if (still && polyArea(w.points) > 1e4) appendRibbon(riverBank, [...w.points, w.points[0]], { half: 1.3, y: 0.11 });
       // Embankment along the real bank line of the river channel (round 2).
-      if (w.cls === 'river_poly') appendRibbon(riverBank, [...w.points, w.points[0]], { half: 3.2, y: 0.05 });
+      if (w.cls === 'river_poly') {
+        appendRibbon(riverBank, [...w.points, w.points[0]], { half: 3.2, y: 0.05 });
+        // Riverfront promenade (round 3): an 8 m paved walk with a parapet edge just outside the
+        // embankment, on the developed central reach (Hanuman Setu to Gomti Nagar).
+        const P = w.points, inside = (x: number, z: number) => { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const a = P[i], b = P[j]; if ((a.z > z) !== (b.z > z) && x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z) + a.x) c = !c; } return c; };
+        for (let i = 0; i < P.length; i++) {
+          const a = P[i], b = P[(i + 1) % P.length], dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz);
+          if (L < 1 || L > 400) continue;
+          const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2;
+          if (mx < -2700 || mx > 5200) continue;
+          let nx = -dz / L, nz = dx / L;
+          if (inside(mx + nx * 6, mz + nz * 6)) { nx = -nx; nz = -nz; }
+          const q = (o0: number, o1: number, y: number) => promenade.push(
+            a.x + nx * o0, y, a.z + nz * o0, b.x + nx * o0, y, b.z + nz * o0, b.x + nx * o1, y, b.z + nz * o1,
+            a.x + nx * o0, y, a.z + nz * o0, b.x + nx * o1, y, b.z + nz * o1, a.x + nx * o1, y, a.z + nz * o1);
+          q(3.4, 11.5, 0.16);
+          // parapet wall on the water side
+          promenade.push(a.x + nx * 3.4, 0.16, a.z + nz * 3.4, b.x + nx * 3.4, 0.16, b.z + nz * 3.4, b.x + nx * 3.4, 1.15, b.z + nz * 3.4,
+                         a.x + nx * 3.4, 0.16, a.z + nz * 3.4, b.x + nx * 3.4, 1.15, b.z + nz * 3.4, a.x + nx * 3.4, 1.15, a.z + nz * 3.4);
+          q(3.4, 3.9, 1.15);
+        }
+      }
     } else {
       // Measured / class width from the hydrology layer; never a fixed broad buffer.
       appendRibbon(water, w.points, { half: Math.max(1.0, (w.width ?? 4) / 2), y: -0.25 });
@@ -866,6 +890,7 @@ export function buildOverlay(src: OverlaySource): OverlayBuild {
     bridgeRail: new Float32Array(rail),
     flyoverPiers: new Float32Array(flyoverPiers),
     flyoverBarriers: new Float32Array(flyoverBarriers),
+    promenade: new Float32Array(promenade),
     medianKerb: new Float32Array(medianKerb),
     medianGrass: new Float32Array(medianGrass),
     markings: new Float32Array(markings),

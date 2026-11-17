@@ -26,6 +26,7 @@ export class CityOverlay {
   private flyoverBarrierMesh: THREE.Mesh | null = null;
   private medianMeshes: THREE.Mesh[] = [];
   private markingMesh: THREE.Mesh | null = null;
+  private promenadeMat = new THREE.MeshStandardMaterial({ color: 0xc4b59a, roughness: 0.92, side: THREE.DoubleSide });
   private medianKerbMat = new THREE.MeshStandardMaterial({ color: 0xd2cdc2, roughness: 0.85, side: THREE.DoubleSide });
   private medianGrassMat = new THREE.MeshStandardMaterial({ color: 0x4e6b26, roughness: 0.95, side: THREE.DoubleSide });
   private markingMat = new THREE.MeshStandardMaterial({ color: 0xe6e3da, roughness: 0.75, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 });
@@ -141,7 +142,7 @@ export class CityOverlay {
     // to reflect and renders near-black, which is what turned the Gomti into a
     // black ribbon in daylight. Low roughness alone gives the sheen.
     this.waterMaterial = new THREE.MeshStandardMaterial({
-      color: 0x0d2438,
+      color: 0x1d3036,
       roughness: 0.62, // a silty river: soft highlight, no mirror-like sun streaks
       metalness: 0.08,
     });
@@ -180,8 +181,8 @@ export class CityOverlay {
           vec3 vDir = normalize(vViewPosition);
           float fres = pow(1.0 - clamp(dot(normalize(normal), vDir), 0.0, 1.0), 3.2);
           // Hazy-sky reflection, low intensity: the Gomti reads as a silty green-brown river.
-          vec3 skyTint = mix(vec3(0.50, 0.55, 0.56), vec3(0.10, 0.12, 0.16), uNightW);
-          gl_FragColor.rgb = mix(gl_FragColor.rgb, skyTint, fres * mix(0.35, 0.3, uNightW));
+          vec3 skyTint = mix(vec3(0.30, 0.36, 0.38), vec3(0.10, 0.12, 0.16), uNightW);
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, skyTint, fres * mix(0.18, 0.3, uNightW));
           // Silt gradient — shallower, warmer water toward the banks.
           float siltFade = 1.0 - smoothstep(1500.0, 6000.0, length(vViewPosition));
           float silt = 0.5 + 0.5 * sin(vWPos.x * 0.004 + vWPos.z * 0.0031);
@@ -294,6 +295,8 @@ export class CityOverlay {
           this.bridges.addSection(pos, 'rail');
         } else if (sec.name === 'flyoverPiers') {
           this.flyoverPierMesh = this.makeMesh(pos, this.flyoverPierMat, 'flyoverPiers');
+        } else if (sec.name === 'promenade') {
+          this.makeMesh(pos, this.promenadeMat, 'water');
         } else if (sec.name === 'medianKerb') {
           this.medianMeshes.push(this.makeMesh(pos, this.medianKerbMat, 'roads'));
         } else if (sec.name === 'medianGrass') {
@@ -447,7 +450,7 @@ export class CityOverlay {
       this.metroCanopyMat.color.setHex(0x3d4149);
       this.metroCanopyMat.emissive.setHex(0x2a2213);
     } else {
-      this.waterMaterial.color.setHex(0x4b5a50);
+      this.waterMaterial.color.setHex(0x3a4c46);
       this.waterMaterial.roughness = 0.62;
       this.waterNight.value = 0;
       this.parkMaterial.color.setHex(0x637548);

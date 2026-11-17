@@ -1212,6 +1212,74 @@ function charbaghStation(k: Kit, s: LandmarkSite): void {
   }
 }
 
+
+/**
+ * Taj Mahal Lucknow (round 3, from the user's photographs and satellite view): a white palace hotel.
+ * Central block with a colonnaded portico, balustraded parapets and a red-brown dome on a drum with a
+ * lantern; long two/three-storey wings stepping back on both sides; a pool garden behind (east) and a
+ * formal entrance lawn in front (west). Massing is read from the photographs, sizes approximate.
+ */
+function tajHotel(k: Kit, g: Grounds, s: LandmarkSite): void {
+  k.begin(s, 26, 109, 0); g.frame(s, 0);
+  k.domeDefault = S.DOME;
+  const W = S.DOME;   // lime-washed white
+  // Entrance forecourt and lawn (west), pool garden (east).
+  g.color(0xcfc6b4).rect(-78, -40, -26, 26, 0.08);
+  g.color(0x6f8f48).rect(-74, -48, -18, 18, 0.1); g.color(0xb85c4a).rect(-70, -52, -2, 2, 0.12);
+  g.color(0xd8d0bf).rect(30, 74, -34, 30, 0.08);
+  g.color(0x4fb3c4).rect(40, 62, -14, 12, 0.12); g.color(0x6f8f48).rect(64, 74, -30, 26, 0.1);
+  // Central block and portico.
+  k.box(-22, 22, 0, 18, -20, 20, W); k.arcadeAll(-22, 22, -20, 20, 1, 2.4, 4.5, 4.5);
+  k.arcadeAll(-22, 22, -20, 20, 7, 2.2, 4, 4.5); k.arcadeAll(-22, 22, -20, 20, 12.5, 2.2, 4, 4.5);
+  k.merlons(-22, 22, -20, 20, 18, W);
+  k.box(-34, -22, 0, 11, -10, 10, W);                               // portico
+  for (let v = -8; v <= 8; v += 4) k.cylinder(-33, v, 0.7, 0.7, 0, 11, 10, W);
+  k.box(-35, -21, 11, 12, -11, 11, W); k.merlons(-35, -21, -11, 11, 12, W);
+  // Drum and red-brown dome with a lantern.
+  k.cylinder(0, 0, 10, 10, 18, 23, 24, W);
+  for (let i = 0; i < 16; i++) { const a2 = (i / 16) * Math.PI * 2; k.cylinder(Math.cos(a2) * 10.2, Math.sin(a2) * 10.2, 0.45, 0.45, 18, 23, 6, W); }
+  k.hemi(0, 0, 10.2, 23, S.REDSTONE, 0.62);
+  k.cylinder(0, 0, 1.6, 1.6, 29, 31.5, 8, W); k.hemi(0, 0, 1.8, 31.5, S.REDSTONE, 1);
+  // Wings: north and south, stepping down, with balustrades and corner chhatris.
+  for (const sv of [-1, 1]) {
+    const v0 = sv > 0 ? 20 : -62, v1 = sv > 0 ? 62 : -20;
+    k.box(-24, 18, 0, 14, v0, v1, W); k.arcadeAll(-24, 18, v0, v1, 1, 2.1, 4, 4.2); k.arcadeAll(-24, 18, v0, v1, 5.5, 2, 3.6, 4.2); k.arcadeAll(-24, 18, v0, v1, 10, 2, 3.4, 4.2);
+    k.merlons(-24, 18, v0, v1, 14, W);
+    const e0 = sv > 0 ? 62 : -78, e1 = sv > 0 ? 78 : -62;
+    k.box(-18, 30, 0, 10, e0, e1, W); k.arcadeAll(-18, 30, e0, e1, 1, 2, 3.8, 4.2); k.merlons(-18, 30, e0, e1, 10, W);
+    for (const u of [-24, 18]) k.chhatri(u, sv * 62, 3, 14, W);
+  }
+  // Rear wings around the pool garden.
+  k.box(18, 30, 0, 12, -62, -20, W); k.box(18, 30, 0, 12, 20, 62, W);
+  // Garden trees.
+  let seed = 3;
+  for (let v = -70; v <= 70; v += 10) { g.tree(-82, v, 9, false, seed++); g.tree(80, v, 8, true, seed++); }
+}
+
+/**
+ * Renaissance Lucknow (round 3, from the user's photographs): a ~15-storey white tower with a grid of
+ * lit windows, a full-height red-brown fin on one corner and a tall mural strip down the front, on a
+ * podium with a rooftop crown.
+ */
+function renaissanceHotel(k: Kit, g: Grounds, s: LandmarkSite): void {
+  k.begin(s, 58, 113, 0); g.frame(s, 0);
+  const H = 56, hu = 15, hv = 11;
+  g.color(0xbdb4a2).rect(-34, 34, -22, 22, 0.08);
+  k.box(-30, 30, 0, 7, -18, 18, S.STONE); k.arcade('u0', -30, -16, 16, 0.5, 3, 5.5, 6, S.GLASS);
+  k.box(-hu, hu, 7, H, -hv, hv, S.DOME);
+  // Window grid: glass bands on every floor of the west and south faces.
+  // Rectangular glazing: a glass band per floor, interrupted by slim white mullions.
+  for (let y = 9; y < H - 2; y += 3.4) {
+    for (let u = -hu + 1; u < hu - 4.5; u += 3) { k.box(u, u + 2.4, y, y + 2.3, hv - 0.05, hv + 0.15, S.GLASS); k.box(u, u + 2.4, y, y + 2.3, -hv - 0.15, -hv + 0.05, S.GLASS); }
+    for (let v = -hv + 1; v < hv - 1; v += 3) { k.box(-hu - 0.15, -hu + 0.05, y, y + 2.3, v, v + 2.4, S.GLASS); k.box(hu - 0.05, hu + 0.15, y, y + 2.3, v, v + 2.4, S.GLASS); }
+  }
+  k.box(hu - 4, hu + 0.6, 7, H + 2, hv - 4, hv + 0.6, S.REDSTONE);          // red corner fin
+  k.box(-hu - 0.4, -hu + 0.3, 7, H - 1, -2.5, 2.5, S.REDSTONE);            // mural strip on the west face
+  k.box(-hu - 0.5, -hu + 0.2, 20, 32, -1.5, 1.5, S.GILT);
+  k.box(-hu - 1.5, hu + 1.5, H, H + 0.6, -hv - 1.5, hv + 1.5, S.STONE);    // projecting roof slab
+  k.box(-hu * 0.5, hu * 0.5, H + 0.6, H + 5, -hv * 0.5, hv * 0.5, S.STONE);
+}
+
 function buildAll(k: Kit, g: Grounds): { flag?: WavingFlag } {
   const res: { flag?: WavingFlag } = {};
   const b = site('bara_imambara'); if (b) baraImambara(k, g, b);
@@ -1290,19 +1358,10 @@ function buildAll(k: Kit, g: Grounds): { flag?: WavingFlag } {
     for (const u of [-hu, hu]) for (const v of [-hv, hv]) k.cylinder(u, v, 2.2, 2.0, 0, 16, 8, S.STONE);
   }
   const tj = site('taj_hotel');
-  if (tj) ringMonument(k, tj, 22, S.DOME, 109, (kk) => { kk.cylinder(0, 0, 9, 9, 22, 26, 16, S.DOME); kk.onion(0, 0, 9, 26, 9, S.DOME, 0.12); });
+  if (tj) tajHotel(k, g, tj);
   const rn = site('renaissance');
-  if (rn) {
-    // Renaissance Lucknow: a slab tower of blue-green glass with a pale stone frame and crown.
-    k.begin(rn, 58, 113);
-    const hu = rn.ext[0] / 2, hv = rn.ext[1] / 2;
-    k.box(-hu, hu, 0, 8, -hv, hv, S.STONE);
-    k.box(-hu + 1, hu - 1, 8, 58, -hv + 1, hv - 1, S.GLASS);
-    for (let u = -hu + 1; u <= hu - 1; u += 6.5) { k.box(u - 0.35, u + 0.35, 8, 58, -hv + 0.6, -hv + 1.1, S.STONE); k.box(u - 0.35, u + 0.35, 8, 58, hv - 1.1, hv - 0.6, S.STONE); }
-    for (let y = 8; y <= 58; y += 3.3) { k.box(-hu + 0.6, hu - 0.6, y, y + 0.3, -hv + 0.6, -hv + 1.0, S.STONE); k.box(-hu + 0.6, hu - 0.6, y, y + 0.3, hv - 1.0, hv - 0.6, S.STONE); }
-    k.box(-hu, hu, 58, 61, -hv, hv, S.STONE);
-    k.box(-hu * 0.35, hu * 0.35, 61, 66, -hv * 0.5, hv * 0.5, S.STONE);
-  }
+  if (rn) renaissanceHotel(k, g, rn);
+
   const ek = site('ekana');
   if (ek) {
     // Bowl: raked stands rising outward, a ring roof, the field.

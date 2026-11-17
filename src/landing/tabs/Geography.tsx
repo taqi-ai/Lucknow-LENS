@@ -14,7 +14,7 @@ export default function Geography({ onEnter }: TabProps) {
     <>
       <PageHero
         kicker="River, plain and relief" title="Geography" hi="भूगोल" backdrop="topo"
-        intro="Lucknow is built on a plain so flat that thirty metres of height is the whole story. Terralyt is named for the land it maps, so here is the land: real elevation, real river, and the weather above it right now."
+        intro="Lucknow is built on a plain so flat that thirty metres of height is the whole story. Lucknow Lens maps the land, so here is the land: real elevation, real river, and the weather above it right now."
       >
         <p className="mt-8 font-mono text-[13px] text-sand/80">26.85° N · 80.95° E · 123 m</p>
       </PageHero>

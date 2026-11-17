@@ -72,7 +72,7 @@ export const Landing: React.FC<LandingProps> = ({ onEnter, onPrefetch }) => {
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
-  useEffect(() => { document.title = `${TABS.find((t) => t.id === tab)?.label ?? 'Overview'} · TERRALYT LUCKNOW`; }, [tab]);
+  useEffect(() => { document.title = `${TABS.find((t) => t.id === tab)?.label ?? 'Overview'} · LUCKNOW LENS`; }, [tab]);
 
   // keep the active tab visible in the scrolling tab strip on phones
   useEffect(() => {
@@ -115,12 +115,12 @@ export const Landing: React.FC<LandingProps> = ({ onEnter, onPrefetch }) => {
           onMouseLeave={() => setHoverTab(null)}
           className={`relative mx-auto flex max-w-[1320px] items-center justify-between gap-3 rounded-full border px-3 transition-all duration-500 sm:px-4 ${scrolled ? 'h-[56px] border-paper/10 bg-terrain/80 shadow-[0_18px_50px_-24px_rgba(0,0,0,.45)] backdrop-blur-2xl' : 'h-[64px] border-paper/[0.07] bg-terrain/55 backdrop-blur-xl'}`}
         >
-          <a href="#/overview" className="group flex shrink-0 items-center gap-2.5 pl-2" aria-label="Terralyt Lucknow, overview">
+          <a href="#/overview" className="group flex shrink-0 items-center gap-2.5 pl-2" aria-label="Lucknow Lens, overview">
             <span aria-hidden className="relative grid h-9 w-9 place-items-center overflow-hidden rounded-full bg-sand text-terrain">
               <svg viewBox="0 0 100 140" className="h-[22px] w-auto transition-transform duration-700 group-hover:-translate-y-[2px]"><path d="M14 140 V66 C14 50 22 42 32 39 C34 28 40 22 45 20 C47 16 49 14 50 13 C51 14 53 16 55 20 C60 22 66 28 68 39 C78 42 86 50 86 66 V140" fill="none" stroke="currentColor" strokeWidth="9" strokeLinejoin="round" /></svg>
             </span>
             <span className="leading-none">
-              <span className="block font-display text-[1.35rem] text-paper">Terralyt</span>
+              <span className="block font-display text-[1.35rem] text-paper">Lucknow Lens</span>
               <span className="font-deva block text-[0.72rem] text-sand" lang="hi">लखनऊ</span>
             </span>
           </a>
@@ -173,7 +173,7 @@ export const Landing: React.FC<LandingProps> = ({ onEnter, onPrefetch }) => {
         <footer className="border-t border-sand/10 bg-terrain px-5 py-12 sm:px-8">
           <div className="mx-auto grid max-w-[1280px] gap-10 md:grid-cols-[1.3fr_1fr_1fr]">
             <div>
-              <div className="flex items-center gap-3"><TerralytMark className="h-9 w-9 object-contain" /><span className="text-[14px] font-bold tracking-[0.14em]">TERRALYT <span className="text-sand">LUCKNOW</span></span></div>
+              <div className="flex items-center gap-3"><TerralytMark className="h-9 w-9 object-contain" /><span className="text-[14px] font-bold tracking-[0.14em]">LUCKNOW <span className="text-sand">LENS</span></span></div>
               <p className="mt-4 max-w-[26rem] text-[13px] leading-[1.7] text-paper/55">Urban spatial intelligence for Lucknow. Built by students, using open data. Not affiliated with, endorsed by, or published on behalf of any government department.</p>
             </div>
             <ul className="space-y-2 text-[13px] text-paper/60">

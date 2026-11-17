@@ -5,7 +5,7 @@ import React, { useId } from 'react';
  * Darwaza's arch and its towers below, the Gomti in gold. The frame takes the
  * current text colour, so it reads on the light pages and on the dark map.
  */
-export const TerralytMark: React.FC<{ className?: string; title?: string }> = ({ className, title = 'TERRALYT' }) => {
+export const TerralytMark: React.FC<{ className?: string; title?: string }> = ({ className, title = 'LUCKNOW LENS' }) => {
   const id = useId().replace(/:/g, '');
   return (
     <svg viewBox="12 4 76 92" className={className} role="img" aria-label={title}>

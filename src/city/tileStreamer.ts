@@ -351,6 +351,11 @@ export class TileStreamer {
     }
   }
 
+  /** Current position of a metro train head, for the guided tour camera. */
+  public metroTrainHead(): { x: number; y: number; z: number; ang: number } | null {
+    return this.metro.trainHead(performance.now() / 1000);
+  }
+
   public async init(): Promise<void> {
     const [manifestResult, hlodManifest] = await Promise.all([
       loadJSON<TileManifest>('/overture_tiles_full/manifest.json').catch(() => null),

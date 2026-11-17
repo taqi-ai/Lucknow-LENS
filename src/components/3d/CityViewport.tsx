@@ -150,6 +150,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
 
     const streamer = new TileStreamer(cityRenderer.scene, materials);
     streamerRef.current = streamer;
+    (window as unknown as { __lensTrainHead?: () => unknown }).__lensTrainHead = () => streamer.metroTrainHead();
 
     // Initialize label manager and load label data
     const labelManager = new LabelManager(cityRenderer.scene);

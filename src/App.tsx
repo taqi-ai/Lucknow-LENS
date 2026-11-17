@@ -146,7 +146,7 @@ export default function App() {
             <button
               onClick={leave}
               className="fixed left-1/2 top-3 z-[60] flex -translate-x-1/2 items-center gap-2 rounded-full border border-sand/25 bg-cabin/80 px-4 py-2 text-[12.5px] font-semibold text-paper/85 backdrop-blur-xl transition-colors hover:bg-cabin hover:text-paper max-sm:left-auto max-sm:right-3 max-sm:h-11 max-sm:w-11 max-sm:translate-x-0 max-sm:justify-center max-sm:px-0"
-              aria-label="Back to the Terralyt overview"
+              aria-label="Back to the Lucknow Lens overview"
             >
               <TerralytMark className="h-5 w-5" /> <span className="max-sm:hidden">Overview</span>
             </button>

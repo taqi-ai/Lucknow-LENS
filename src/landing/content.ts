@@ -32,7 +32,7 @@ export const TABS: Tab[] = [
   { id: 'geography', label: 'Geography', hi: 'भूगोल', blurb: 'River, plain and relief' },
   { id: 'government', label: 'Government', hi: 'शासन', blurb: 'Services and helplines' },
   { id: 'pedia', label: 'Lucknowpedia', hi: 'ज्ञानकोश', blurb: 'Nawabs, kitchens, government and what is being built' },
-  { id: 'platform', label: 'Platform', hi: 'मंच', blurb: 'What Terralyt is' },
+  { id: 'platform', label: 'Platform', hi: 'मंच', blurb: 'What Lucknow Lens is' },
   { id: 'about', label: 'About', hi: 'हमारे बारे में', blurb: 'Team and credits' },
 ];
 
@@ -43,7 +43,7 @@ export interface Monument {
 }
 export const MONUMENTS: Monument[] = [
   { slug: 'rumi-darwaza', en: 'Rumi Darwaza', hi: 'रूमी दरवाज़ा', ur: 'رومی دروازہ', year: '1784', style: 'Awadhi gateway',
-    body: 'A gateway about sixty feet tall, commissioned by Nawab Asaf-ud-Daula and said to echo the Sublime Porte in Istanbul. It once marked the western entrance to old Lucknow, and it is the arch inside the Terralyt logo.', preset: 'rumi' },
+    body: 'A gateway about sixty feet tall, commissioned by Nawab Asaf-ud-Daula and said to echo the Sublime Porte in Istanbul. It once marked the western entrance to old Lucknow, and it is the arch inside the Lucknow Lens logo.', preset: 'rumi' },
   { slug: 'bara-imambara', en: 'Bara Imambara', hi: 'बड़ा इमामबाड़ा', ur: 'بڑا امام باڑہ', year: '1784', style: 'Awadhi, vaulted',
     body: 'Also called the Asafi Imambara. Built under Asaf-ud-Daula and cared for today by the Archaeological Survey of India. Its great central hall is roofed by vaults, with no iron beams or pillars holding it up.', preset: 'oldlucknow' },
   { slug: 'chota-imambara', en: 'Chota Imambara', hi: 'छोटा इमामबाड़ा', ur: 'چھوٹا امام باڑہ', year: '1838', style: 'Awadhi, gilded dome',

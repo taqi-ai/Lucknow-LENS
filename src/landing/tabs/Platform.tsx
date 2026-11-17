@@ -11,8 +11,8 @@ export default function Platform({ onEnter }: TabProps) {
   return (
     <>
       <PageHero
-        kicker="What Terralyt is" title="The platform" hi="मंच"
-        intro="Terralyt Lucknow is a living 3D map of the city, built from open data and designed so a department, a planner or a resident can read it at a glance. Lucknow is the first deployment. The pipeline is built to be pointed at other Indian cities."
+        kicker="What Lucknow Lens is" title="The platform" hi="मंच"
+        intro="Lucknow Lens is a living 3D map of the city, built from open data and designed so a department, a planner or a resident can read it at a glance. Lucknow is the first deployment. The pipeline is built to be pointed at other Indian cities."
       />
 
       <Wrap className="pb-24">

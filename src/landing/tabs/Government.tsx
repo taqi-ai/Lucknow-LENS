@@ -18,7 +18,7 @@ export default function Government({ onEnter }: TabProps) {
     <>
       <PageHero
         kicker="Services and helplines" title="Government" hi="शासन"
-        intro="Who runs what in Lucknow, and the numbers to call. Terralyt is an independent project: this page points to the departments that issue each service, and does not speak for them."
+        intro="Who runs what in Lucknow, and the numbers to call. Lucknow Lens is an independent project: this page points to the departments that issue each service, and does not speak for them."
       >
         <a href="tel:112" className="mt-8 inline-flex items-center gap-3 rounded-full bg-[#b3402f] px-6 py-3 text-[15px] font-semibold text-white shadow-[0_18px_50px_-14px_rgba(179,64,47,.7)] transition-transform active:scale-95">
           <Phone className="h-4 w-4" /> In an emergency, call 112

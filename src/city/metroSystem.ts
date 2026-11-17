@@ -260,6 +260,27 @@ export class MetroSystem {
     return Math.atan2(b[2] - a[2], b[0] - a[0]);
   }
 
+  /**
+   * Where a train head is right now (same ping-pong timetable as update()), so the guided tour can
+   * follow a real train. Returns null before the line has loaded or if no route is above ground.
+   */
+  public trainHead(seconds: number): { x: number; y: number; z: number; ang: number } | null {
+    const p = new THREE.Vector3();
+    for (let k = 0; k < this.routes.length; k++) {
+      const r = this.routes[k];
+      const period = (r.total / r.speed) * 2 + 40;
+      const ph = ((seconds / period + r.offset) % 1) * period;
+      const run = r.total / r.speed;
+      let d: number;
+      if (ph < run) d = ph * r.speed; else if (ph < run + 20) d = r.total;
+      else if (ph < run * 2 + 20) d = r.total - (ph - run - 20) * r.speed; else d = 0;
+      d = Math.min(r.total - 1, Math.max(1, d));
+      const ang = this.sample(r, d, p);
+      if (p.y > 6) return { x: p.x, y: p.y, z: p.z, ang };
+    }
+    return null;
+  }
+
   /** Advance the trains. `seconds` is wall time; altitude gates the work. */
   public update(seconds: number, altitude: number): void {
     if (!this.trains) return;

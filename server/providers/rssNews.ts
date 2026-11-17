@@ -25,7 +25,7 @@ export class RssNewsProvider implements LiveProvider<LiveNewsArticle> {
 
   public async fetch(): Promise<LiveNewsArticle[]> {
     const results = await Promise.allSettled(FEEDS.map(async (f) => {
-      const r = await fetch(f.url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; TerralytFeedReader/1.0)', Accept: 'application/rss+xml, application/xml' }, signal: AbortSignal.timeout(6000) });
+      const r = await fetch(f.url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; LucknowLensFeedReader/1.0)', Accept: 'application/rss+xml, application/xml' }, signal: AbortSignal.timeout(6000) });
       if (!r.ok) throw new Error(`${f.source} HTTP ${r.status}`);
       const xml = await r.text();
       return xml.split(/<item[\s>]/i).slice(1).map((chunk) => {

@@ -10,7 +10,7 @@ export default function About(_: TabProps) {
     <>
       <PageHero
         kicker="The people and the credits" title="About" hi="हमारे बारे में"
-        intro="Terralyt Lucknow is built by second-year students. We made it because we wanted to see our own city the way it deserves to be seen, and to prove that open data can make a serious city tool."
+        intro="Lucknow Lens is built by second-year students. We made it because we wanted to see our own city the way it deserves to be seen, and to prove that open data can make a serious city tool."
       />
 
       <Wrap className="pb-24">
@@ -32,7 +32,7 @@ export default function About(_: TabProps) {
       <Wrap className="pb-24">
         <div className="rounded-[28px] border border-sand/12 bg-terrain/50 p-8 sm:p-10">
           <h3 className="font-display text-[1.6rem] font-light">An independent project</h3>
-          <p className="mt-4 max-w-[48rem] text-[15px] leading-[1.8] text-paper/65">Terralyt Lucknow is not an official website, and no government department has reviewed, endorsed or published it. It uses publicly available data and describes public services for the convenience of visitors. For official information, use the departments' own websites.</p>
+          <p className="mt-4 max-w-[48rem] text-[15px] leading-[1.8] text-paper/65">Lucknow Lens is not an official website, and no government department has reviewed, endorsed or published it. It uses publicly available data and describes public services for the convenience of visitors. For official information, use the departments' own websites.</p>
         </div>
       </Wrap>
 

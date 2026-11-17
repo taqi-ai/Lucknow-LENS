@@ -296,7 +296,7 @@ async function groundedResponse(question: string): Promise<AnalystReply> {
     return { answer: `Latest Lucknow headlines: ${top}.`, sources: [`${e.provider}, updated ${ageText(e.ageSeconds)}`], action: { type: "NONE", layer: "news" } };
   }
   const live = [snap.weather, snap.air, snap.flights, snap.trains, snap.traffic, snap.news].filter((f) => f.status !== "unavailable").length;
-  return { answer: `I answer from the live layers only. ${live} of 6 feeds are reporting right now. Try asking about air quality, weather, aircraft, trains, traffic or the news.`, sources: ["Terralyt live feeds"], action: none };
+  return { answer: `I answer from the live layers only. ${live} of 6 feeds are reporting right now. Try asking about air quality, weather, aircraft, trains, traffic or the news.`, sources: ["Lucknow Lens live feeds"], action: none };
 }
 
 // POST endpoint for AI City Analyst
@@ -317,7 +317,7 @@ app.post("/api/analyst", async (req, res) => {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     
     const promptText = `
-      You are the AI City Analyst for TERRALYT LUCKNOW, an urban spatial intelligence platform. 
+      You are the AI City Analyst for LUCKNOW LENS, an urban spatial intelligence platform. 
       Analyze the user's question and provide a realistic, factual response using the local Lucknow database context.
       
       CRITICAL INSTRUCTION:

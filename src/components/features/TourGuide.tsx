@@ -19,6 +19,8 @@ interface Stop {
   text: string;
   /** Registry id for x/z, or 'metro' to resolve a point on the elevated line at run time. */
   dest: string;
+  /** Explicit target overriding the registry point (world metres). */
+  at?: [number, number];
   az: number; pitch: number; dist: number;
   /** Azimuth swing across the dwell, and the closing-in factor on distance. */
   orbit: number; closeIn: number;
@@ -29,27 +31,27 @@ interface Stop {
 const STOPS: Stop[] = [
   { id: 'rumi', title: 'Rumi Darwaza', kicker: 'Husainabad · 1784', dest: 'rumi_darwaza', az: 1.3, pitch: 0.3, dist: 330, orbit: 0.7, closeIn: 0.8,
     text: 'A monumental gateway about sixty feet high, built under Nawab Asaf-ud-Daula. Often called the Turkish Gate, it is the entrance to old Lucknow.' },
-  { id: 'bara', title: 'Bara Imambara', kicker: 'Husainabad · 1784', dest: 'husainabad', az: 2.4, pitch: 0.42, dist: 900, orbit: 0.6, closeIn: 0.7,
+  { id: 'bara', title: 'Bara Imambara', kicker: 'Husainabad · 1784', dest: 'bara_imambara', at: [-3683, -2153], az: 2.5, pitch: 0.5, dist: 520, orbit: 0.6, closeIn: 0.75,
     text: 'Raised by Asaf-ud-Daula during a famine to give people work. Its central hall is one of the largest arched halls built without beams; the complex also holds the Asafi Masjid and the Shahi Baoli.' },
   { id: 'chhota', title: 'Chhota Imambara', kicker: 'Husainabad · 1838', dest: 'chhota_imambara', az: 0.8, pitch: 0.4, dist: 380, orbit: 0.8, closeIn: 0.8,
     text: 'Built by Muhammad Ali Shah and known as the Palace of Lights for the way it is illuminated during Muharram. Long water channels run through its garden.' },
   { id: 'clock', title: 'Husainabad Clock Tower', kicker: 'Husainabad · 1880s', dest: 'clock_tower', az: 0.8, pitch: 0.28, dist: 330, orbit: 0.8, closeIn: 0.8,
     text: 'One of the tallest clock towers in India, rising about 67 metres beside the Picture Gallery and the old Husainabad tank.' },
-  { id: 'residency', title: 'The Residency', kicker: 'Siege of 1857', dest: 'residency', az: 0.9, pitch: 0.4, dist: 480, orbit: 0.6, closeIn: 0.8,
+  { id: 'residency', title: 'The Residency', kicker: 'Siege of 1857', dest: 'residency', az: 0.9, pitch: 0.5, dist: 230, orbit: 0.6, closeIn: 0.8,
     text: 'The ruins of the British Residency, scarred by the siege of 1857. The broken walls and lawns are kept as a memorial.' },
-  { id: 'hazratganj', title: 'Hazratganj', kicker: 'The heart of the city', dest: 'hazratganj', az: 0.6, pitch: 0.3, dist: 700, orbit: 0.5, closeIn: 0.7,
+  { id: 'hazratganj', title: 'Hazratganj', kicker: 'The heart of the city', dest: 'hazratganj', az: 0.6, pitch: 0.26, dist: 320, orbit: 0.5, closeIn: 0.7,
     text: 'The colonial-era promenade of arcaded shopfronts, cafes and old cinemas: Lucknow’s favourite evening walk for generations.' },
   { id: 'charbagh', title: 'Charbagh Railway Station', kicker: 'Early 20th century', dest: 'charbagh', az: 0.35, pitch: 0.4, dist: 700, orbit: 0.7, closeIn: 0.8,
     text: 'A red-brick station of arches, chhatris and domes. From above, its roofline is known for a chessboard pattern of domes and turrets.' },
-  { id: 'metro', title: 'Lucknow Metro', kicker: 'Elevated line · opened 2017', dest: 'metro', az: 0.4, pitch: 0.3, dist: 260, orbit: 0.9, closeIn: 0.9, dwell: 11000,
+  { id: 'metro', title: 'Lucknow Metro', kicker: 'Elevated line · opened 2017', dest: 'metro', az: 0.4, pitch: 0.28, dist: 160, orbit: 0.9, closeIn: 0.9, dwell: 14000,
     text: 'The metro runs on an elevated viaduct across the city and goes underground beneath the old centre. Watch a train glide along the line.' },
   { id: 'ambedkar', title: 'Dr. Ambedkar Memorial Park', kicker: 'Gomti Nagar', dest: 'ambedkar_park', az: 1.75, pitch: 0.42, dist: 1100, orbit: 0.7, closeIn: 0.7,
     text: 'A vast sandstone memorial with a stupa, an avenue of 62 elephants and a great amphitheatre.' },
-  { id: 'janeshwar', title: 'Janeshwar Mishra Park', kicker: 'Gomti Nagar · 376 acres', dest: 'janeshwar_park', az: 0.3, pitch: 0.75, dist: 1500, orbit: 0.8, closeIn: 0.8,
+  { id: 'janeshwar', title: 'Janeshwar Mishra Park', kicker: 'Gomti Nagar · 376 acres', dest: 'janeshwar_park', at: [4002, 1521], az: 0.3, pitch: 0.75, dist: 1500, orbit: 0.8, closeIn: 0.8,
     text: 'One of the largest urban parks in the country, with two lakes, wide lawns and long walking and cycling tracks.' },
   { id: 'ekana', title: 'Ekana Cricket Stadium', kicker: 'Shaheed Path', dest: 'ekana', az: 1.15, pitch: 0.5, dist: 800, orbit: 0.9, closeIn: 0.8,
     text: 'Lucknow’s international cricket ground, a bowl for roughly fifty thousand spectators.' },
-  { id: 'night-old', title: 'Husainabad by night', kicker: 'After dark', dest: 'husainabad', az: 2.4, pitch: 0.4, dist: 800, orbit: 0.7, closeIn: 0.8, night: true,
+  { id: 'night-old', title: 'Husainabad by night', kicker: 'After dark', dest: 'bara_imambara', at: [-3683, -2153], az: 2.5, pitch: 0.42, dist: 560, orbit: 0.7, closeIn: 0.8, night: true,
     text: 'After dark the old city’s monuments are floodlit in warm amber while the lanes around them fall quiet.' },
   { id: 'night-gomti', title: 'The Gomti at night', kicker: 'After dark', dest: 'taj_gomti', az: 1.9, pitch: 0.34, dist: 1000, orbit: 0.7, closeIn: 0.8, night: true,
     text: 'Bridges and riverfront lamps trace the curve of the Gomti through the modern city.' },
@@ -91,6 +93,7 @@ export const TourGuide: React.FC<Props> = ({ controller, night, onNight, hidden 
 
   useEffect(() => () => { token.current++; }, []);
 
+
   const findMetro = async (): Promise<{ x: number; z: number; az: number } | null> => {
     if (metroPoint.current) return metroPoint.current;
     try {
@@ -125,12 +128,16 @@ export const TourGuide: React.FC<Props> = ({ controller, night, onNight, hidden 
       const s = STOPS[i];
       let x: number | undefined, z: number | undefined, az = s.az;
       if (s.dest === 'metro') {
-        const m = await findMetro();
-        if (!m) continue;
-        x = m.x; z = m.z; az = m.az;
+        const head = (window as unknown as { __lensTrainHead?: () => { x: number; z: number; ang: number } | null }).__lensTrainHead?.();
+        if (head) { x = head.x; z = head.z; az = head.ang + Math.PI / 2; }
+        else {
+          const m = await findMetro();
+          if (!m) continue;
+          x = m.x; z = m.z; az = m.az;
+        }
       } else {
         const d = destinationById(s.dest);
-        x = d?.x; z = d?.z;
+        x = s.at ? s.at[0] : d?.x; z = s.at ? s.at[1] : d?.z;
       }
       if (x === undefined || z === undefined) continue;
       setIdx(i);
@@ -143,8 +150,20 @@ export const TourGuide: React.FC<Props> = ({ controller, night, onNight, hidden 
       if (!alive()) break;
       // Dwell: a slow orbit while easing closer.
       const dwell = s.dwell ?? 7500;
-      controller.transitionTo(tgt, az + s.orbit * 0.5, Math.max(0.2, s.pitch - 0.04), s.dist * s.closeIn, dwell);
-      await wait(dwell);
+      if (s.dest === 'metro') {
+        // Ride along: re-aim at the live train head every second so the camera follows it
+        // while the cars glide past (the trains run on a real-time timetable).
+        const getHead = (window as unknown as { __lensTrainHead?: () => { x: number; y: number; z: number; ang: number } | null }).__lensTrainHead;
+        let t = 0;
+        while (t < dwell && alive()) {
+          const h = getHead?.();
+          if (h) controller.transitionTo(new THREE.Vector3(h.x, h.y, h.z), h.ang + Math.PI / 2 + 0.5 + t / dwell * 0.9, 0.28, 110, 1200);
+          await wait(1000); t += 1000;
+        }
+      } else {
+        controller.transitionTo(tgt, az + s.orbit * 0.5, Math.max(0.2, s.pitch - 0.04), s.dist * s.closeIn, dwell);
+        await wait(dwell);
+      }
     }
 
     if (alive()) {
@@ -157,21 +176,18 @@ export const TourGuide: React.FC<Props> = ({ controller, night, onNight, hidden 
     if (alive()) stop();
   }, [controller, onNight, stop]);
 
+  // The launcher lives beside the search bar (CityUI) and talks to the tour through this event.
+  useEffect(() => {
+    const start = () => { if (!hidden && controller) void run(); };
+    window.addEventListener('lens:start-tour', start);
+    return () => window.removeEventListener('lens:start-tour', start);
+  }, [run, hidden, controller]);
+
   if (hidden) return null;
   const total = STOPS.length;
 
   return (
     <>
-      {!running && (
-        <button
-          onClick={run}
-          disabled={!controller}
-          className="absolute bottom-6 left-1/2 z-[22] flex -translate-x-1/2 items-center gap-2 rounded-full bg-[#2b1b16]/90 px-5 py-2.5 text-[13px] font-semibold text-[#f3e3c3] shadow-[0_10px_30px_-8px_rgba(0,0,0,.6)] backdrop-blur hover:bg-[#3a2620] disabled:opacity-50 max-sm:bottom-4"
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 1.5v11l9-5.5z" fill="currentColor" /></svg>
-          Guided tour of Lucknow
-        </button>
-      )}
       {running && (
         <>
           <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 z-[21] h-[7vh] bg-black/80" />

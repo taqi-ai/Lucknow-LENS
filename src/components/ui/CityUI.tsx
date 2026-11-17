@@ -184,6 +184,11 @@ export const CityUI: React.FC<CityUIProps> = ({
           <button onClick={() => setSearchOpen((v) => !v)} title="Search" aria-label="Search" aria-expanded={searchOpen} className={`glass-panel grid h-11 w-11 place-items-center rounded-full transition-colors ${searchOpen ? 'text-sand' : 'text-paper/80 hover:text-paper'}`}>
             <SearchIcon className="h-[18px] w-[18px]" strokeWidth={1.7} />
           </button>
+          <button onClick={() => window.dispatchEvent(new Event('lens:start-tour'))} title="Guided tour of Lucknow" aria-label="Guided tour of Lucknow"
+            className="flex h-11 items-center gap-2 self-start rounded-full bg-[#e0a55a] px-4 text-[13px] font-semibold text-[#2a1a10] shadow-[0_8px_22px_-8px_rgba(224,165,90,.8)] transition-transform hover:scale-105 active:scale-95">
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 1.5v11l9-5.5z" fill="currentColor" /></svg>
+            <span>Guided tour</span>
+          </button>
           {searchOpen && (
             <div className={`${compact ? 'w-[calc(100vw-5.5rem)]' : 'w-[300px]'} -mt-[52px] ml-[52px]`}>
               <SearchUI mapData={mapData} onSelectResult={(r) => { handleSearchResultClick(r); setSearchOpen(false); }} onSetDestinationWaypoint={onSetDestinationWaypoint} />
@@ -200,7 +205,7 @@ export const CityUI: React.FC<CityUIProps> = ({
         <div className="pointer-events-auto glass-panel flex items-center gap-3 rounded-2xl px-3.5 py-2.5">
           <TerralytMark className="h-9 w-9 flex-shrink-0 object-contain" />
           <div className="min-w-0 flex-1">
-            <h1 className="font-display text-[1.15rem] leading-none text-paper">Terralyt <span className="font-deva text-[0.9rem] text-sand">लखनऊ</span></h1>
+            <h1 className="font-display text-[1.15rem] leading-none text-paper">Lucknow Lens <span className="font-deva text-[0.9rem] text-sand">लखनऊ</span></h1>
             <p className="mt-1 text-[11px] text-paper/45">{mapData.bounds.centerLat.toFixed(3)}° N, {mapData.bounds.centerLon.toFixed(3)}° E</p>
           </div>
           <button onClick={toggleMinimal} title="Minimise panels" aria-label="Minimise panels" className="grid h-8 w-8 place-items-center rounded-full text-paper/60 hover:bg-white/10 hover:text-paper">
@@ -209,6 +214,13 @@ export const CityUI: React.FC<CityUIProps> = ({
         </div>
         <div className="pointer-events-auto">
           <SearchUI mapData={mapData} onSelectResult={handleSearchResultClick} onSetDestinationWaypoint={onSetDestinationWaypoint} />
+        </div>
+        <div className="pointer-events-auto">
+          <button onClick={() => window.dispatchEvent(new Event('lens:start-tour'))}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#e0a55a] px-4 py-2.5 text-[13.5px] font-semibold text-[#2a1a10] shadow-[0_10px_28px_-10px_rgba(224,165,90,.8)] transition-transform hover:scale-[1.015] active:scale-[0.98]">
+            <svg width="13" height="13" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 1.5v11l9-5.5z" fill="currentColor" /></svg>
+            Guided tour of Lucknow
+          </button>
         </div>
         {selectedEntity && (
           <div className="pointer-events-auto">

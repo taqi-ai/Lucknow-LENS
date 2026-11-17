@@ -151,6 +151,23 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     const streamer = new TileStreamer(cityRenderer.scene, materials);
     streamerRef.current = streamer;
     (window as unknown as { __lensTrainHead?: () => unknown }).__lensTrainHead = () => streamer.metroTrainHead();
+    // Local-only pin tool hooks (src/components/features/PinTool.tsx): screen <-> ground.
+    {
+      const ray = new THREE.Raycaster();
+      const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      const hit = new THREE.Vector3();
+      const w = window as unknown as Record<string, unknown>;
+      w.__lensPick = (clientX: number, clientY: number) => {
+        const r = container.getBoundingClientRect();
+        ray.setFromCamera(new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1), cityRenderer.camera);
+        return ray.ray.intersectPlane(plane, hit) ? { x: hit.x, z: hit.z } : null;
+      };
+      w.__lensProject = (x: number, y: number, z: number) => {
+        const r = container.getBoundingClientRect();
+        const v = new THREE.Vector3(x, y, z).project(cityRenderer.camera);
+        return { sx: (v.x * 0.5 + 0.5) * r.width + r.left, sy: (-v.y * 0.5 + 0.5) * r.height + r.top, visible: v.z > -1 && v.z < 1 };
+      };
+    }
 
     // Initialize label manager and load label data
     const labelManager = new LabelManager(cityRenderer.scene);

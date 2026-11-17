@@ -800,7 +800,22 @@ export function buildOverlay(src: OverlaySource): OverlayBuild {
   const water: number[] = [];
   const riverBank: number[] = [];
   const promenade: number[] = [];
-  for (const w of waterways) {
+  // Rivers and lakes are digitised as straight segments; two rounds of Chaikin corner-cutting give
+  // natural bends without moving the banks by more than a few metres or adding channels.
+  const chaikin = (pts: Array<{ x: number; z: number }>, rounds: number) => {
+    let p = pts;
+    for (let r = 0; r < rounds; r++) {
+      const q: Array<{ x: number; z: number }> = [];
+      for (let i = 0; i < p.length; i++) {
+        const a = p[i], b = p[(i + 1) % p.length];
+        q.push({ x: a.x * 0.75 + b.x * 0.25, z: a.z * 0.75 + b.z * 0.25 }, { x: a.x * 0.25 + b.x * 0.75, z: a.z * 0.25 + b.z * 0.75 });
+      }
+      p = q;
+    }
+    return p;
+  };
+  for (const w0 of waterways) {
+    const w = (w0?.isPolygon && w0.points?.length >= 3 && w0.points.length < 4000) ? { ...w0, points: chaikin(w0.points, 2) } : w0;
     if (!w?.points || w.points.length < 2) continue;
     if (w.isPolygon && w.points.length >= 3) {
       // Lakes, ponds and reservoirs sit ABOVE the park and ground layers (y 0.04): at -0.25 the

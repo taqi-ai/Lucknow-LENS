@@ -14,11 +14,17 @@ const DOCK: { id: PanelId; label: string; Icon: React.ElementType }[] = [
   { id: 'explore', label: 'Explore', Icon: Compass },
   { id: 'layers', label: 'Layers', Icon: Layers },
   { id: 'labels', label: 'Labels', Icon: Tag },
-  { id: 'look', label: 'Look', Icon: Palette },
+  { id: 'look', label: 'Display', Icon: Palette },
   { id: 'camera', label: 'Camera', Icon: Video },
   { id: 'ask', label: 'Ask', Icon: Sparkles },
-  { id: 'more', label: 'More', Icon: MoreHorizontal },
+  { id: 'more', label: 'Tools', Icon: MoreHorizontal },
 ];
+
+/** Longer descriptions for tooltips and screen readers. */
+const HINT: Record<PanelId, string> = {
+  explore: 'Explore: places, views and the guided tour', layers: 'Layers: buildings, roads, water, live data', labels: 'Labels: names on the map',
+  look: 'Display: style, day and night', camera: 'Camera: heading, tilt and speed', ask: 'Ask the city (AI analyst)', more: 'Tools: report, present, full screen',
+};
 
 const TITLES: Record<PanelId, string> = {
   explore: 'Explore Lucknow', layers: 'Layers', labels: 'Labels', look: 'Look and feel', camera: 'Camera', ask: 'Ask the city', more: 'Tools',
@@ -222,11 +228,20 @@ export const MapControls: React.FC<MapControlsProps> = (p) => {
         {DOCK.map(({ id, label, Icon }) => {
           const active = open === id;
           return (
-            <button key={id} onClick={() => setOpen(active ? null : id)} aria-pressed={active} aria-label={label} title={label}
-              className={`group relative flex items-center justify-center rounded-xl transition-colors ${p.compact ? 'h-12 min-w-0 flex-1 flex-col gap-0.5' : 'h-11 w-11'} ${active ? 'bg-sand text-terrain' : 'text-paper/75 hover:bg-white/10 hover:text-paper'}`}>
+            <button key={id} onClick={() => setOpen(active ? null : id)} aria-expanded={active} aria-controls="map-drawer" aria-label={HINT[id]} title={HINT[id]}
+              onKeyDown={(e) => {
+                // Arrow keys move between dock buttons (vertical dock on desktop, horizontal on mobile).
+                const keys = p.compact ? ['ArrowLeft', 'ArrowRight'] : ['ArrowUp', 'ArrowDown'];
+                if (!keys.includes(e.key)) return;
+                e.preventDefault();
+                const btns = Array.from((e.currentTarget.parentElement as HTMLElement).querySelectorAll('button'));
+                const i = btns.indexOf(e.currentTarget as HTMLButtonElement);
+                btns[(i + (e.key === keys[1] ? 1 : btns.length - 1)) % btns.length]?.focus();
+              }}
+              className={`group relative flex items-center justify-center rounded-xl outline-none transition-colors focus-visible:ring-2 focus-visible:ring-sand/80 ${p.compact ? 'h-12 min-h-[48px] min-w-0 flex-1 flex-col gap-0.5' : 'h-11 w-11'} ${active ? 'bg-sand text-terrain shadow-[0_0_0_1px_rgba(216,182,106,.6)]' : 'text-paper/75 hover:bg-white/10 hover:text-paper'}`}>
               <Icon className="h-[18px] w-[18px]" strokeWidth={1.8} />
               {p.compact && <span className="text-[10px] font-medium">{label}</span>}
-              {!p.compact && <span className="pointer-events-none absolute right-[calc(100%+10px)] whitespace-nowrap rounded-lg bg-cabin/95 px-2.5 py-1 text-[11.5px] font-medium text-paper opacity-0 transition-opacity group-hover:opacity-100">{label}</span>}
+              {!p.compact && <span className="pointer-events-none absolute right-[calc(100%+10px)] whitespace-nowrap rounded-lg bg-cabin/95 px-2.5 py-1 text-[11.5px] font-medium text-paper opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">{label}</span>}
             </button>
           );
         })}
@@ -235,7 +250,7 @@ export const MapControls: React.FC<MapControlsProps> = (p) => {
       {/* drawer */}
       {open && (
         <section
-          role="dialog" aria-label={TITLES[open]}
+          id="map-drawer" role="dialog" aria-label={TITLES[open]}
           className={`pointer-events-auto z-30 glass-panel flex flex-col overflow-hidden ${p.compact
             ? 'fixed inset-x-3 bottom-[84px] max-h-[62vh] rounded-3xl'
             : 'absolute right-[68px] top-3 max-h-[calc(100vh-1.5rem)] w-[340px] rounded-3xl'}`}

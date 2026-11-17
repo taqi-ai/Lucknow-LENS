@@ -27,6 +27,7 @@ export interface GroundMeta {
 const GROUND_Y = -0.45;
 
 export class GroundSurface {
+  private regionMat: THREE.MeshLambertMaterial | null = null;
   public readonly group = new THREE.Group();
   public readonly material: THREE.MeshStandardMaterial;
   private apronMat: THREE.MeshStandardMaterial;
@@ -173,8 +174,26 @@ float gn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
     mesh.updateMatrix();
     this.group.add(mesh);
 
+    // Regional context (map refinement): a 264 km low-detail WorldCover ground under the detailed
+    // 45 km city ground, so full zoom-out shows real countryside, towns and rivers, not a square.
+    let apronInner = size * 0.7;
+    try {
+      const rm = await (await fetch('/ground/region_meta.json')).json() as { size: number; cell: number; originX: number; originZ: number };
+      const rsize = rm.size * rm.cell;
+      const rtex = await new THREE.TextureLoader().loadAsync('/ground/region_albedo.jpg');
+      rtex.colorSpace = THREE.SRGBColorSpace; rtex.anisotropy = 4;
+      this.regionMat = new THREE.MeshLambertMaterial({ map: rtex });
+      this.regionMat.color.setRGB(1.22, 1.16, 1.06);   // match the brighter, slightly hazed detailed ground at the seam
+      const rgeo = new THREE.PlaneGeometry(rsize, rsize, 1, 1); rgeo.rotateX(-Math.PI / 2);
+      const region = new THREE.Mesh(rgeo, this.regionMat);
+      region.position.set(rm.originX + rsize / 2, GROUND_Y - 0.6, rm.originZ + rsize / 2);
+      region.name = 'groundRegion'; region.matrixAutoUpdate = false; region.updateMatrix();
+      this.group.add(region);
+      apronInner = rsize * 0.5;
+    } catch { /* regional layer optional */ }
+
     // Apron ring out to the horizon so the data edge never shows as a cliff.
-    const apronGeo = new THREE.RingGeometry(size * 0.7, 160000, 64, 1);
+    const apronGeo = new THREE.RingGeometry(apronInner, 260000, 64, 1);
     apronGeo.rotateX(-Math.PI / 2);
     const apron = new THREE.Mesh(apronGeo, this.apronMat);
     apron.position.set(meta.originX + size / 2, GROUND_Y - 0.3, meta.originZ + size / 2);
@@ -191,6 +210,7 @@ float gn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
   public setNightMode(night: boolean, cyber: boolean): void {
     this.uniforms.uGroundNight.value = night ? 1 : 0;
     this.apronMat.color.setHex(night ? 0x14161a : cyber ? 0x2b3247 : 0x8a8b6c);
+    if (this.regionMat) { if (night) this.regionMat.color.setHex(0x2a2c30); else this.regionMat.color.setRGB(1.22, 1.16, 1.06); }
   }
 
   public setVisible(v: boolean): void { this.group.visible = v; }

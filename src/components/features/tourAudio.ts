@@ -11,7 +11,8 @@ export class TourAudio {
   private timer = 0;
   private step = 0;
   public musicOn = true;
-  public voiceOn = true;
+  /** Narration is off: the tour has music only (user request). speak() is kept as a no-op guard. */
+  public voiceOn = false;
 
   start(): void {
     if (!this.musicOn || this.ctx) return;

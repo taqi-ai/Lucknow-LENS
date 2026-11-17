@@ -13,7 +13,7 @@ import type { LabelSettings } from '../../city/labelManager';
 import { InfoPanel } from '../features/InfoPanel';
 import { LiveDataPanel } from '../features/LiveDataPanel';
 import { NavigationHUD } from '../features/NavigationHUD';
-import { TerralytMark } from './TerralytMark';
+import { LucknowLensMark } from '../brand/LucknowLensLogo';
 import type { NavigationRoute, NavigatorState, GPSTheme, RouteWaypoint } from '../../navigation/types';
 import { Eye, Search as SearchIcon, PanelLeftOpen, PanelLeftClose } from 'lucide-react';
 import { CameraController } from '../../city/cameraController';
@@ -216,7 +216,7 @@ export const CityUI: React.FC<CityUIProps> = ({
       ) : (
       <div className={`absolute left-3 top-3 z-20 pointer-events-none flex flex-col gap-2.5 overflow-y-auto no-scrollbar ${compact ? 'right-[68px] max-h-[55vh]' : 'w-[300px] max-h-[calc(100vh-1.5rem)]'}`}>
         <div className="pointer-events-auto glass-panel flex items-center gap-3 rounded-2xl px-3.5 py-2.5">
-          <TerralytMark className="h-9 w-9 flex-shrink-0 object-contain" />
+          <LucknowLensMark className="h-9 w-9 flex-shrink-0 object-contain" />
           <div className="min-w-0 flex-1">
             <h1 className="font-display text-[1.15rem] leading-none text-paper">Lucknow Lens <span className="font-deva text-[0.9rem] text-sand">लखनऊ</span></h1>
             <p className="mt-1 text-[11px] text-paper/45">{mapData.bounds.centerLat.toFixed(3)}° N, {mapData.bounds.centerLon.toFixed(3)}° E</p>

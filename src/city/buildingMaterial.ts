@@ -280,7 +280,12 @@ const FRAG_COLOR = /* glsl */ `
       // Heritage lime plaster (Bara Imambara, Rumi Darwaza): pale warm ivory, lightly weathered,
       // with faint moulding bands. Deliberately not pure white and not the tan landmark stone.
       float mould = smoothstep(0.0, 0.06, abs(fract(vWorldPos.y / 1.6) - 0.5) - 0.44);
-      baseCol = vec3(0.84, 0.79, 0.69) * (0.93 + 0.10 * vnoise(vWorldPos.xz * 0.5 + vWorldPos.y * 0.3)) * (1.0 - 0.08 * mould);
+      // Bara Imambara (user's photograph): warm sandy cream with a faint pink-ochre cast. Rumi Darwaza
+      // (within 60 m of its site) is the deeper golden-ochre of the second photograph.
+      vec3 plaster = vec3(0.82, 0.68, 0.47);
+      float rumi = 1.0 - smoothstep(40.0, 70.0, length(vWorldPos.xz - vec2(-3758.0, -2364.0)));
+      plaster = mix(plaster, vec3(0.83, 0.60, 0.30), rumi);
+      baseCol = plaster * (0.93 + 0.10 * vnoise(vWorldPos.xz * 0.5 + vWorldPos.y * 0.3)) * (1.0 - 0.08 * mould);
       baseCol *= 1.0 - 0.10 * vnoise(vec2(fuv.x * 0.8, vWorldPos.y * 0.15));
       rough = 0.9;
     } else { baseCol = vec3(0.70, 0.66, 0.58); rough = 0.5; }

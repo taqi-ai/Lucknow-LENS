@@ -221,6 +221,19 @@
    "angle": 0.3147,
    "size": 42,
    "note": "User pin 5 (gate like the Bara Imambara outer gate)."
+  },
+  {
+   "key": "dariya_wali_masjid",
+   "name": "Dariya Wali Masjid",
+   "building": "377ea494",
+   "precinct": [
+    -24,
+    24,
+    -24,
+    24
+   ],
+   "height": 18,
+   "note": "Footprint of Overture building 377ea494 at (-3175,-2211) beside the curved primary road; satellite and aerial photos supplied by the user."
   }
  ]
 }

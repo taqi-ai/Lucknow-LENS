@@ -30,7 +30,7 @@ class Kit {
   private hash = 0; private hByte = 0; private orient = 0;
   cx = 0; cz = 0; ca = 1; sa = 0;
 
-  begin(s: LandmarkSite, heightM: number, seed: number, angle = s.a): void {
+  begin(s: LandmarkSite, heightM: number, seed: number, angle = s.a): void { this.domeDefault = S.DOME;
     this.cx = s.c[0]; this.cz = s.c[1];
     this.ca = Math.cos(angle); this.sa = Math.sin(angle);
     this.hash = seed & 0xff;
@@ -99,7 +99,9 @@ class Kit {
     for (let i = 0; i <= 10; i++) { const t = (i / 10) * Math.PI / 2; prof.push([i === 10 ? 0 : r * Math.cos(t), y + r * squash * Math.sin(t)]); }
     this.lathe(u, v, prof, 22, surf);
   }
-  chhatri(u: number, v: number, s: number, y: number, surf: number = S.DOME): void {
+  /** Default surface for chhatri domes; plaster-coloured monuments set this to S.LIME after begin(). */
+  domeDefault: number = S.DOME;
+  chhatri(u: number, v: number, s: number, y: number, surf: number = this.domeDefault): void {
     const p = s * 0.12, h = s * 1.1;
     for (const [du, dv] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) this.box(u + du * s / 2 - p / 2, u + du * s / 2 + p / 2, y, y + h, v + dv * s / 2 - p / 2, v + dv * s / 2 + p / 2, S.STONE);
     this.box(u - s * 0.62, u + s * 0.62, y + h, y + h + s * 0.12, v - s * 0.62, v + s * 0.62, S.STONE);
@@ -296,6 +298,7 @@ class Grounds {
 
 /** Monumental gateway block (triple arches, merlons, corner turrets). `du` shifts it along u. */
 function gateBlock(k: Kit, du: number, v: number, h: number, gallery: boolean, hw = 24): void {
+  k.domeDefault = S.LIME;
   const a = du - hw, b = du + hw, cu = hw * 0.625;
   k.box(a, b, 0, h, v - 6, v + 6, S.LIME);
   k.arcade('v0', v - 6, du - 6, du + 6, 0, 9, h - 3, 1, S.GLASS, true); k.arcade('v1', v + 6, du - 6, du + 6, 0, 9, h - 3, 1, S.GLASS, true);
@@ -311,7 +314,7 @@ function baraImambara(k: Kit, g: Grounds, s: LandmarkSite): void {
   // Site frame: u along the hall's long axis (~east), v toward the south. The hall stands at
   // the south end; the courts, the Asafi Masjid (west, facing east), the Shahi Baoli (east)
   // and the two gateways lie to the north (-v), toward Rumi Darwaza.
-  k.begin(s, 20, 23); g.frame(s);
+  k.begin(s, 20, 23); k.domeDefault = S.LIME; g.frame(s);
   // Grounds: base paving, three courts, the circular forecourt, gardens.
   g.color(C.paveSand).rect(-116, 116, -260, 46, 0.08);
   g.color(C.paveGrey).rect(-60, 60, -258, -218, 0.1);                        // outer forecourt
@@ -366,8 +369,8 @@ function baraImambara(k: Kit, g: Grounds, s: LandmarkSite): void {
   // Raised platform, steps and the main hall.
   k.box(-66, 66, 0, 2.4, -26, 34, S.LIME);
   for (let i = 0; i < 4; i++) k.box(-22, 22, 0, 2.4 - i * 0.6, -26 - (i + 1) * 0.9, -26 - i * 0.9, S.LIME);
-  k.box(-60, 60, 2.4, 15, -20, 28, S.DOME);
-  k.box(-24, 24, 15, 19.5, -18, 26, S.DOME);                    // central raised hall (vaulted roof)
+  k.box(-60, 60, 2.4, 15, -20, 28, S.LIME);
+  k.box(-24, 24, 15, 19.5, -18, 26, S.LIME);                    // central raised hall (vaulted roof)
   k.arcade('v0', -20, -58, 58, 2.6, 4.6, 8.6, 13, S.GLASS, true);
   k.arcade('v0', -20, -58, 58, 10.4, 2.6, 4.2, 23);
   k.arcade('v1', 28, -58, 58, 2.6, 3.6, 7.6, 15);
@@ -375,7 +378,7 @@ function baraImambara(k: Kit, g: Grounds, s: LandmarkSite): void {
   k.arcade('v0', -18, -22, 22, 15.4, 2.2, 3.4, 9);
   k.merlons(-60, 60, -20, 28, 15); k.merlons(-24, 24, -18, 26, 19.5);
   for (let i = 0; i <= 10; i++) { const u = -56 + i * 11.2; k.chhatri(u, -18.5, 1.7, 15); }
-  for (const u of [-58, 58]) for (const v of [-18, 26]) { k.cylinder(u, v, 2.4, 2.0, 2.4, 21, 8, S.DOME); k.chhatri(u, v, 3.2, 21); }
+  for (const u of [-58, 58]) for (const v of [-18, 26]) { k.cylinder(u, v, 2.4, 2.0, 2.4, 21, 8, S.LIME); k.chhatri(u, v, 3.2, 21); }
   for (const u of [-22, 22]) { k.chhatri(u, -16.5, 2.4, 19.5); }
   // Asafi Masjid (NMA: 11 arches on the east facade, taller central arch, tapering
   // multi-storey minarets, THREE pear-shaped domes, parapet domelets; ~25.13 m).
@@ -383,17 +386,17 @@ function baraImambara(k: Kit, g: Grounds, s: LandmarkSite): void {
   k.box(mu - 14, mu + 26, 0, 3.2, mv - 34, mv + 34, S.LIME);                      // plinth + forecourt
   for (let i = 0; i < 4; i++) k.box(mu + 26 + i * 0.9, mu + 27 + i * 0.9, 0, 3.2 - (i + 1) * 0.75, mv - 12, mv + 12, S.LIME);
   g.color(C.paveSand).rect(mu - 14, mu + 26, mv - 34, mv + 34, 3.25);
-  k.box(mu - 12, mu + 6, 3.2, 15.5, mv - 27, mv + 27, S.DOME);                    // prayer hall
+  k.box(mu - 12, mu + 6, 3.2, 15.5, mv - 27, mv + 27, S.LIME);                    // prayer hall
   k.arcade('u1', mu + 6, mv - 26, mv + 26, 3.3, 3.1, 8.0, 11, S.GLASS, true);
-  k.box(mu + 4, mu + 7.5, 3.2, 18.5, mv - 4.8, mv + 4.8, S.DOME);                 // central pishtaq
+  k.box(mu + 4, mu + 7.5, 3.2, 18.5, mv - 4.8, mv + 4.8, S.LIME);                 // central pishtaq
   k.arcade('u1', mu + 7.5, mv - 3.6, mv + 3.6, 3.3, 5.6, 12.5, 1, S.GLASS, true);
-  k.merlons(mu - 12, mu + 6, mv - 27, mv + 27, 15.5, S.DOME);
-  for (let i = 0; i < 12; i++) k.onion(mu + 5.6, mv - 25 + i * (50 / 11), 0.55, 15.5, 1.2, S.DOME, 0.2, false);
+  k.merlons(mu - 12, mu + 6, mv - 27, mv + 27, 15.5, S.LIME);
+  for (let i = 0; i < 12; i++) k.onion(mu + 5.6, mv - 25 + i * (50 / 11), 0.55, 15.5, 1.2, S.LIME, 0.2, false);
   for (const [dv, r, h] of [[0, 5.8, 8.6], [-15, 4.2, 6.4], [15, 4.2, 6.4]] as Array<[number, number, number]>) {
-    k.cylinder(mu - 3, mv + dv, r * 0.95, r * 0.95, 15.5, 17.2, 16, S.DOME);
-    k.onion(mu - 3, mv + dv, r, 17.2, h, S.DOME, 0.32);                           // pear-shaped
+    k.cylinder(mu - 3, mv + dv, r * 0.95, r * 0.95, 15.5, 17.2, 16, S.LIME);
+    k.onion(mu - 3, mv + dv, r, 17.2, h, S.LIME, 0.32);                           // pear-shaped
   }
-  for (const dv of [-29, 29]) k.minaret(mu + 6, mv + dv, 1.6, 26, 4, S.DOME, 3.2);
+  for (const dv of [-29, 29]) k.minaret(mu + 6, mv + dv, 1.6, 26, 4, S.LIME, 3.2);
   // Shahi Baoli (stepped well) on the east side.
   const bu = 80, bv = -92;
   k.box(bu - 17, bu + 17, 0, 7.5, bv - 17, bv + 17, S.LIME, S.ROOF);
@@ -433,6 +436,35 @@ function teeleWaliMasjid(k: Kit, g: Grounds, s: LandmarkSite): void {
   // Two tall minarets at the ends of the facade with chhatri crowns.
   for (const v of [-22.5, 22.5]) { k.minaret(-6, v, 1.5, 30, 4, S.DOME, 2.2); k.chhatri(-6, v, 3.4, 30, S.DOME); }
   for (const v of [-21, 21]) k.chhatri(6, v, 2.6, 12, S.DOME);
+}
+
+/**
+ * Dariya Wali Masjid, after the user's satellite and aerial photos: a sandy flat-roofed hall with a
+ * parapet, a stepped inner court with a small cistern and two slender minarets on its far corners, and a
+ * separate domed structure (gold-brown dome on an octagonal drum with corner turrets) at the back.
+ * Everything is kept INSIDE the Overture footprint plus a small back yard, never toward the road.
+ */
+function dariyaWaliMasjid(k: Kit, g: Grounds, s: LandmarkSite): void {
+  k.begin(s, 20, 151); g.frame(s);
+  const hu = s.ext[0] / 2, hv = s.ext[1] / 2;
+  const SAND = 0xc2ab82;
+  g.color(SAND).rect(-hu - 3, hu + 3, -hv - 3, hv + 3, 0.08);
+  if (s.ring.length > 3) k.extrudeWorldRing(s.ring, 0, 6.5, S.STONE, S.STONE);
+  // Parapet, a stepped inner court and a cistern.
+  k.merlons(-hu, hu, -hv, hv, 6.5, S.STONE);
+  k.box(-hu * 0.55, hu * 0.55, 6.5, 8.0, -hv * 0.5, hv * 0.5, S.STONE);
+  g.color(0x6f7f80).rect(-hu * 0.18, hu * 0.18, -hv * 0.12, hv * 0.12, 8.05);
+  k.arcade('v1', hv, -hu + 2, hu - 2, 0.4, 2.0, 4.6, Math.max(2, Math.round(hu / 3)), S.GLASS, true);
+  // Two slender minarets on the front corners.
+  for (const u of [-hu + 1.2, hu - 1.2]) { k.minaret(u, hv - 1.2, 1.2, 17, 3, S.STONE, 6.5); k.chhatri(u, hv - 1.2, 2.6, 17, S.DOME); }
+  // The domed structure at the back (north-west corner of the site): octagonal drum, gold-brown dome, turrets.
+  const du = hu + 9, dv = -hv + 4;
+  g.color(SAND).rect(du - 6, du + 6, dv - 6, dv + 6, 0.1);
+  k.box(du - 4.2, du + 4.2, 0, 5, dv - 4.2, dv + 4.2, S.STONE);
+  k.arcadeAll(du - 4.2, du + 4.2, dv - 4.2, dv + 4.2, 0.5, 1.6, 3.2, 3, S.GLASS);
+  k.cylinder(du, dv, 3.3, 3.3, 5, 7, 8, S.STONE);
+  k.onion(du, dv, 3.4, 7, 4.4, S.GILT, 0.25);
+  for (const a of [-1, 1]) for (const b of [-1, 1]) k.chhatri(du + a * 4.2, dv + b * 4.2, 1.5, 5, S.STONE);
 }
 
 function chhotaImambara(k: Kit, g: Grounds, s: LandmarkSite): void {
@@ -479,6 +511,9 @@ function chhotaImambara(k: Kit, g: Grounds, s: LandmarkSite): void {
   // Gates: white main gateway and a side gate; boundary walls.
   k.box(-20, 20, 0, 14, -152, -142, S.DOME); k.arcade('v0', -152, -6, 6, 0, 8, 12, 1, S.GLASS, true); k.arcade('v1', -142, -6, 6, 0, 8, 12, 1, S.GLASS, true);
   k.merlons(-20, 20, -152, -142, 14, S.DOME); for (const su of [-17, 17]) k.chhatri(su, -147, 2.6, 14);
+  // Second gate beside the main one on the north wall, as in the satellite view (two gates).
+  k.box(-58, -34, 0, 10, -152, -143, S.DOME); k.arcade('v0', -152, -52, -40, 0, 6, 8, 1, S.GLASS, true); k.arcade('v1', -143, -52, -40, 0, 6, 8, 1, S.GLASS, true);
+  k.merlons(-58, -34, -152, -143, 10, S.DOME); for (const su of [-56, -36]) k.chhatri(su, -147.5, 2.2, 10);
   k.box(58, 66, 0, 10, -128, -112, S.DOME); k.arcade('u1', 66, -124, -116, 0, 5, 8.5, 1, S.GLASS, true);
   for (const [u0, u1, v0, v1] of [[-72, -70, -152, 34], [64, 66, -152, -128], [64, 66, -112, 34], [-72, 66, 32, 34], [-72, -20, -152, -150], [20, 66, -152, -150]]) k.box(u0, u1, 0, 4.5, v0, v1, S.DOME);
 }
@@ -909,7 +944,7 @@ function airportTower(k: Kit, x: number, z: number): void {
 }
 
 function rumiDarwaza(k: Kit, s: LandmarkSite): void {
-  k.begin(s, 18, 11);
+  k.begin(s, 18, 11); k.domeDefault = S.LIME;
   const L = Math.max(s.ext[0], s.ext[1]);
   const half = Math.min(36, L / 2);
   k.box(-10, 10, 0, 17, -6, 6, S.LIME);
@@ -917,7 +952,7 @@ function rumiDarwaza(k: Kit, s: LandmarkSite): void {
   k.arcade('v1', 6, -7, 7, 0, 10, 15, 1, S.GLASS, true);
   k.box(-7, 7, 17, 19, -4, 4, S.LIME);
   k.lathe(0, 0, [[3.2, 19], [3.2, 23.5], [0.01, 23.5]], 8, S.LIME, Math.PI / 8);
-  k.onion(0, 0, 2.6, 23.5, 3.2, S.DOME, 0.1);
+  k.onion(0, 0, 2.6, 23.5, 3.2, S.LIME, 0.1);
   for (const sgn of [-1, 1]) {
     const u0 = sgn > 0 ? 10 : -half, u1 = sgn > 0 ? half : -10;
     k.box(u0, u1, 0, 10, -3.5, 3.5, S.LIME);
@@ -1104,6 +1139,7 @@ function buildAll(k: Kit, g: Grounds): { flag?: WavingFlag } {
   const b = site('bara_imambara'); if (b) baraImambara(k, g, b);
   const r = site('rumi_darwaza'); if (r) rumiDarwaza(k, r);
   const ch = site('chhota_imambara'); if (ch) chhotaImambara(k, g, ch);
+  const dw = site('dariya_wali_masjid'); if (dw) dariyaWaliMasjid(k, g, dw);
   const tw = site('teele_wali_masjid'); if (tw) teeleWaliMasjid(k, g, tw);
   const tge = site('teele_gate_east'); if (tge) { k.begin(tge, 18, 133); gateBlock(k, 0, 0, 12, false, 17); }
   const tgn = site('gate_north_of_bara'); if (tgn) { k.begin(tgn, 20, 137); gateBlock(k, 0, 0, 14, true, 20); }

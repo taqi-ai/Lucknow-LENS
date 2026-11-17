@@ -1151,26 +1151,32 @@ function vidhanSabha(k: Kit, s: LandmarkSite): void {
   const WH = 17;
   k.extrudeWorldRing(s.ring, 0, WH, S.STONE, S.ROOF);
   const loc = s.ring.map(([x, z]) => k.local(x, z));
-  const vmin = Math.min(...loc.map((q) => q[1])), umid = loc.reduce((m, q) => m + q[0], 0) / loc.length;
   // Cornice band with a parapet and corner cupolas around the footprint.
   for (let i = 0; i < loc.length - 1; i++) {
     const [au, av] = loc[i], [bu, bv] = loc[i + 1], L = Math.hypot(bu - au, bv - av);
     if (L < 6) continue;
     for (let t = 2; t < L - 1; t += 7) k.chhatri(au + ((bu - au) * t) / L, av + ((bv - av) * t) / L, 1.6, WH, S.DOME);
   }
+  // Rotate the frame 90 degrees for the central block, portico and dome so they run across the wings
+  // (user feedback); the dome stays at its pinned world position.
+  k.begin(s, 52, 89, s.a + Math.PI / 2);
+  const loc2 = s.ring.map(([x, z]) => k.local(x, z));
+  const [umid, dv] = k.local(-558.4, 709.2);
+  const pv = dv - 20;  // front (portico) edge, 20 m in front of the dome axis
+  const inFoot = (u: number, v: number): boolean => { let c = false; for (let i = 0, j = loc2.length - 1; i < loc2.length; j = i++) { const [ui, vi] = loc2[i], [uj, vj] = loc2[j]; if ((vi > v) !== (vj > v) && u < ((uj - ui) * (v - vi)) / (vj - vi) + ui) c = !c; } return c; };
   // Central block, portico and pediment on the front edge.
-  const pv = vmin + 2;
-  k.box(umid - 30, umid + 30, 0, WH + 7, pv - 6, pv + 22, S.STONE);
+  const bz1 = dv + 17;
+  k.box(umid - 30, umid + 30, 0, WH + 7, pv - 6, bz1, S.STONE);
   k.arcade('v0', pv - 6, umid - 26, umid + 26, 1, 6.5, 12, 4, S.GLASS, true);
   k.arcade('v0', pv - 6, umid - 26, umid + 26, 14.5, 2.4, 4.6, 8, S.GLASS);
   for (const u of [umid - 20, umid - 7, umid + 7, umid + 20]) k.cylinder(u, pv - 7.5, 1.1, 1.1, 0, 14, 10, S.STONE);
-  k.box(umid - 30, umid + 30, WH + 7, WH + 8.2, pv - 7, pv + 22, S.STONE);
+  k.box(umid - 30, umid + 30, WH + 7, WH + 8.2, pv - 7, bz1, S.STONE);
   k.box(umid - 18, umid + 18, WH + 8.2, WH + 11, pv - 6.5, pv - 5, S.STONE);                 // pediment
   k.box(umid - 10, umid + 10, WH + 11, WH + 12.6, pv - 6.5, pv - 5, S.STONE);
-  k.merlons(umid - 30, umid + 30, pv - 6, pv + 22, WH + 8.2, S.STONE);
+  k.merlons(umid - 30, umid + 30, pv - 6, bz1, WH + 8.2, S.STONE);
   for (const u of [umid - 30, umid + 30]) { k.cylinder(u, pv - 4, 2.4, 2.0, 0, WH + 9, 10, S.STONE); k.chhatri(u, pv - 4, 3.6, WH + 9, S.DOME); }
   // Octagonal drum, ribbed dome, lantern and spire over the middle of the building.
-  const du = umid, dv = pv + 9;
+  const du = umid;
   k.cylinder(du, dv, 15, 15, WH + 7, WH + 15, 8, S.STONE);
   k.arcade('v0', dv - 14, du - 9, du + 9, WH + 8, 1.8, 5, 4, S.GLASS);
   for (let i = 0; i < 8; i++) { const a2 = (i / 8) * Math.PI * 2 + Math.PI / 8; k.cylinder(du + Math.cos(a2) * 15.4, dv + Math.sin(a2) * 15.4, 0.7, 0.7, WH + 7, WH + 15, 6, S.STONE); }
@@ -1178,7 +1184,7 @@ function vidhanSabha(k: Kit, s: LandmarkSite): void {
   k.cylinder(du, dv, 2.6, 2.2, WH + 32.4, WH + 36, 8, S.STONE); k.chhatri(du, dv, 4.4, WH + 36, S.STONE);
   k.cylinder(du, dv, 0.5, 0.2, WH + 39, WH + 46, 8, S.GILT);
   // Wing-end domed pavilions and small turrets on the dome base.
-  for (const sg of [-1, 1]) for (const du2 of [60, 100]) { k.box(umid + sg * du2 - 6, umid + sg * du2 + 6, WH, WH + 5, dv - 6, dv + 6, S.STONE); k.lathe(umid + sg * du2, dv, [[5.6, WH + 5], [5.8, WH + 6], [3.5, WH + 9], [0, WH + 11]], 16, S.DOME); }
+  for (const sg of [-1, 1]) for (const du2 of [60, 100]) { if (!inFoot(umid + sg * du2, dv) || !inFoot(umid + sg * du2 + 6, dv + 6) || !inFoot(umid + sg * du2 - 6, dv - 6)) continue; k.box(umid + sg * du2 - 6, umid + sg * du2 + 6, WH, WH + 5, dv - 6, dv + 6, S.STONE); k.lathe(umid + sg * du2, dv, [[5.6, WH + 5], [5.8, WH + 6], [3.5, WH + 9], [0, WH + 11]], 16, S.DOME); }
   for (let i = 0; i < 6; i++) { const a2 = (i / 6) * Math.PI * 2; k.cylinder(du + Math.cos(a2) * 16.5, dv + Math.sin(a2) * 16.5, 1.2, 1.0, WH + 7, WH + 21, 8, S.STONE); k.chhatri(du + Math.cos(a2) * 16.5, dv + Math.sin(a2) * 16.5, 2.4, WH + 21, S.DOME); }
 }
 

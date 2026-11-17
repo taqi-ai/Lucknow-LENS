@@ -12,6 +12,7 @@ import { createRoadMaterial, applyRoadPalette, roadUniforms } from './roadMateri
 import { GroundSurface } from './groundSurface';
 import { buildLandmarkLayer, type LandmarkLayer } from './landmarks';
 import { MetroSystem } from './metroSystem';
+import { TrafficSystem } from './traffic';
 import { buildTreePrototypes, createTreeMaterial, pickSpecies, SPECIES, SPECIES_COUNT } from './treePrototypes';
 import type { TileWorkerRequest, TileWorkerResponse } from './tileWorker';
 import { getDeviceProfile } from './deviceProfile';
@@ -136,6 +137,7 @@ export class TileStreamer {
   private lastAltitude = 1e9;
   private landmarks: LandmarkLayer;
   private metro = new MetroSystem();
+  private traffic = new TrafficSystem();
 
   private lampMastGeo!: THREE.BufferGeometry;
   private lampHeadGeo!: THREE.BufferGeometry;
@@ -380,6 +382,8 @@ export class TileStreamer {
     await this.ground.init().catch((e) => console.warn('[TileStreamer] ground init failed:', e));
     await this.metro.init(this.scene).catch((e) => console.warn('[TileStreamer] metro init failed:', e));
     this.metro.setNightMode(this.isNight);
+    await this.traffic.init(this.scene).catch((e) => console.warn('[TileStreamer] traffic init failed:', e));
+    this.traffic.setNightMode(this.isNight);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -391,6 +395,8 @@ export class TileStreamer {
     this.frustumMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     this.frustum.setFromProjectionMatrix(this.frustumMatrix);
 
+    // Traffic animates every frame (the rest of the streamer is throttled).
+    this.traffic.update(now / 1000, camera, camera.position.y);
     if (now - this.lastUpdateTime < this.UPDATE_INTERVAL) {
       this.cullLoadedTiles();
       return;
@@ -963,6 +969,7 @@ export class TileStreamer {
     this.overlay.setNightMode(night);
     this.ground.setNightMode(night, cyber);
     this.metro.setNightMode(night);
+    this.traffic.setNightMode(night);
     this.landmarks.setNight(night);
 
     if (night) {
@@ -996,6 +1003,7 @@ export class TileStreamer {
     this.hlod.setVisible(v.buildings);
     this.landmarks.group.visible = v.buildings;
     this.metro.setVisible(v.roads);
+    this.traffic.setVisible(v.roads);
     this.overlay.setLayerVisibility({ roads: v.roads, parks: v.parks, water: v.water });
     for (const container of this.loadedTiles.values()) {
       applyLayerVisibility(container.group, v);

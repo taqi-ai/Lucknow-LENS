@@ -60,9 +60,32 @@ export class RailAirSystem {
     } catch { /* no rail data */ }
     const total = this.trains.reduce((m, t) => m + Math.max(0, t.n), 0);
     if (total > 0) {
-      // ICF/LHB coach: blue-white livery with a window band and roof; engine: red WAP-7 style.
-      this.coaches = new THREE.InstancedMesh(colored([[box(COACH, 2.6, 3.1, 0, 2.3, 0), 0x2f5d8a], [box(COACH * 0.96, 0.6, 3.14, 0, 2.6, 0), 0xe9ecef], [box(COACH, 0.35, 3.0, 0, 3.75, 0), 0x8a8f94], [box(COACH * 0.9, 0.7, 2.6, 0, 0.75, 0), 0x2a2a2a]]), mat, total);
-      this.engines = new THREE.InstancedMesh(colored([[box(20, 3.0, 3.1, 0, 2.5, 0), 0xb3261e], [box(19, 0.5, 3.14, 0, 2.3, 0), 0xe7d36a], [box(1.2, 1.1, 2.6, 9.6, 3.3, 0), 0x1d2a33], [box(18, 0.7, 2.6, 0, 0.75, 0), 0x2a2a2a]]), mat, this.trains.length);
+      // LHB coach: blue shell with a cream waistline, a dark window band with frames, roof AC pods,
+      // end gangway, sliding doors and two bogies with wheelsets.
+      const cyl = (r: number, h: number, x: number, y: number, z: number) => { const g = new THREE.CylinderGeometry(r, r, h, 10); g.rotateX(Math.PI / 2); g.translate(x, y, z); return g; };
+      const coach: Array<[THREE.BufferGeometry, number]> = [
+        [box(COACH, 2.5, 3.0, 0, 2.15, 0), 0x2a5f9a], [box(COACH * 0.97, 0.12, 3.06, 0, 1.55, 0), 0xe8dfc8],
+        [box(COACH * 0.92, 0.75, 3.05, 0, 2.7, 0), 0x1c2a36], [box(COACH, 0.3, 2.7, 0, 3.55, 0), 0xb9bec2],
+        [box(2.2, 0.35, 1.6, -5, 3.85, 0), 0x9aa0a6], [box(2.2, 0.35, 1.6, 5, 3.85, 0), 0x9aa0a6],
+        [box(0.9, 2.1, 3.06, -COACH / 2 + 2.2, 2.0, 0), 0x1d3f66], [box(0.9, 2.1, 3.06, COACH / 2 - 2.2, 2.0, 0), 0x1d3f66],
+        [box(1.8, 2.4, 2.4, -COACH / 2 - 0.2, 2.1, 0), 0x2b2b2b], [box(1.8, 2.4, 2.4, COACH / 2 + 0.2, 2.1, 0), 0x2b2b2b],
+        [box(3.4, 0.7, 2.6, -7.8, 0.9, 0), 0x202022], [box(3.4, 0.7, 2.6, 7.8, 0.9, 0), 0x202022],
+        [box(COACH * 0.9, 0.5, 2.6, 0, 1.0, 0), 0x2a2a2d],
+      ];
+      for (const bx of [-7.8, 7.8]) for (const wx of [-1.2, 1.2]) for (const wz of [-1.43, 1.43]) coach.push([cyl(0.46, 0.14, bx + wx, 0.5, wz), 0x151515]);
+      for (let w = -9; w <= 9; w += 3) coach.push([box(0.16, 0.8, 3.08, w, 2.7, 0), 0x2a5f9a]);
+      // WAP-7 locomotive: red body with a yellow nose stripe, cab windows, pantograph, horns, bogies.
+      const eng: Array<[THREE.BufferGeometry, number]> = [
+        [box(20, 3.1, 3.1, 0, 2.4, 0), 0xb3261e], [box(20.1, 0.5, 3.14, 0, 1.5, 0), 0xeee3b0],
+        [box(0.2, 1.1, 2.4, 10.05, 3.1, 0), 0x16222b], [box(0.2, 1.1, 2.4, -10.05, 3.1, 0), 0x16222b],
+        [box(2.2, 0.35, 2.6, 7.6, 4.1, 0), 0x2b2b2b], [box(2.2, 0.35, 2.6, -7.6, 4.1, 0), 0x2b2b2b],
+        [box(0.16, 1.6, 0.16, 0, 4.8, -0.8), 0x3a3a3e], [box(0.16, 1.6, 0.16, 0, 4.8, 0.8), 0x3a3a3e], [box(2.6, 0.12, 2.2, 0, 5.6, 0), 0x3a3a3e],
+        [box(4.4, 0.8, 2.6, -6.5, 0.9, 0), 0x1e1e20], [box(4.4, 0.8, 2.6, 6.5, 0.9, 0), 0x1e1e20],
+        [box(0.2, 0.4, 0.4, 10.1, 1.9, 0.9), 0xfff2c0], [box(0.2, 0.4, 0.4, 10.1, 1.9, -0.9), 0xfff2c0],
+      ];
+      for (const bx of [-6.5, 6.5]) for (const wx of [-1.5, 0, 1.5]) for (const wz of [-1.43, 1.43]) eng.push([cyl(0.5, 0.14, bx + wx, 0.55, wz), 0x151515]);
+      this.coaches = new THREE.InstancedMesh(colored(coach), mat, total);
+      this.engines = new THREE.InstancedMesh(colored(eng), mat, this.trains.length);
       for (const m of [this.coaches, this.engines]) { m.frustumCulled = false; m.castShadow = true; this.group.add(m); }
     }
     // Airport: runway axis from the longest runway polygon edge; stands spread over the aprons.

@@ -215,6 +215,8 @@ export function classifyRoad(type?: string, subtype?: string, level?: number, is
   if (subtype === 'rail' || type === 'rail' || type === 'standard_gauge' || type === 'subway') {
     return 'railway';
   }
+  // Footbridges and subways are walkways: a narrow footway ribbon, never a lane-marked flyover.
+  if (type === 'footway' || type === 'path' || type === 'steps' || type === 'pedestrian' || type === 'cycleway') return 'footway';
   if ((level !== undefined && level > 0) || isBridge) {
     return 'flyover';
   }

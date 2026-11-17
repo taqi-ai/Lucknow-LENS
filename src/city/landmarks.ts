@@ -1331,6 +1331,43 @@ function statuePlatform(k: Kit, g: Grounds, s: LandmarkSite): void {
   k.box(-1.0, 1.0, 9.0, 9.6, -0.55, 0.55, S.GILT); k.cylinder(0, 0, 0.42, 0.42, 9.6, 10.5, 10, S.GILT);
 }
 
+/**
+ * Charbagh surroundings (round 3): a paved forecourt with a formal garden and an auto/taxi stand on
+ * the city (north) side, car-park rows, and on the track side a long platform with a striped canopy on
+ * columns, a footbridge with stair towers, and platform lamps. Site frame: u along the station,
+ * v south toward the tracks (they start about 110 m south of the building centre). Positions are
+ * estimates around the real footprint, not a survey; no platform count is claimed.
+ */
+function charbaghYard(k: Kit, g: Grounds, s: LandmarkSite): void {
+  k.begin(s, 12, 91); g.frame(s);
+  const hu = s.ext[0] / 2 - 20;
+  // Forecourt: paving, formal lawn with a central circle, drive lanes and parking bays.
+  g.color(0xb9ac98).rect(-hu * 0.55, hu * 0.55, -92, -36, 0.09);
+  g.color(0x6f8f48).rect(-70, 70, -78, -52, 0.11); g.color(0xcfc3ac).disc(0, -65, 11, 0.13, 32); g.color(0x5f8a9a).disc(0, -65, 5, 0.14, 20);
+  for (const sg of [-1, 1]) {
+    g.color(0x8f8a80).rect(sg * 80, sg * 150, -88, -42, 0.11);
+    for (let u = 84; u < 148; u += 5) g.color(0xe6e1d4).rect(sg * u - 0.15, sg * u + 0.15, -88, -64, 0.12);
+    g.color(0x8f8a80).rect(sg * 80, sg * 150, -40, -38, 0.1);
+    for (let u = 90; u < 148; u += 12) { k.box(sg * u - 1.4, sg * u + 1.4, 0.4, 1.9, -56, -52, S.METAL); k.box(sg * u - 1.1, sg * u + 1.1, 1.9, 2.4, -55.6, -52.4, S.ROOF); }   // autos / taxis
+  }
+  // Platform on the track side with a striped canopy on columns.
+  const U0 = -170, U1 = 170;
+  k.box(U0, U1, 0, 1.0, 40, 52, S.STONE);
+  g.color(0xcfc6b2).rect(U0, U1, 40, 52, 1.02); g.color(0xe3d9a8).rect(U0, U1, 40.6, 41.2, 1.03);
+  for (let u = U0 + 8; u < U1; u += 12) { k.box(u - 0.3, u + 0.3, 1, 6.2, 41, 41.6, S.METAL); k.box(u - 0.3, u + 0.3, 1, 6.2, 50.4, 51, S.METAL); }
+  for (let u = U0; u < U1; u += 6) { k.box(u, u + 6, 6.2, 6.5, 39, 53, (Math.floor((u - U0) / 6) % 2) ? S.DOME : S.REDSTONE); }
+  for (let u = U0 + 20; u < U1; u += 24) { k.box(u - 0.1, u + 0.1, 1, 4.4, 46, 46.2, S.METAL); k.box(u - 0.5, u + 0.5, 4.4, 4.9, 45.6, 46.6, S.GILT); }   // platform lamps
+  // Footbridge with stair towers and a roof.
+  const fu = -20;
+  k.box(fu - 2, fu + 2, 7.2, 8.1, 52, 108, S.REDSTONE);
+  k.box(fu - 2.4, fu + 2.4, 8.1, 9.6, 52, 108, S.ROOF);
+  for (const v of [52, 80, 108]) { k.box(fu - 0.4, fu + 0.4, 0, 7.2, v - 0.4, v + 0.4, S.STONE); k.box(fu - 3, fu + 3, 0, 7.2, v - 0.3, v + 0.3, S.REDSTONE); }
+  for (let i = 0; i < 8; i++) k.box(fu - 1.6, fu + 1.6, 0, 0.9 * (i + 1), 52 - 0.9 * (i + 1), 52 - 0.9 * i, S.STONE);
+  // Service buildings at the west end (signal cabin, parcel office).
+  k.box(-hu - 12, -hu + 4, 0, 5, 56, 72, S.REDSTONE); k.box(-hu - 12, -hu + 4, 5, 5.5, 56, 72, S.ROOF);
+  k.box(hu - 4, hu + 14, 0, 4.5, 58, 76, S.REDSTONE); k.box(hu - 4, hu + 14, 4.5, 5, 58, 76, S.ROOF);
+}
+
 function buildAll(k: Kit, g: Grounds): { flag?: WavingFlag } {
   const res: { flag?: WavingFlag } = {};
   const b = site('bara_imambara'); if (b) baraImambara(k, g, b);
@@ -1407,7 +1444,7 @@ function buildAll(k: Kit, g: Grounds): { flag?: WavingFlag } {
   const sb = site('safed_baradari');
   if (sb) ringMonument(k, sb, 10, S.DOME, 83, (kk, hu, hv) => { kk.arcadeAll(-hu, hu, -hv, hv, 0.6, 2.8, 7, 4.2, S.GLASS); kk.merlons(-hu, hu, -hv, hv, 10, S.DOME); for (const u of [-hu, hu]) for (const v of [-hv, hv]) kk.chhatri(u, v, 2.2, 10); });
   const cb = site('charbagh');
-  if (cb) charbaghStation(k, cb);
+  if (cb) { charbaghStation(k, cb); charbaghYard(k, g, cb); }
   const lm = site('la_martiniere');
   if (lm) ringMonument(k, lm, 18, S.DOME, 97, (kk) => {
     kk.box(-8, 8, 18, 34, -8, 8, S.DOME); kk.arcadeAll(-8, 8, -8, 8, 19, 2.4, 6, 4);

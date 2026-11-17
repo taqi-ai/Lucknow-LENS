@@ -9,13 +9,242 @@
    "key": "bara_imambara",
    "name": "Bara Imambara complex",
    "building": "d932d835",
-   "precinct": [
-    -118,
-    118,
-    -262,
-    48
+   "height": 20,
+   "exclPoly": [
+    [
+     -3648.6,
+     -2063.9
+    ],
+    [
+     -3642.5,
+     -2074.3
+    ],
+    [
+     -3628.6,
+     -2083.4
+    ],
+    [
+     -3614.3,
+     -2088.5
+    ],
+    [
+     -3586.6,
+     -2105
+    ],
+    [
+     -3583.5,
+     -2119.9
+    ],
+    [
+     -3578.4,
+     -2134.3
+    ],
+    [
+     -3574,
+     -2146.5
+    ],
+    [
+     -3569,
+     -2161.3
+    ],
+    [
+     -3565.5,
+     -2177.7
+    ],
+    [
+     -3563.3,
+     -2186.5
+    ],
+    [
+     -3560.1,
+     -2196.5
+    ],
+    [
+     -3557,
+     -2206.4
+    ],
+    [
+     -3551.9,
+     -2218.7
+    ],
+    [
+     -3550.4,
+     -2235.3
+    ],
+    [
+     -3548.4,
+     -2246.4
+    ],
+    [
+     -3543.8,
+     -2254
+    ],
+    [
+     -3541.2,
+     -2261.4
+    ],
+    [
+     -3536.4,
+     -2266.6
+    ],
+    [
+     -3542.5,
+     -2278.4
+    ],
+    [
+     -3549.5,
+     -2281.3
+    ],
+    [
+     -3557.2,
+     -2283.6
+    ],
+    [
+     -3567.4,
+     -2285.5
+    ],
+    [
+     -3583.6,
+     -2293.9
+    ],
+    [
+     -3597.3,
+     -2298.6
+    ],
+    [
+     -3607.4,
+     -2298.9
+    ],
+    [
+     -3618.5,
+     -2302.9
+    ],
+    [
+     -3714.1,
+     -2329.6
+    ],
+    [
+     -3713.8,
+     -2312.4
+    ],
+    [
+     -3714.4,
+     -2298.8
+    ],
+    [
+     -3712.5,
+     -2284.3
+    ],
+    [
+     -3727.7,
+     -2290
+    ],
+    [
+     -3745.2,
+     -2297.3
+    ],
+    [
+     -3758.7,
+     -2296.2
+    ],
+    [
+     -3766.1,
+     -2286.6
+    ],
+    [
+     -3773.6,
+     -2270.9
+    ],
+    [
+     -3786,
+     -2246.9
+    ],
+    [
+     -3799.5,
+     -2216.2
+    ],
+    [
+     -3810,
+     -2189.2
+    ],
+    [
+     -3816.7,
+     -2160.1
+    ],
+    [
+     -3824,
+     -2135
+    ],
+    [
+     -3824.6,
+     -2120.2
+    ],
+    [
+     -3827.8,
+     -2107.8
+    ],
+    [
+     -3830.3,
+     -2097.7
+    ],
+    [
+     -3833.9,
+     -2087.7
+    ],
+    [
+     -3835.8,
+     -2077.2
+    ],
+    [
+     -3838.7,
+     -2068.1
+    ],
+    [
+     -3840.4,
+     -2059.1
+    ],
+    [
+     -3846.5,
+     -2056
+    ],
+    [
+     -3823.9,
+     -2044.3
+    ],
+    [
+     -3795.7,
+     -2035
+    ],
+    [
+     -3769.1,
+     -2026.2
+    ],
+    [
+     -3743.3,
+     -2018.5
+    ],
+    [
+     -3718,
+     -2011.2
+    ],
+    [
+     -3694.1,
+     -2004.3
+    ],
+    [
+     -3671.2,
+     -2001.6
+    ],
+    [
+     -3666.8,
+     -2007.7
+    ],
+    [
+     -3664.1,
+     -2012.1
+    ]
    ],
-   "height": 20
+   "note": "Boundary from user-dropped pins 6-63 (2026-11-17)."
   },
   {
    "key": "rumi_darwaza",
@@ -27,13 +256,114 @@
    "key": "chhota_imambara",
    "name": "Chhota Imambara complex",
    "building": "5cc03349",
-   "precinct": [
-    -72,
-    72,
-    -178,
-    34
+   "height": 30,
+   "exclPoly": [
+    [
+     -4564.3,
+     -2754.6
+    ],
+    [
+     -4579.2,
+     -2722.1
+    ],
+    [
+     -4597.1,
+     -2686.8
+    ],
+    [
+     -4609.5,
+     -2658.5
+    ],
+    [
+     -4617.8,
+     -2638.8
+    ],
+    [
+     -4628.6,
+     -2619.4
+    ],
+    [
+     -4632.6,
+     -2607.6
+    ],
+    [
+     -4623.9,
+     -2601.7
+    ],
+    [
+     -4628.9,
+     -2590
+    ],
+    [
+     -4606.6,
+     -2577.4
+    ],
+    [
+     -4587,
+     -2568.6
+    ],
+    [
+     -4563.2,
+     -2558.1
+    ],
+    [
+     -4552.5,
+     -2553.6
+    ],
+    [
+     -4547.9,
+     -2551.2
+    ],
+    [
+     -4542.5,
+     -2549
+    ],
+    [
+     -4536.1,
+     -2546.9
+    ],
+    [
+     -4525.2,
+     -2541.3
+    ],
+    [
+     -4521,
+     -2538.7
+    ],
+    [
+     -4517.5,
+     -2553
+    ],
+    [
+     -4503.5,
+     -2580.6
+    ],
+    [
+     -4489.3,
+     -2612.3
+    ],
+    [
+     -4473.3,
+     -2645.5
+    ],
+    [
+     -4450.9,
+     -2689.6
+    ],
+    [
+     -4445.2,
+     -2701.7
+    ],
+    [
+     -4459.7,
+     -2710.4
+    ],
+    [
+     -4475.8,
+     -2717.7
+    ]
    ],
-   "height": 30
+   "note": "Boundary from user-dropped pins 4-29 (2026-11-17)."
   },
   {
    "key": "clock_tower",
@@ -72,12 +402,12 @@
    "height": 20,
    "angle": 0,
    "precinct": [
-    -190,
-    190,
-    -170,
-    170
+    -40,
+    75,
+    -80,
+    -10
    ],
-   "note": "Precinct covers the whole compound so the dense random canopy and unrelated buildings are removed; the compound is re-planted sparsely in landmarks.ts."
+   "note": "Only the main ruin block is excluded; the other ruins have their own small residency_part sites. The compound stays wooded (satellite view)."
   },
   {
    "key": "chhatar_manzil",
@@ -234,6 +564,156 @@
    ],
    "height": 18,
    "note": "Footprint of Overture building 377ea494 at (-3175,-2211) beside the curved primary road; satellite and aerial photos supplied by the user."
+  },
+  {
+   "key": "chhota_gate_1",
+   "name": "Chhota Imambara road gate 1",
+   "xz": [
+    -4417.9,
+    -2696.3
+   ],
+   "snap": false,
+   "angle": -1.3097,
+   "size": 20,
+   "note": "User pins 1-3 (gate on the road)."
+  },
+  {
+   "key": "chhota_gate_2",
+   "name": "Chhota Imambara road gate 2",
+   "xz": [
+    -4581.5,
+    -2772.2
+   ],
+   "snap": false,
+   "angle": -1.2992,
+   "size": 18,
+   "note": "User pins 4-6 (gate on the road)."
+  },
+  {
+   "key": "pudiya_ghat_gate",
+   "name": "Pudiya Ghat entrance gate",
+   "xz": [
+    -3872.9,
+    -2559.0
+   ],
+   "snap": false,
+   "angle": -1.2849,
+   "size": 18,
+   "note": "User pin; width laid along the adjoining service road."
+  },
+  {
+   "key": "husainabad_park",
+   "name": "Husainabad park",
+   "xz": [
+    -4097.1,
+    -2488.0
+   ],
+   "snap": false,
+   "angle": 0,
+   "exclPoly": [
+    [
+     -4171.2,
+     -2480.9
+    ],
+    [
+     -4165.6,
+     -2522.9
+    ],
+    [
+     -4148.2,
+     -2557.1
+    ],
+    [
+     -4089.4,
+     -2529.1
+    ],
+    [
+     -4004.6,
+     -2487
+    ],
+    [
+     -4039.5,
+     -2415.9
+    ]
+   ],
+   "note": "Convex hull of user pins 1-9; pin 1 is the central plaza."
+  },
+  {
+   "key": "residency_part_east2",
+   "name": "Residency ruin",
+   "xz": [
+    -2373.1,
+    -1312.5
+   ],
+   "snap": false,
+   "angle": 0,
+   "size": 36
+  },
+  {
+   "key": "residency_part_banquet",
+   "name": "Residency ruin",
+   "xz": [
+    -2437.1,
+    -1245.5
+   ],
+   "snap": false,
+   "angle": 0,
+   "size": 42
+  },
+  {
+   "key": "residency_part_eastrooms",
+   "name": "Residency ruin",
+   "xz": [
+    -2355.1,
+    -1268.5
+   ],
+   "snap": false,
+   "angle": 0,
+   "size": 50
+  },
+  {
+   "key": "residency_part_treasury",
+   "name": "Residency ruin",
+   "xz": [
+    -2444.1,
+    -1173.5
+   ],
+   "snap": false,
+   "angle": 0,
+   "size": 50
+  },
+  {
+   "key": "residency_part_fayrer",
+   "name": "Residency ruin",
+   "xz": [
+    -2398.1,
+    -1172.5
+   ],
+   "snap": false,
+   "angle": 0,
+   "size": 44
+  },
+  {
+   "key": "residency_part_begum",
+   "name": "Residency ruin",
+   "xz": [
+    -2579.1,
+    -1199.5
+   ],
+   "snap": false,
+   "angle": 0,
+   "size": 40
+  },
+  {
+   "key": "residency_part_nw",
+   "name": "Residency ruin",
+   "xz": [
+    -2503.1,
+    -1412.5
+   ],
+   "snap": false,
+   "angle": 0,
+   "size": 50
   }
  ]
 }

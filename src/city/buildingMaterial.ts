@@ -274,7 +274,10 @@ const FRAG_COLOR = /* glsl */ `
     float stain = smoothstep(0.55, 0.8, vnoise(vWorldPos.xz * 0.35 + bHash * 40.0));
     baseCol *= 1.0 - 0.12 * stain * near;
     rough = 0.92;
-  } else if (bSurf == 4.0) { baseCol = vec3(0.035, 0.036, 0.038); rough = 0.45; }
+  } else if (bSurf == 4.0) {
+    if (bTyp > 2.5 && bTyp < 3.5) { baseCol = vec3(0.62, 0.76, 0.86) * (0.95 + 0.08 * vnoise(vWorldPos.xz * 0.5 + vWorldPos.y * 0.3)); rough = 0.85; }
+    else { baseCol = vec3(0.035, 0.036, 0.038); rough = 0.45; }
+  }
   else if (bSurf == 5.0) {
     if (bTyp > 2.5 && bTyp < 3.5) {
       // Heritage lime plaster (Bara Imambara, Rumi Darwaza): pale warm ivory, lightly weathered,
@@ -282,7 +285,7 @@ const FRAG_COLOR = /* glsl */ `
       float mould = smoothstep(0.0, 0.06, abs(fract(vWorldPos.y / 1.6) - 0.5) - 0.44);
       // Bara Imambara (user's photograph): warm sandy cream with a faint pink-ochre cast. Rumi Darwaza
       // (within 60 m of its site) is the deeper golden-ochre of the second photograph.
-      vec3 plaster = vec3(0.82, 0.68, 0.47);
+      vec3 plaster = vec3(0.70, 0.53, 0.33);
       float rumi = 1.0 - smoothstep(40.0, 70.0, length(vWorldPos.xz - vec2(-3758.0, -2364.0)));
       plaster = mix(plaster, vec3(0.83, 0.60, 0.30), rumi);
       baseCol = plaster * (0.93 + 0.10 * vnoise(vWorldPos.xz * 0.5 + vWorldPos.y * 0.3)) * (1.0 - 0.08 * mould);
@@ -419,7 +422,7 @@ const FRAG_OUTPUT = /* glsl */ `
       gl_FragColor.rgb += vec3(0.20, 0.14, 0.08) * (0.4 + commercial) * nearness * exp(-max(vWorldPos.y, 0.0) / 9.0) * uNight;
     }
     // Heritage fabric is floodlit from below.
-    if (bTyp > 2.5 && bTyp < 3.5 && (bSurf == 0.0 || bSurf >= 10.0 || bSurf == 5.0)) {
+    if (bTyp > 2.5 && bTyp < 3.5 && (bSurf == 0.0 || bSurf >= 10.0 || bSurf == 5.0 || bSurf == 4.0)) {
       // Lighting profile by material, after the night photographs: lime-plastered Imambara
       // walls and red sandstone take a warm amber wash; white lime-washed domes stay a softer
       // warm white; gilt finials carry their own glow. Lamp pools repeat every ~9 m along the

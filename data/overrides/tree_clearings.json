@@ -11,13 +11,88 @@
    "note": "User satellite view of the Husainabad Clock Tower / Picture Gallery area, 2026-11-17."
   },
   {
-   "id": "husainabad_talab_surroundings",
-   "x": -4150,
-   "z": -2745,
-   "r": 120,
-   "keep": 0.12,
-   "bare": 0.6,
-   "note": "Same view: dusty open ground with tree patches around the tank."
+   "id": "husainabad_talab",
+   "x": -4253,
+   "z": -2710,
+   "r": 78,
+   "keep": 0.0,
+   "bare": 0.0,
+   "note": "User: the tank must not be covered with trees."
+  },
+  {
+   "id": "residency_east2",
+   "x": -2373.1,
+   "z": -1312.5,
+   "r": 31,
+   "keep": 0.05,
+   "bare": 0.0
+  },
+  {
+   "id": "residency_banquet",
+   "x": -2437.1,
+   "z": -1245.5,
+   "r": 34,
+   "keep": 0.05,
+   "bare": 0.0
+  },
+  {
+   "id": "residency_eastrooms",
+   "x": -2355.1,
+   "z": -1268.5,
+   "r": 39,
+   "keep": 0.05,
+   "bare": 0.0
+  },
+  {
+   "id": "residency_treasury",
+   "x": -2444.1,
+   "z": -1173.5,
+   "r": 39,
+   "keep": 0.05,
+   "bare": 0.0
+  },
+  {
+   "id": "residency_fayrer",
+   "x": -2398.1,
+   "z": -1172.5,
+   "r": 36,
+   "keep": 0.05,
+   "bare": 0.0
+  },
+  {
+   "id": "residency_begum",
+   "x": -2579.1,
+   "z": -1199.5,
+   "r": 33,
+   "keep": 0.05,
+   "bare": 0.0
+  },
+  {
+   "id": "residency_nw",
+   "x": -2503.1,
+   "z": -1412.5,
+   "r": 39,
+   "keep": 0.05,
+   "bare": 0.0
+  },
+  {
+   "id": "residency_main",
+   "x": -2412.1,
+   "z": -1310.5,
+   "r": 48,
+   "keep": 0.05,
+   "bare": 0.0
+  }
+ ],
+ "boosts": [
+  {
+   "id": "residency_woods",
+   "x": -2446.1,
+   "z": -1278.5,
+   "r": 200,
+   "spacing": 8,
+   "p": 0.75,
+   "note": "User: Residency compound is wooded in the satellite view."
   }
  ]
 }

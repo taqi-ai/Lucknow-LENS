@@ -113,7 +113,9 @@ def main():
             ext = [round(max(xs) - min(xs), 1), round(max(zs) - min(zs), 1)]
         else:
             ext = [s.get('size', 20), s.get('size', 20)]
-        if s.get('precinct'):  # [u0, u1, v0, v1] in the site frame
+        if s.get('exclPoly'):  # explicit world polygon (user-dropped boundary pins)
+            excl = [tuple(p) for p in s['exclPoly']]
+        elif s.get('precinct'):  # [u0, u1, v0, v1] in the site frame
             excl = rect(cx, cz, ang, *s['precinct'])
         elif ring and s.get('exclude', True):
             excl = [tuple(p) for p in Polygon(ring).buffer(2).exterior.coords]
@@ -121,7 +123,8 @@ def main():
         else:
             excl = rect(cx, cz, ang, -s.get('size', 20) / 2, s.get('size', 20) / 2, -s.get('size', 20) / 2, s.get('size', 20) / 2) if s.get('exclude', True) else []
         sites.append({'key': s['key'], 'name': s['name'], 'c': [round(cx, 1), round(cz, 1)], 'a': round(ang, 4), 'ext': ext,
-                      'ring': [list(p) for p in (ring or [])], 'excl': [list(p) for p in excl], 'h': s.get('height')})
+                      'ring': [list(p) for p in (ring or [])], 'excl': [list(p) for p in excl], 'h': s.get('height'),
+                      **({'bound': s['exclPoly']} if s.get('exclPoly') else {})})
 
     # Airport from Overture infrastructure.
     air = {'runways': [], 'taxiways': [], 'aprons': [], 'boundary': []}
@@ -144,7 +147,7 @@ def main():
           ' * data/overrides/landmarks.json and Overture 2026-10-21.0. Do not edit by hand.',
           ' * Shared by the tile worker and the HLOD baker (exclusion) and landmarks.ts (models).', ' */', '',
           'export interface LandmarkSite { key: string; name: string; c: [number, number]; a: number; ext: [number, number];',
-          '  ring: Array<[number, number]>; excl: Array<[number, number]>; h?: number | null }', '',
+          '  ring: Array<[number, number]>; excl: Array<[number, number]>; h?: number | null; bound?: Array<[number, number]> }', '',
           'export const LANDMARK_SITES: LandmarkSite[] = ' + json.dumps(sites, separators=(',', ':')) + ';', '',
           'export const AIRPORT: { runways: number[][][]; taxiways: number[][][]; aprons: number[][][]; boundary: number[][] } = '
           + json.dumps(air, separators=(',', ':')) + ';', '',

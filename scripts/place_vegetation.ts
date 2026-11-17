@@ -141,7 +141,10 @@ function onHedge(x: number, z: number): boolean {
 // candidates survive, so wooded land can show dusty open ground in patches.
 interface Clearing { x: number; z: number; r: number; keep: number; bare?: number }
 const CLEAR_FILE = path.join(process.cwd(), 'data/overrides/tree_clearings.json');
-const CLEARINGS: Clearing[] = fs.existsSync(CLEAR_FILE) ? JSON.parse(fs.readFileSync(CLEAR_FILE, 'utf8')).circles ?? [] : [];
+const CLEAR_JSON = fs.existsSync(CLEAR_FILE) ? JSON.parse(fs.readFileSync(CLEAR_FILE, 'utf8')) : {};
+const CLEARINGS: Clearing[] = CLEAR_JSON.circles ?? [];
+/** Woodland boosts: extra trees on a jittered grid inside a circle (masks still apply). */
+const BOOSTS: Array<{ x: number; z: number; r: number; spacing: number; p: number }> = CLEAR_JSON.boosts ?? [];
 function clearKeep(x: number, z: number): number {
   for (const c of CLEARINGS) { const d = Math.hypot(x - c.x, z - c.z); if (d < c.r) return c.keep + (1 - c.keep) * Math.max(0, (d - c.r * 0.6) / (c.r * 0.4)); }
   return 1;
@@ -418,6 +421,16 @@ function main(): void {
           }
           push(jx, jz, 'park');
         }
+      }
+    }
+
+    for (const bo of BOOSTS) {
+      if (bo.x + bo.r < b.minX || bo.x - bo.r > b.maxX || bo.z + bo.r < b.minZ || bo.z - bo.r > b.maxZ) continue;
+      for (let x = Math.ceil(b.minX / bo.spacing) * bo.spacing; x < b.maxX; x += bo.spacing) for (let z = Math.ceil(b.minZ / bo.spacing) * bo.spacing; z < b.maxZ; z += bo.spacing) {
+        const jx = x + (hash2(x * 0.77, z) - 0.5) * bo.spacing * 0.8, jz = z + (hash2(z, x * 0.77) - 0.5) * bo.spacing * 0.8;
+        if (Math.hypot(jx - bo.x, jz - bo.z) > bo.r || hash2(jx * 1.9, jz * 2.3) > bo.p) continue;
+        if (roadMask.hits(jx, jz, 4)) continue;
+        push(jx, jz, 'park');
       }
     }
 

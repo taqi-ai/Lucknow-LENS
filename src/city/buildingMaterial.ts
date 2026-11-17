@@ -316,6 +316,17 @@ const FRAG_COLOR = /* glsl */ `
     float mould = smoothstep(0.0, 0.06, abs(fract(vWorldPos.y / 1.6) - 0.5) - 0.44);
     baseCol = vec3(0.80, 0.71, 0.52) * (0.92 + 0.12 * vnoise(vWorldPos.xz * 0.5 + vWorldPos.y * 0.3)) * (1.0 - 0.10 * mould);
     baseCol *= 1.0 - 0.15 * vnoise(vec2(fuv.x * 0.8, vWorldPos.y * 0.15));
+    // Vidhan Bhavan (within 170 m of its site): lighter buff stone with two rows of arched windows.
+    float vsz = 1.0 - smoothstep(110.0, 170.0, length(vWorldPos.xz - vec2(-574.2, 714.3)));
+    if (vsz > 0.01) {
+      baseCol = mix(baseCol, vec3(0.80, 0.72, 0.52) * (0.94 + 0.08 * vnoise(vWorldPos.xz * 0.4)), vsz);
+      for (int row = 0; row < 2; row++) {
+        float y0 = row == 0 ? 3.0 : 10.2;
+        float cu = fract(fuv.x / 5.5) - 0.5, cy = (vWorldPos.y - y0) / 4.6;
+        float arch = step(abs(cu), 0.17) * step(0.0, cy) * (1.0 - step(1.0, cy + (cu * cu) * 3.2));
+        baseCol = mix(baseCol, vec3(0.10, 0.17, 0.13), arch * vsz * 0.85);
+      }
+    }
     rough = 0.88;
   }
   else if (bSurf == 11.0) { baseCol = vec3(0.86, 0.83, 0.76) * (0.95 + 0.08 * vnoise(vWorldPos.xz * 0.6)); rough = 0.7; }
@@ -437,7 +448,11 @@ const FRAG_OUTPUT = /* glsl */ `
       if (bSurf == 15.0) { fcol = vec3(1.0, 0.66, 0.34); fk = 0.70; }          // red sandstone, brick
       else if (bSurf == 11.0) { fcol = vec3(1.0, 0.84, 0.62); fk = 0.36; }      // white domes
       else if (bSurf == 12.0) { fcol = vec3(1.0, 0.80, 0.40); fk = 0.60; flood = 0.9; rhythm = 1.0; }  // gilt
+      float vsn = 1.0 - smoothstep(120.0, 200.0, length(vWorldPos.xz - vec2(-574.2, 714.3)));
+      fk *= 1.0 + 1.1 * vsn; fcol = mix(fcol, vec3(1.0, 0.82, 0.55), vsn * 0.6);
       gl_FragColor.rgb += fcol * flood * rhythm * uNight * fk;
+      // Vidhan Bhavan: warm light in the arched windows and a bright gilt lantern at night.
+      if (vsn > 0.01 && bSurf == 13.0) gl_FragColor.rgb += vec3(1.0, 0.78, 0.45) * 0.9 * vsn * uNight;
     }
     // From altitude you see roofs and the light standing over each block: a per-building
     // constant ramped by distance, weighted to the district's light density.

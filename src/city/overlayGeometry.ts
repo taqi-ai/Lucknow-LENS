@@ -557,6 +557,26 @@ function buildMediansAndMarkings(roads: OverlayRoad[], kerb: number[], grass: nu
     }
   }
 
+  // Hazratganj kerbs: the black-and-white painted kerb stones of the main street, as alternating
+  // white blocks along both road edges (the black shows as the asphalt between them).
+  for (const r of ground) {
+    const cls = classifyRoad(r.type, r.subtype, r.level, r.isElevated);
+    if (!['primary', 'secondary', 'tertiary'].includes(cls)) continue;
+    const m = r.points[r.points.length >> 1];
+    if (Math.hypot(m.x + 420, m.z - 340) > 420) continue;
+    const half = roadHalfWidth(cls, r.type, (r as { id?: string }).id), y = ROAD_LAYER_Y[cls] + 0.1;
+    for (let i = 0; i < r.points.length - 1; i++) {
+      const a = r.points[i], b = r.points[i + 1], dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz);
+      if (L < 3) continue;
+      const ux = dx / L, uz = dz / L, nx = -uz, nz = ux;
+      for (let t = 1; t < L - 2; t += 2) for (const sg of [-1, 1]) {
+        const o0 = (half - 0.15) * sg, o1 = (half + 0.45) * sg;
+        const P = (al: number, o: number) => [a.x + ux * al + nx * o, y, a.z + uz * al + nz * o];
+        quad(marks, P(t, o0), P(t + 1, o0), P(t + 1, o1), P(t, o1));
+      }
+    }
+  }
+
   // Junction nodes: endpoints of ground major roads, quantised to 3 m.
   const node = new Map<string, number>();
   const key = (x: number, z: number) => Math.round(x / 3) + ',' + Math.round(z / 3);

@@ -157,14 +157,15 @@ function buildStreetlights(roads: RoadIn[], originX: number, originZ: number): F
     if (!road?.points || road.points.length < 2) continue;
     if (road.isElevated || (road.level ?? 0) > 0) continue; // no lamps on the ground under a deck
     const cls = classifyRoad(road.type);
-    const spacing = LIT_ROAD_SPACING[cls];
+    const p0 = road.points[0], inGanj = Math.hypot(p0.x + 420, p0.z - 340) < 420 && cls !== 'footway' && cls !== 'service' && cls !== 'railway';
+    const spacing = inGanj ? 22 : LIT_ROAD_SPACING[cls];
     if (!spacing) continue;
 
     const half = roadHalfWidth(cls, road.type, road.id) + 1.2;
     // Only genuine dual-carriageway classes are lit from both sides. Primary used
     // to be included, which doubled the mast count on ordinary city avenues that
     // in reality carry a single staggered row.
-    const bothSides = cls === 'motorway' || cls === 'trunk';
+    const bothSides = cls === 'motorway' || cls === 'trunk' || inGanj;
 
     let carry = 0;
     let flip = false;

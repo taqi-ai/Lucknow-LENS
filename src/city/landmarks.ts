@@ -1142,13 +1142,44 @@ function residencyGrounds(g: Grounds, k: Kit): void {
 
 
 function vidhanSabha(k: Kit, s: LandmarkSite): void {
-  k.begin(s, 42, 89);
-  k.extrudeWorldRing(s.ring, 0, 19, S.STONE, S.ROOF);
-  k.cylinder(0, 0, 13, 13, 19, 28, 24, S.STONE);
-  k.arcade('v0', -13.05, -9, 9, 20, 1.6, 6, 6);
-  k.hemi(0, 0, 13, 28, S.DOME, 0.8);
-  k.cylinder(0, 0, 1.2, 0.5, 38.4, 42, 8, S.GILT);
-  for (const u of [-28, 28]) { k.chhatri(u, -8, 4, 19); k.chhatri(u, 8, 4, 19); }
+  // Round 3, after the user's photograph: a long buff-stone Indo-Saracenic building with a deep arched
+  // central portico (three arches below a pedimented front), a large ribbed dome on an octagonal drum
+  // with a lantern and spire, corner turrets with cupolas, a continuous cornice with a parapet, two
+  // rows of arched windows along the wings and domed pavilions at the wing ends. The wings follow the
+  // Overture footprint; the portico is placed on its front (minimum-v) edge.
+  k.begin(s, 52, 89);
+  const WH = 17;
+  k.extrudeWorldRing(s.ring, 0, WH, S.STONE, S.ROOF);
+  const loc = s.ring.map(([x, z]) => k.local(x, z));
+  const vmin = Math.min(...loc.map((q) => q[1])), umid = loc.reduce((m, q) => m + q[0], 0) / loc.length;
+  // Cornice band with a parapet and corner cupolas around the footprint.
+  for (let i = 0; i < loc.length - 1; i++) {
+    const [au, av] = loc[i], [bu, bv] = loc[i + 1], L = Math.hypot(bu - au, bv - av);
+    if (L < 6) continue;
+    for (let t = 2; t < L - 1; t += 7) k.chhatri(au + ((bu - au) * t) / L, av + ((bv - av) * t) / L, 1.6, WH, S.DOME);
+  }
+  // Central block, portico and pediment on the front edge.
+  const pv = vmin + 2;
+  k.box(umid - 30, umid + 30, 0, WH + 7, pv - 6, pv + 22, S.STONE);
+  k.arcade('v0', pv - 6, umid - 26, umid + 26, 1, 6.5, 12, 4, S.GLASS, true);
+  k.arcade('v0', pv - 6, umid - 26, umid + 26, 14.5, 2.4, 4.6, 8, S.GLASS);
+  for (const u of [umid - 20, umid - 7, umid + 7, umid + 20]) k.cylinder(u, pv - 7.5, 1.1, 1.1, 0, 14, 10, S.STONE);
+  k.box(umid - 30, umid + 30, WH + 7, WH + 8.2, pv - 7, pv + 22, S.STONE);
+  k.box(umid - 18, umid + 18, WH + 8.2, WH + 11, pv - 6.5, pv - 5, S.STONE);                 // pediment
+  k.box(umid - 10, umid + 10, WH + 11, WH + 12.6, pv - 6.5, pv - 5, S.STONE);
+  k.merlons(umid - 30, umid + 30, pv - 6, pv + 22, WH + 8.2, S.STONE);
+  for (const u of [umid - 30, umid + 30]) { k.cylinder(u, pv - 4, 2.4, 2.0, 0, WH + 9, 10, S.STONE); k.chhatri(u, pv - 4, 3.6, WH + 9, S.DOME); }
+  // Octagonal drum, ribbed dome, lantern and spire over the middle of the building.
+  const du = umid, dv = pv + 9;
+  k.cylinder(du, dv, 15, 15, WH + 7, WH + 15, 8, S.STONE);
+  k.arcade('v0', dv - 14, du - 9, du + 9, WH + 8, 1.8, 5, 4, S.GLASS);
+  for (let i = 0; i < 8; i++) { const a2 = (i / 8) * Math.PI * 2 + Math.PI / 8; k.cylinder(du + Math.cos(a2) * 15.4, dv + Math.sin(a2) * 15.4, 0.7, 0.7, WH + 7, WH + 15, 6, S.STONE); }
+  k.lathe(du, dv, [[15.4, WH + 15], [15.8, WH + 17], [13.6, WH + 22], [9.5, WH + 27], [5.2, WH + 30.5], [3.0, WH + 32], [0, WH + 32.6]], 28, S.DOME);
+  k.cylinder(du, dv, 2.6, 2.2, WH + 32.4, WH + 36, 8, S.STONE); k.chhatri(du, dv, 4.4, WH + 36, S.STONE);
+  k.cylinder(du, dv, 0.5, 0.2, WH + 39, WH + 46, 8, S.GILT);
+  // Wing-end domed pavilions and small turrets on the dome base.
+  for (const sg of [-1, 1]) for (const du2 of [60, 100]) { k.box(umid + sg * du2 - 6, umid + sg * du2 + 6, WH, WH + 5, dv - 6, dv + 6, S.STONE); k.lathe(umid + sg * du2, dv, [[5.6, WH + 5], [5.8, WH + 6], [3.5, WH + 9], [0, WH + 11]], 16, S.DOME); }
+  for (let i = 0; i < 6; i++) { const a2 = (i / 6) * Math.PI * 2; k.cylinder(du + Math.cos(a2) * 16.5, dv + Math.sin(a2) * 16.5, 1.2, 1.0, WH + 7, WH + 21, 8, S.STONE); k.chhatri(du + Math.cos(a2) * 16.5, dv + Math.sin(a2) * 16.5, 2.4, WH + 21, S.DOME); }
 }
 
 /** Generic ring-based monument with a style. */
@@ -1363,6 +1394,11 @@ function charbaghYard(k: Kit, g: Grounds, s: LandmarkSite): void {
   k.box(fu - 2.4, fu + 2.4, 8.1, 9.6, 52, 108, S.ROOF);
   for (const v of [52, 80, 108]) { k.box(fu - 0.4, fu + 0.4, 0, 7.2, v - 0.4, v + 0.4, S.STONE); k.box(fu - 3, fu + 3, 0, 7.2, v - 0.3, v + 0.3, S.REDSTONE); }
   for (let i = 0; i < 8; i++) k.box(fu - 1.6, fu + 1.6, 0, 0.9 * (i + 1), 52 - 0.9 * (i + 1), 52 - 0.9 * i, S.STONE);
+  // Porte-cochere in front of the central block and a clock tower at the east end.
+  for (const u of [-14, 14]) for (const v of [-46, -38]) k.cylinder(u, v, 0.8, 0.8, 0, 7, 8, S.DOME);
+  k.box(-17, 17, 7, 8.2, -48, -34, S.REDSTONE); k.merlons(-17, 17, -48, -34, 8.2, S.DOME);
+  k.box(hu - 20, hu - 12, 0, 26, -14, -6, S.REDSTONE); k.box(hu - 20.6, hu - 11.4, 26, 28, -14.6, -5.4, S.DOME);
+  k.cylinder(hu - 16, -10, 3.3, 3.3, 28, 31, 12, S.DOME); k.onion(hu - 16, -10, 3.4, 31, 5, S.DOME, 0.2);
   // Service buildings at the west end (signal cabin, parcel office).
   k.box(-hu - 12, -hu + 4, 0, 5, 56, 72, S.REDSTONE); k.box(-hu - 12, -hu + 4, 5, 5.5, 56, 72, S.ROOF);
   k.box(hu - 4, hu + 14, 0, 4.5, 58, 76, S.REDSTONE); k.box(hu - 4, hu + 14, 4.5, 5, 58, 76, S.ROOF);
@@ -1407,6 +1443,21 @@ function tomb(k: Kit, g: Grounds, s: LandmarkSite, scale: number, seed: number):
   for (let u = -36 * scale; u <= 36 * scale; u += 9) { g.tree(u, -42 * scale, 8, false, sd++); g.tree(u, 42 * scale, 8, false, sd++); }
 }
 
+/** Hazratganj chauraha statue (user street view): a white canopy of two columns and a pointed arch
+ *  over a gold standing statue on a plinth, inside a low red-brick enclosure with railings. */
+function statueCanopy(k: Kit, g: Grounds, s: LandmarkSite): void {
+  k.begin(s, 14, 251, 0); g.frame(s, 0);
+  g.color(0xa65a44).disc(0, 0, 11, 0.14, 32); g.color(0xcfc6b4).disc(0, 0, 9, 0.16, 32);
+  k.box(-6, 6, 0, 0.9, -2.5, 2.5, S.STONE);
+  for (const x of [-4.6, 4.6]) { k.box(x - 0.9, x + 0.9, 0.9, 9.5, -1.2, 1.2, S.LIME); k.box(x - 1.15, x + 1.15, 9.5, 10.2, -1.45, 1.45, S.LIME); }
+  k.box(-5.8, 5.8, 10.2, 11.4, -1.5, 1.5, S.LIME);
+  k.arcade('v0', -1.5, -3.6, 3.6, 7.2, 7.2, 3.4, 1, S.GLASS, true); k.arcade('v1', 1.5, -3.6, 3.6, 7.2, 7.2, 3.4, 1, S.GLASS, true);
+  k.hemi(0, 0, 3.0, 11.4, S.LIME, 0.6);
+  k.box(-1.6, 1.6, 0.9, 2.6, -1.3, 1.3, S.STONE);
+  k.box(-0.5, 0.5, 2.6, 4.7, -0.35, 0.35, S.GILT); k.box(-0.75, 0.75, 4.7, 7.0, -0.45, 0.45, S.GILT); k.cylinder(0, 0, 0.4, 0.4, 7.0, 7.9, 10, S.GILT);
+  for (let a = 0; a < 20; a++) { const t = (a / 20) * Math.PI * 2; k.box(Math.cos(t) * 10 - 0.08, Math.cos(t) * 10 + 0.08, 0.2, 1.3, Math.sin(t) * 10 - 0.08, Math.sin(t) * 10 + 0.08, S.METAL); }
+}
+
 function buildAll(k: Kit, g: Grounds): { flag?: WavingFlag } {
   const res: { flag?: WavingFlag } = {};
   const b = site('bara_imambara'); if (b) baraImambara(k, g, b);
@@ -1416,8 +1467,8 @@ function buildAll(k: Kit, g: Grounds): { flag?: WavingFlag } {
   const pgg = site('pudiya_ghat_gate'); if (pgg) { k.begin(pgg, 12, 193); smallGate(k, 7, 9, S.LIME); }
   const hp = site('husainabad_park'); if (hp) cityPark(k, g, hp);
   const sak = site('sadat_ali_khan_tomb'); if (sak) tomb(k, g, sak, 1.0, 241);
-  const mz = site('mushir_zaidi_tomb'); if (mz) tomb(k, g, mz, 0.78, 243);
-  const bhm = site('begum_hazrat_mahal_park'); if (bhm) cityPark(k, g, bhm);
+  const mz = site('mushir_zaidi_tomb'); if (mz) tomb(k, g, mz, 0.62, 243);
+  const hgs = site('hazratganj_statue'); if (hgs) statueCanopy(k, g, hgs);
   const jp = site('jpnic'); if (jp) jpnic(k, g, jp, site('jpnic_annex'));
   const st = site('jmp_statue'); if (st) statuePlatform(k, g, st);
   const dw = site('dariya_wali_masjid'); if (dw) dariyaWaliMasjid(k, g, dw);

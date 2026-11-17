@@ -197,6 +197,30 @@ export class MetroSystem {
       steel.box(st.x, st.z, st.heading, 74.2, 12.7, y + 7.1, y + 7.45);   // red fascia band
       steel.setColor(0xe6e2da);
       steel.box(st.x, st.z, st.heading, 74, 12.5, y + 7.45, y + 8.2);     // light roof
+      // Platform detail (round 3): platform screen doors along both edges (glass panels with frames
+      // every 3 m), a name board and ceiling light strips on the canopy, and escalators rising from
+      // the ground to the concourse at both ends.
+      for (const side of [-1, 1]) {
+        for (let i = -11; i <= 11; i++) {
+          const u = i * 3, cxx = st.x + Math.cos(st.heading) * u - Math.sin(st.heading) * side * 4.6, czz = st.z + Math.sin(st.heading) * u + Math.cos(st.heading) * side * 4.6;
+          steel.setColor(0x9fb4bb); steel.box(cxx, czz, st.heading, 1.35, 0.05, y + 0.9, y + 3.4);
+          steel.setColor(0x6d7378); steel.box(cxx, czz, st.heading, 0.08, 0.09, y + 0.9, y + 3.6);
+        }
+        steel.setColor(0x2b6f73);
+        steel.box(st.x - Math.sin(st.heading) * side * 4.6, st.z + Math.cos(st.heading) * side * 4.6, st.heading, 34, 0.08, y + 3.4, y + 3.7);
+      }
+      steel.setColor(0xf2f2ee); steel.box(st.x, st.z, st.heading, 10, 12.3, y + 6.9, y + 7.1);     // light strips under the canopy
+      steel.setColor(0x1f4e6e); steel.box(st.x, st.z, st.heading, 7, 12.9, y + 7.5, y + 8.7);      // station name board
+      steel.setColor(0xf5f1e6); steel.box(st.x, st.z, st.heading, 5.4, 12.95, y + 7.85, y + 8.35);
+      conc.setColor(0xc9c4ba);
+      for (const side of [-1, 1]) {
+        const ex = st.x - Math.sin(st.heading) * side * 22, ez = st.z + Math.cos(st.heading) * side * 22;
+        const e0 = [ex - Math.cos(st.heading) * 4, y - DECK_DEPTH - 4.6, ez - Math.sin(st.heading) * 4];
+        const e1 = [ex + Math.cos(st.heading) * 4, 0.3, ez + Math.sin(st.heading) * 4];
+        const px = -Math.sin(st.heading) * 1.4, pz = Math.cos(st.heading) * 1.4;
+        for (const o of [-1, 1]) conc.quad([e0[0] + px * o, e0[1], e0[2] + pz * o], [e1[0] + px * o, e1[1], e1[2] + pz * o], [e1[0] + px * o, e1[1] + 1.0, e1[2] + pz * o], [e0[0] + px * o, e0[1] + 1.0, e0[2] + pz * o]);
+        conc.quad([e0[0] - px, e0[1] + 0.2, e0[2] - pz], [e1[0] - px, e1[1] + 0.2, e1[2] - pz], [e1[0] + px, e1[1] + 0.2, e1[2] + pz], [e0[0] + px, e0[1] + 0.2, e0[2] + pz]);
+      }
       // Stair/lift blocks at both ends of the concourse.
       conc.setColor(0xcfcac0);
       for (const side of [-1, 1]) {
@@ -235,11 +259,32 @@ export class MetroSystem {
     // One car: rounded-ish body, roof, window band, red livery stripe, bogies.
     const s = new Sink();
     const L = CAR_LEN / 2 - 0.4, W = 1.45;
-    s.setColor(0xe9ecef); s.box(0, 0, 0, L, W, 0.9, 3.7);
-    s.setColor(0xd6dadf); s.box(0, 0, 0, L - 0.3, W - 0.15, 3.7, 4.0);
-    s.setColor(0x2a3440); s.box(0, 0, 0, L - 0.6, W + 0.02, 2.3, 3.1);
-    s.setColor(0xc4262e); s.box(0, 0, 0, L - 0.2, W + 0.03, 1.5, 1.85);
-    s.setColor(0x2b2b2b); s.box(-L + 3, 0, 0, 1.4, 1.1, 0.2, 0.9); s.box(L - 3, 0, 0, 1.4, 1.1, 0.2, 0.9);
+    // Detailed car (round 3): white shell with a curved roof line, a dark window band broken by body
+    // pillars, four double doors per side with glass, a red livery band and a teal skirt, roof AC
+    // units, a raked driver's cab with a wraparound windscreen and headlight pair at the ends,
+    // inter-car gangway bellows, underframe equipment and two bogies with wheelsets.
+    s.setColor(0xeceff0); s.box(0, 0, 0, L, W, 0.95, 3.5);                         // shell
+    s.setColor(0xdde1e3); s.box(0, 0, 0, L - 0.2, W - 0.22, 3.5, 3.85);             // roof shoulder
+    s.setColor(0xcfd4d7); s.box(0, 0, 0, L - 0.6, W - 0.6, 3.85, 4.05);             // roof crown
+    s.setColor(0x1f2a34); s.box(0, 0, 0, L - 0.5, W + 0.03, 2.25, 3.15);            // window band
+    for (let i = -4; i <= 4; i++) { s.setColor(0xe6e9eb); s.box(i * 2.2, 0, 0, 0.1, W + 0.05, 2.25, 3.15); }   // pillars between windows
+    s.setColor(0x2c4552);
+    for (const dx of [-6.4, -2.1, 2.1, 6.4]) { s.box(dx, 0, 0, 0.8, W + 0.06, 0.95, 3.3); s.setColor(0x16222b); s.box(dx, 0, 0, 0.65, W + 0.075, 1.2, 3.1); s.setColor(0x2c4552); }   // doors
+    s.setColor(0xc4262e); s.box(0, 0, 0, L - 0.1, W + 0.04, 1.35, 1.75);             // red livery band
+    s.setColor(0x2c8a8e); s.box(0, 0, 0, L - 0.1, W + 0.035, 0.95, 1.35);            // teal skirt
+    s.setColor(0xaab0b4); for (const dx of [-5, 0, 5]) s.box(dx, 0, 0, 1.4, 0.9, 4.05, 4.5);   // roof AC pods
+    s.setColor(0x3a3f44); s.box(0, 0, 0, L - 1, W - 0.35, 0.45, 0.95);              // underframe
+    s.setColor(0x1d1d20); s.box(-L + 2.8, 0, 0, 1.45, 1.15, 0.15, 0.85); s.box(L - 2.8, 0, 0, 1.45, 1.15, 0.15, 0.85);   // bogies
+    s.setColor(0x0e0e10); for (const bx of [-L + 2.8, L - 2.8]) for (const wx of [-0.75, 0.75]) s.box(bx + wx, 0, 0, 0.42, W + 0.1, 0.1, 0.9);   // wheelsets
+    // Raked cab at both ends: a wedge of body colour, a dark windscreen and a headlight pair.
+    for (const e of [-1, 1]) {
+      s.setColor(0xeceff0); s.quad([e * L, 0.95, -W], [e * (L + 0.9), 0.95, -W * 0.8], [e * (L + 0.9), 2.5, -W * 0.8], [e * L, 3.5, -W]);
+      s.quad([e * L, 0.95, W], [e * L, 3.5, W], [e * (L + 0.9), 2.5, W * 0.8], [e * (L + 0.9), 0.95, W * 0.8]);
+      s.quad([e * L, 3.5, -W], [e * (L + 0.9), 2.5, -W * 0.8], [e * (L + 0.9), 2.5, W * 0.8], [e * L, 3.5, W]);
+      s.setColor(0x16222b); s.quad([e * (L + 0.88), 2.0, -W * 0.7], [e * (L + 0.88), 2.0, W * 0.7], [e * (L + 0.88), 3.1, W * 0.62], [e * (L + 0.88), 3.1, -W * 0.62]);
+      s.setColor(0xfff3d0); s.box(e * (L + 0.88), -W * 0.55, 0, 0.06, 0.16, 1.1, 1.5); s.box(e * (L + 0.88), W * 0.55, 0, 0.06, 0.16, 1.1, 1.5);
+      s.setColor(0x1d1d20); s.box(e * (L + 0.05), 0, 0, 0.3, W * 0.6, 1.0, 2.9);         // gangway bellows
+    }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(s.pos, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(s.col, 3));

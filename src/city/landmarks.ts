@@ -1465,6 +1465,70 @@ function statueCanopy(k: Kit, g: Grounds, s: LandmarkSite): void {
   void f;
 }
 
+/**
+ * Ekana Cricket Stadium (round 3). A ~50,000-seat bowl: a mown oval outfield with a rope, a central
+ * pitch and creases; two raked seating decks (lower and upper) of stepped tiers split by a concourse
+ * gap with a fascia; an outer wall of 72 columns and two arcade bands; a cantilever roof ring painted
+ * in alternating green and white panels over a metal underside; four gated entrances; eight lattice
+ * floodlight towers; a paved forecourt with parking bays and lamp posts. Proportions are estimates
+ * (outfield radius ~62 m, bowl ~130 m), not a survey.
+ */
+function ekanaStadium(k: Kit, g: Grounds, s: LandmarkSite): void {
+  k.begin(s, 40, 127, 0); g.frame(s, 0);
+  const R = 130, TWO = Math.PI * 2;
+  const wp = (u: number, v: number): number[] => { const q = k.w([u, 0, v]); return [q[0], q[2]]; };
+  // Forecourt, parking bays and the outfield with mowing stripes.
+  g.color(0xb7ae9c).disc(0, 0, 186, 0.06, 64);
+  g.color(0x8f8a7e).disc(0, 0, 160, 0.07, 64, 138);
+  for (let i = 0; i < 64; i++) { const a = (i / 64) * TWO; g.color(0xe3dfd2).rect(Math.cos(a) * 143 - 0.2, Math.cos(a) * 143 + 0.2, Math.sin(a) * 143 - 0.2, Math.sin(a) * 143 + 0.2, 0.08); }
+  for (let i = 0; i < 10; i++) g.color(i % 2 ? 0x5f8d45 : 0x70a352).disc(0, 0, 62 - i * 6, 0.2 + i * 0.002, 56, 56 - i * 6);
+  g.color(0x70a352).disc(0, 0, 2, 0.21, 16);
+  g.color(0xeaeee6).disc(0, 0, 62.6, 0.24, 64, 62);                              // boundary rope
+  g.color(0xc9b878).rect(-11, 11, -1.6, 1.6, 0.26);                              // pitch
+  for (const sg of [-1, 1]) { g.color(0xf2f2ee).rect(sg * 9.5 - 0.08, sg * 9.5 + 0.08, -1.3, 1.3, 0.28); g.color(0xf2f2ee).rect(sg * 7.5 - 0.5, sg * 7.5 + 0.5, -0.04, 0.04, 0.28); }
+  // Seating: two raked decks of stepped tiers, concourse gap between them.
+  const deck = (r0: number, y0: number, steps: number, rise: number, run: number, surf: number): void => {
+    const prof: Array<[number, number]> = [[r0, y0]];
+    for (let i = 0; i < steps; i++) { prof.push([r0 + i * run, y0 + (i + 1) * rise]); prof.push([r0 + (i + 1) * run, y0 + (i + 1) * rise]); }
+    prof.push([r0 + steps * run, 0]);
+    k.lathe(0, 0, prof, 72, surf);
+  };
+  deck(65, 0.6, 12, 0.9, 1.9, S.STONE);                    // lower deck: r 65 to 88, up to 11.4 m
+  k.lathe(0, 0, [[88, 11.4], [88.4, 14.4], [92, 14.4], [92, 0]], 72, S.STONE);   // concourse fascia and balustrade
+  deck(92, 14.4, 12, 1.1, 2.4, S.STONE);                   // upper deck: r 92 to 121, up to 27.6 m
+  // Seat colours as painted bands on the top of each deck.
+  for (let i = 0; i < 24; i++) { const a0 = (i / 24) * TWO, a1 = ((i + 1) / 24) * TWO, col = i % 3 === 0 ? 0xb3472d : i % 3 === 1 ? 0xd9d2bf : 0x4f7a5b; g.color(col);
+    g.polyWorld([wp(Math.cos(a0) * 66, Math.sin(a0) * 66), wp(Math.cos(a1) * 66, Math.sin(a1) * 66), wp(Math.cos(a1) * 70, Math.sin(a1) * 70), wp(Math.cos(a0) * 70, Math.sin(a0) * 70)], 1.7); }
+  // Outer wall: back wall, 72 columns, two arcade bands.
+  k.lathe(0, 0, [[121, 27.6], [130, 28.2], [130, 0]], 72, S.STONE);
+  k.lathe(0, 0, [[129.8, 3], [129.8, 10]], 72, S.GLASS); k.lathe(0, 0, [[129.8, 15], [129.8, 22]], 72, S.GLASS);
+  for (let i = 0; i < 72; i++) { const a = (i / 72) * TWO; k.cylinder(Math.cos(a) * 130.6, Math.sin(a) * 130.6, 0.7, 0.7, 0, 29, 6, S.DOME); }
+  k.lathe(0, 0, [[131.2, 11], [131.2, 12.2]], 72, S.STONE); k.lathe(0, 0, [[131.2, 23], [131.2, 24.2]], 72, S.STONE);
+  // Roof ring: metal underside, painted green and white panels on top, thick edge fascia.
+  k.lathe(0, 0, [[96, 33.6], [138, 36.2], [138, 37.8], [96, 35.2]], 72, S.METAL);
+  k.lathe(0, 0, [[138, 36.2], [138.6, 37.8], [138.6, 39.2], [138, 39.2]], 72, S.DOME);
+  for (let i = 0; i < 48; i++) { const a0 = (i / 48) * TWO, a1 = ((i + 1) / 48) * TWO; g.color(i % 2 ? 0xeff1ee : 0x2f7a4a);
+    g.polyWorld([wp(Math.cos(a0) * 97, Math.sin(a0) * 97), wp(Math.cos(a1) * 97, Math.sin(a1) * 97), wp(Math.cos(a1) * 138, Math.sin(a1) * 138), wp(Math.cos(a0) * 138, Math.sin(a0) * 138)], 37.9); }
+  for (let i = 0; i < 24; i++) { const a = (i / 24) * TWO; k.cylinder(Math.cos(a) * 118, Math.sin(a) * 118, 0.6, 0.6, 27.6, 34.4, 6, S.METAL); }   // roof struts
+  // Four gated entrances.
+  for (const [ux, uz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as Array<[number, number]>) {
+    const cx = ux * 140, cz = uz * 140;
+    k.box(cx - (ux ? 6 : 15), cx + (ux ? 6 : 15), 0, 14, cz - (uz ? 6 : 15), cz + (uz ? 6 : 15), S.DOME);
+    const along = ux ? 'u' : 'v';
+    k.arcade(ux ? (ux > 0 ? 'u1' : 'u0') : (uz > 0 ? 'v1' : 'v0'), ux ? cx + ux * 6 : cz + uz * 6, (ux ? cz : cx) - 9, (ux ? cz : cx) + 9, 0.2, 7, 10, 1, S.GLASS, true); void along;
+    k.merlons(cx - (ux ? 6 : 15), cx + (ux ? 6 : 15), cz - (uz ? 6 : 15), cz + (uz ? 6 : 15), 14, S.DOME);
+  }
+  // Eight lattice floodlight towers with lamp banks.
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * TWO + Math.PI / 8, mx = Math.cos(a) * 158, mz = Math.sin(a) * 158;
+    k.cylinder(mx, mz, 1.0, 0.6, 0, 52, 8, S.METAL); k.box(mx - 0.1, mx + 0.1, 0, 52, mz - 2.2, mz + 2.2, S.METAL); k.box(mx - 2.2, mx + 2.2, 0, 52, mz - 0.1, mz + 0.1, S.METAL);
+    k.box(mx - 4.2, mx + 4.2, 52, 58, mz - 1.2, mz + 1.2, S.DOME); k.box(mx - 3.8, mx + 3.8, 52.4, 57.6, mz - 1.3, mz + 1.3, S.GILT);
+  }
+  // Forecourt lamp posts and trees around the outer ring.
+  let sd = 5;
+  for (let i = 0; i < 36; i++) { const a = (i / 36) * TWO; k.cylinder(Math.cos(a) * 150, Math.sin(a) * 150, 0.18, 0.14, 0, 7, 5, S.METAL); g.tree(Math.cos(a) * 172, Math.sin(a) * 172, 9, false, sd++); }
+}
+
 function buildAll(k: Kit, g: Grounds): { flag?: WavingFlag } {
   const res: { flag?: WavingFlag } = {};
   const b = site('bara_imambara'); if (b) baraImambara(k, g, b);
@@ -1565,14 +1629,7 @@ function buildAll(k: Kit, g: Grounds): { flag?: WavingFlag } {
   if (rn) renaissanceHotel(k, g, rn);
 
   const ek = site('ekana');
-  if (ek) {
-    // Bowl: raked stands rising outward, a ring roof, the field.
-    g.frame(ek, 0);
-    g.color(C.lawn).disc(0, 0, 78, 0.2, 48); g.color(C.lawnDry).disc(0, 0, 12, 0.22, 16);
-    k.begin(ek, 36, 127, 0);
-    k.lathe(0, 0, [[86, 0], [86, 3], [128, 30], [130, 30], [130, 0]], 48, S.STONE);
-    k.lathe(0, 0, [[96, 34], [134, 37], [134, 38.5], [96, 35.5]], 48, S.METAL);
-  }
+  if (ek) ekanaStadium(k, g, ek);
   const tv = site('dubagga_tv'); if (tv) dubaggaTvTower(g, tv);
   const fl = site('janeshwar_flag');
   if (fl) { nationalFlagPole(g, fl, 62); res.flag = new WavingFlag(fl.c[0], fl.c[1], 62 + 1.2, 13.5); }

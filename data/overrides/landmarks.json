@@ -482,7 +482,14 @@
    "key": "ekana",
    "name": "Ekana Cricket Stadium",
    "building": "dc04dd91",
-   "height": 36
+   "height": 36,
+   "precinct": [
+    -190,
+    190,
+    -190,
+    190
+   ],
+   "note": "Precinct covers the stands, forecourt and floodlight ring (radius 190 m)."
   },
   {
    "key": "janeshwar_flag",

@@ -140,7 +140,7 @@ export default function App() {
       {stage !== 'landing' && (
         <div className="map-scope fixed inset-0 bg-cabin">
           <Suspense fallback={null}>
-            <MapApp key={attempt} entryPreset={preset} onProgress={onProgress} released={stage === 'diving' || stage === 'map'} onRetry={() => setAttempt((n) => n + 1)} />
+            <MapApp key={attempt} entryPreset={preset} onProgress={onProgress} released={stage === 'map'} onRetry={() => setAttempt((n) => n + 1)} />
           </Suspense>
           {stage === 'map' && (
             <button
@@ -161,7 +161,7 @@ export default function App() {
             className="fixed inset-0 z-[100] overflow-hidden"
             style={{ opacity: fade }}
           >
-            <motion.div className="absolute inset-0 grid place-items-center" style={{ scale, transformOrigin: `50% ${50 + ((PANE.y + PANE.h / 2) / 560 - 0.5) * 78}%` }}>
+            <motion.div className="absolute inset-0 grid place-items-center will-change-transform" style={{ scale, transformOrigin: `50% ${50 + ((PANE.y + PANE.h / 2) / 560 - 0.5) * 78}%` }}>
               <button
                 onClick={dive}
                 disabled={stage !== 'ready'}

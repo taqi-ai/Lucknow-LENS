@@ -134,7 +134,7 @@ export const AircraftWindow: React.FC<AircraftWindowProps> = ({ shade, view, ful
           <rect x={PANE.x - 6} y={PANE.y + PANE.h - 1.5} width={PANE.w + 12} height="1.5" fill="#000" fillOpacity=".25" />
           <rect x={W / 2 - 30} y={PANE.y + PANE.h - 13} width="60" height="8" rx="4" fill="#8f877a" />
           <rect x={W / 2 - 28} y={PANE.y + PANE.h - 12} width="56" height="3" rx="1.5" fill="#000" fillOpacity=".25" />
-          <rect x={PANE.x - 6} y={PANE.y + PANE.h} width={PANE.w + 12} height="12" fill="#000" opacity=".22" filter={`url(#soft-${id})`} />
+          {shade > 0.01 && <rect x={PANE.x - 6} y={PANE.y + PANE.h} width={PANE.w + 12} height="12" fill="#000" opacity=".22" filter={`url(#soft-${id})`} />}
         </motion.g>
       </g>
 
@@ -148,7 +148,9 @@ export const AircraftWindow: React.FC<AircraftWindowProps> = ({ shade, view, ful
       <path d={rr(REVEAL.x, REVEAL.y, REVEAL.w, REVEAL.h, REVEAL.r)} fill="none" stroke="#f0c48a" strokeOpacity=".22" strokeWidth="1.5" />
       <path d={rr(PANE.x - 2, PANE.y - 2, PANE.w + 4, PANE.h + 4, PANE.r + 2)} fill="none" stroke="#5e5a53" strokeOpacity=".55" strokeWidth="3" />
       <path d={rr(TRIM.x, TRIM.y, TRIM.w, TRIM.h, TRIM.r)} fill="none" stroke="#f0c48a" strokeOpacity=".18" strokeWidth="1.2" />
-      <path d={trimPath} fill="#000" fillRule="evenodd" filter={`url(#grain-${id})`} opacity=".6" pointerEvents="none" />
+      {/* Film grain only on the small hero window: an feTurbulence filter re-rasterises on every
+          frame of the full-screen dive and was the main cause of the zoom stutter. */}
+      {!fullWall && <path d={trimPath} fill="#000" fillRule="evenodd" filter={`url(#grain-${id})`} opacity=".6" pointerEvents="none" />}
     </svg>
   );
 };

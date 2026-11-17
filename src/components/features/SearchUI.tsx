@@ -44,7 +44,7 @@ const toResult = (d: Destination): SearchResult => {
   return { id: `dest:${d.id}`, name: d.name, category: d.category === 'heritage' ? 'landmark' : d.category === 'parks' ? 'park' : d.category === 'transport' ? 'station' : 'landmark',
     latitude: ll.lat, longitude: ll.lon, x: d.x, z: d.z, importance: 10, presetId: `dest:${d.id}` };
 };
-const FEATURED = DESTINATIONS.filter((d) => d.tier !== 'C' || d.category === 'parks').slice(0, 8).map(toResult);
+const FEATURED = DESTINATIONS.filter((d) => d.tier !== 'C' || d.category === 'parks').slice(0, 14).map(toResult);
 
 export const SearchUI: React.FC<SearchUIProps> = ({ mapData, onSelectResult, onSetDestinationWaypoint }) => {
   const [query, setQuery] = useState('');
@@ -127,7 +127,7 @@ export const SearchUI: React.FC<SearchUIProps> = ({ mapData, onSelectResult, onS
             <p className="px-4 py-3.5 text-[12.5px] leading-[1.5] text-paper/60">Nothing called “{query.trim()}”. Try a landmark like Rumi Darwaza, or a road like Shaheed Path.</p>
           ) : (
             <ul id={listId} role="listbox" className="max-h-[320px] overflow-y-auto p-1.5 no-scrollbar">
-              {featuredMode && <li className="px-2.5 pb-1 pt-1 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-sand/70">Featured places</li>}
+              {featuredMode && <li className="px-2.5 pb-1 pt-1 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-sand/70">Suggested places · fly to</li>}
               {list.map((r, i) => {
                 const [kind, Icon] = kindOf(r.category, r.name);
                 return (
@@ -139,6 +139,14 @@ export const SearchUI: React.FC<SearchUIProps> = ({ mapData, onSelectResult, onS
                         <span className="block truncate text-[13px] font-medium text-paper">{r.name}</span>
                         <span className="block text-[11px] text-paper/45">{kind}</span>
                       </span>
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); pick(r); }}
+                      title={`Fly to ${r.name}`} aria-label={`Fly to ${r.name}`}
+                      className="flex flex-shrink-0 items-center gap-1 rounded-lg bg-[#e0a55a]/15 px-2 py-1.5 text-[11px] font-semibold text-[#e8b872] transition-colors hover:bg-[#e0a55a]/30"
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z" fill="currentColor" /></svg>
+                      Fly to
                     </button>
                     {onSetDestinationWaypoint && (
                       <button

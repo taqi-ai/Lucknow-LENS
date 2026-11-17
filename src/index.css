@@ -313,3 +313,5 @@ body, header, section, footer { transition: background-color .6s ease, color .6s
   --stepper-solid-ink: var(--color-terrain) !important;
   --stepper-hover-fill: color-mix(in srgb, var(--color-paper) 6%, transparent) !important;
 }
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }

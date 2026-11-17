@@ -5,6 +5,7 @@ import { CityUI } from './components/ui/CityUI';
 import { RefreshCw, AlertCircle } from 'lucide-react';
 import { parseOvertureGeoJSON } from './osm/overtureParser';
 import { CameraController } from './city/cameraController';
+import { TourGuide } from './components/features/TourGuide';
 import { LayerState } from './components/features/LayerControl';
 import { useLiveFlights } from './interactions/flights';
 import {
@@ -453,6 +454,7 @@ export default function MapApp({ entryPreset = 'hero', onProgress, released = tr
         © OpenStreetMap contributors · Overture Maps · Google Open Buildings 2.5D · ESA WorldCover · Copernicus DEM
       </div>
       {windowView && <WindowOverlay />}
+      <TourGuide controller={cameraController} night={nightMode} onNight={setNightMode} hidden={presentationMode || mapOnly || !released} />
       {/* UI Overlay */}
       <CityUI
         mapData={mapData}

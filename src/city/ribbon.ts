@@ -256,7 +256,7 @@ export function deckHeightFor(level: number): number {
 /** Approach gradient, 1:25 (4%) — the steepest normally used on urban flyovers. */
 const RAMP_GRADIENT = 25;
 /** Two elevated features whose endpoints are this close are one continuous structure. */
-const JOIN_TOL = 18;
+const JOIN_TOL = 6.0;
 const JOIN_CELL = 40;
 
 function smoothstep(t: number): number {
@@ -319,12 +319,16 @@ export function buildElevationProfiles(
   }
   const joins = (p: Pt, prev: Pt, self: ElevatableRoad, visit: (o: End) => void) => {
     const [tx, tz] = tangent(p, prev);
+    const nx = -tz, nz = tx;
     const gx = Math.floor(p.x / JOIN_CELL), gz = Math.floor(p.z / JOIN_CELL);
     for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
       for (const e of index.get(`${gx + dx},${gz + dz}`) ?? []) {
         if (e.owner === self) continue;
         if (Math.hypot(e.p.x - p.x, e.p.z - p.z) > JOIN_TOL) continue;
         if (tx * e.tx + tz * e.tz > -0.2) continue; // same-way or sideways: not a continuation
+        // Reject side-by-side parallel carriageways: ends must align along the road corridor (lateral offset <= 4.5m)
+        const latOffset = Math.abs((e.p.x - p.x) * nx + (e.p.z - p.z) * nz);
+        if (latOffset > 4.5) continue;
         visit(e);
       }
     }
@@ -358,9 +362,27 @@ export function buildElevationProfiles(
   const compLen = new Map<ElevatableRoad, number>();
   for (const e of elevated) { const r = find(e.road); compLen.set(r, (compLen.get(r) ?? 0) + lenOf.get(e.road)!); }
 
-  for (const { road, pts } of elevated) {
+  const effDeckMap = new Map<ElevatableRoad, number>();
+  for (const { road } of elevated) {
     const deck = deckHeightFor(road.level ?? 1);
     const span = compLen.get(find(road)) ?? 0;
+    const eff = span < 45 ? 0.6 : span < 140 ? Math.min(deck, 1.0 + (span - 45) * 0.07) : deck;
+    effDeckMap.set(road, eff);
+  }
+
+  // Multi-level joint resolution: where features of different levels meet end-to-end,
+  // harmonize the joint height so the deck profile is continuous with no vertical step.
+  const jointHeight = (p: Pt, prev: Pt, road: ElevatableRoad, defaultDeck: number): number => {
+    let maxD = defaultDeck;
+    joins(p, prev, road, (o) => {
+      const oDeck = effDeckMap.get(o.owner) ?? defaultDeck;
+      if (oDeck > maxD) maxD = oDeck;
+    });
+    return maxD;
+  };
+
+  for (const { road, pts } of elevated) {
+    const effDeck = effDeckMap.get(road) ?? 7.5;
     const n = pts.length;
 
     // Cumulative arc length.
@@ -371,27 +393,33 @@ export function buildElevationProfiles(
     const total = s[n - 1];
     if (total < 1e-3) continue;
 
-    // Mapped bridges include short culverts over nalas; a 20 m span is a slab at
-    // grade, not a 7.5 m flyover. Only long spans (which cross roads/rail) rise fully.
-    const effDeck = span < 45 ? 0.6 : span < 140 ? Math.min(deck, 1.0 + (span - 45) * 0.07) : deck;
-
     const head = pts[0];
     const tail = pts[n - 1];
     const rampHead = !continuesAt(head, pts[1], road) && (isFreeEnd ? isFreeEnd(head) : true);
     const rampTail = !continuesAt(tail, pts[n - 2], road) && (isFreeEnd ? isFreeEnd(tail) : true);
 
-    // A short feature cannot fit two full ramps; sharing the length keeps the
-    // gradient sane and simply means it never reaches full deck height.
-    const ideal = effDeck * RAMP_GRADIENT;
-    const budget = rampHead && rampTail ? total * 0.45 : total * 0.9;
-    const ramp = Math.max(1, Math.min(ideal, budget));
+    const targetHead = rampHead ? 0 : jointHeight(head, pts[1], road, effDeck);
+    const targetTail = rampTail ? 0 : jointHeight(tail, pts[n - 2], road, effDeck);
+
+    const idealRampHead = Math.abs(effDeck - targetHead) * RAMP_GRADIENT;
+    const idealRampTail = Math.abs(effDeck - targetTail) * RAMP_GRADIENT;
+    const budget = (targetHead !== effDeck && targetTail !== effDeck) ? total * 0.45 : total * 0.9;
+    const rHead = Math.max(1, Math.min(idealRampHead || total * 0.5, budget));
+    const rTail = Math.max(1, Math.min(idealRampTail || total * 0.5, budget));
 
     const profile: Pt[] = new Array(n);
     for (let i = 0; i < n; i++) {
-      let f = 1;
-      if (rampHead) f = Math.min(f, smoothstep(s[i] / ramp));
-      if (rampTail) f = Math.min(f, smoothstep((total - s[i]) / ramp));
-      profile[i] = { x: pts[i].x, z: pts[i].z, y: effDeck * f };
+      const dHead = s[i];
+      const dTail = total - s[i];
+      let y = effDeck;
+      if (targetHead !== effDeck && dHead < rHead && (rHead + rTail <= total || dHead <= total * 0.5)) {
+        const t = smoothstep(dHead / rHead);
+        y = targetHead + (effDeck - targetHead) * t;
+      } else if (targetTail !== effDeck && dTail < rTail) {
+        const t = smoothstep(dTail / rTail);
+        y = targetTail + (effDeck - targetTail) * t;
+      }
+      profile[i] = { x: pts[i].x, z: pts[i].z, y };
     }
     out.set(road, profile);
   }

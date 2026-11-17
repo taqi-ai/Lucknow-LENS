@@ -96,16 +96,26 @@ float dash(float v, float on, float period){ float f = fract(v / period) * perio
     vec2 wp = vRoadW.xz;
     // Grain + repair patches + wheel paths.
     float g = rn(wp * 1.7) * 0.5 + rn(wp * 0.23) * 0.5;
-    float patchy = smoothstep(0.62, 0.70, rn(wp * 0.045 + 7.0));
+    float patchy = smoothstep(0.58, 0.72, rn(wp * 0.045 + 7.0));
     float u = vRoadUV.x;
     float wheel = 1.0 - 0.06 * (band(fract(abs(u) * 2.0), 0.5, 0.12)) * ${MARKS[cls] > 0 ? '1.0' : '0.0'};
-    vec3 c = diffuseColor.rgb * (0.90 + 0.16 * g) * (1.0 - 0.10 * patchy * near) * wheel;
-    // Dusty unkerbed shoulders on minor roads.
-    float shoulder = smoothstep(0.62, 1.0, abs(u)) * ${MARKS[cls] >= 2 ? '0.15' : '0.55'};
-    c = mix(c, vec3(0.44, 0.40, 0.34) * (0.85 + 0.3 * g), shoulder * (1.0 - uRoadNight * 0.7));
-    // Markings in metres across.
+    vec3 c = diffuseColor.rgb * (0.90 + 0.16 * g) * (1.0 - 0.12 * patchy * near) * wheel;
+    // Coordinates across the carriageway in metres.
     float um = u * ${HALF[cls].toFixed(2)};
     float hw = ${HALF[cls].toFixed(2)};
+    // Major urban roads get a paved footpath and kerb band along the outer edge; minor roads get a dusty unkerbed shoulder.
+    ${cls === 'primary' || cls === 'secondary' || cls === 'trunk' ? `
+      float footpath = smoothstep(0.80, 0.88, abs(u));
+      vec3 footColor = vec3(0.66, 0.63, 0.58) * (0.88 + 0.22 * rn(wp * 2.2));
+      float kerbLine = band(abs(um), hw * 0.82, 0.09) * near;
+      c = mix(c, footColor, footpath * (1.0 - uRoadNight * 0.5));
+      c = mix(c, vec3(0.24, 0.23, 0.22), kerbLine * 0.7);
+    ` : `
+      // Dusty unkerbed shoulders on minor roads.
+      float shoulder = smoothstep(0.62, 1.0, abs(u)) * ${MARKS[cls] >= 2 ? '0.15' : '0.55'};
+      c = mix(c, vec3(0.44, 0.40, 0.34) * (0.85 + 0.3 * g), shoulder * (1.0 - uRoadNight * 0.7));
+    `}
+    // Markings in metres across.
     float m = 0.0; vec3 mc = vec3(0.86, 0.85, 0.80);
     ${MARKS[cls] === 3 ? `
       m = max(m, band(um, 0.0, 0.07) * dash(vRoadUV.y, 3.0, 7.5));            // centre lane line

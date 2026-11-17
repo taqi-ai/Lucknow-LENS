@@ -1,0 +1,42 @@
+{
+  "totalElevatedFeatures": 904,
+  "profilesBuilt": 1006,
+  "midAirDecksCount": 0,
+  "midAirDecks": [],
+  "heightDiscontinuitiesCount": 4,
+  "heightDiscontinuities": [
+    {
+      "roadId": "e16d5e89-c103-4c57-ab3f-937e111430d8",
+      "x": 9033.699126376925,
+      "z": -472.9931140001021,
+      "y": 5.329858057717533,
+      "type": "HEIGHT_MISMATCH_AT_JOINT",
+      "details": "Joint with c6d392e9-1558-4daf-ab05-05da53b8e73e: height diff = 5.33 m (5.33 m vs 0.00 m)"
+    },
+    {
+      "roadId": "c6d392e9-1558-4daf-ab05-05da53b8e73e",
+      "x": 9033.699126376925,
+      "z": -472.9931140001021,
+      "y": 0,
+      "type": "HEIGHT_MISMATCH_AT_JOINT",
+      "details": "Joint with e16d5e89-c103-4c57-ab3f-937e111430d8: height diff = 5.33 m (0.00 m vs 5.33 m)"
+    },
+    {
+      "roadId": "c6d392e9-1558-4daf-ab05-05da53b8e73e",
+      "x": 9033.699126376925,
+      "z": -472.9931140001021,
+      "y": 0,
+      "type": "HEIGHT_MISMATCH_AT_JOINT",
+      "details": "Joint with 5f0d4e9b-cc97-4df9-a0f8-4b426085fd71: height diff = 5.33 m (0.00 m vs 5.33 m)"
+    },
+    {
+      "roadId": "5f0d4e9b-cc97-4df9-a0f8-4b426085fd71",
+      "x": 9033.699126376925,
+      "z": -472.9931140001021,
+      "y": 5.329858057717533,
+      "type": "HEIGHT_MISMATCH_AT_JOINT",
+      "details": "Joint with c6d392e9-1558-4daf-ab05-05da53b8e73e: height diff = 5.33 m (5.33 m vs 0.00 m)"
+    }
+  ],
+  "cleanRampsCount": 1567
+}

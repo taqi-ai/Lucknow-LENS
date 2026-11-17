@@ -439,6 +439,16 @@ function buildElevatedSupports(
         const C = (w: number, y: number, along: number, side: number): number[] => [cx + nx * w * side + ux * along, y, cz + nz * w * side + uz * along];
         for (const along of [-capD, capD]) quad(piersOut, C(capB, soffit - 1.0, along, -1), C(capB, soffit - 1.0, along, 1), C(capW, soffit, along, 1), C(capW, soffit, along, -1));
         for (const side of [-1, 1]) quad(piersOut, C(capB, soffit - 1.0, -capD, side), C(capB, soffit - 1.0, capD, side), C(capW, soffit, capD, side), C(capW, soffit, -capD, side));
+
+        // Transverse expansion joint across the deck at the pier
+        if (!isRail) {
+          const jw = 0.14, jy = deckY + 0.05, jSpan = half - 0.25;
+          const jA = [cx - nx * jSpan - ux * jw, jy, cz - nz * jSpan - uz * jw];
+          const jB = [cx + nx * jSpan - ux * jw, jy, cz + nz * jSpan - uz * jw];
+          const jC = [cx + nx * jSpan + ux * jw, jy, cz + nz * jSpan + uz * jw];
+          const jD = [cx - nx * jSpan + ux * jw, jy, cz - nz * jSpan + uz * jw];
+          quad(barriersOut, jA, jB, jC, jD);
+        }
       }
       carry = (carry - len) % PIER_SPACING;
       if (carry < 0) carry += PIER_SPACING;
@@ -518,17 +528,28 @@ function buildMediansAndMarkings(roads: OverlayRoad[], kerb: number[], grass: nu
       }
       if (!best) { prev = null; continue; }
       const nx = (best.px - mx) / best.dist, nz = (best.pz - mz) / best.dist;
-      const l = [mx + nx * sA.half, 0.3, mz + nz * sA.half];
-      const r = [best.px - nx * best.half, 0.3, best.pz - nz * best.half];
+      let l = [mx + nx * sA.half, 0.3, mz + nz * sA.half];
+      let r = [best.px - nx * best.half, 0.3, best.pz - nz * best.half];
+      let w = Math.hypot(r[0] - l[0], r[2] - l[2]);
+      // Closely spaced carriageways: ensure minimum 1.2 m median width so the divider never collapses into a hairline
+      if (w < 1.2) {
+        const expand = (1.2 - w) * 0.5;
+        l = [l[0] - nx * expand, 0.3, l[2] - nz * expand];
+        r = [r[0] + nx * expand, 0.3, r[2] + nz * expand];
+        w = 1.2;
+      }
       if (prev) {
-        const H = 0.32;
+        const H = 0.52; // Raised concrete median barrier/kerb, 0.20-0.28m above road surface
+        const baseH = 0.16;
         quad(kerb, [prev.l[0], H, prev.l[2]], [l[0], H, l[2]], [r[0], H, r[2]], [prev.r[0], H, prev.r[2]]);
         const inset = (p: number[], q: number[], f: number) => [p[0] + (q[0] - p[0]) * f, H + 0.03, p[2] + (q[2] - p[2]) * f];
-        const w = Math.hypot(r[0] - l[0], r[2] - l[2]);
-        if (w > 1.6) { const f = 0.45 / w; quad(grass, inset(prev.l, prev.r, f), inset(l, r, f), inset(r, l, f), inset(prev.r, prev.l, f)); }
-        // kerb faces
-        quad(kerb, [prev.l[0], 0.12, prev.l[2]], [l[0], 0.12, l[2]], [l[0], H, l[2]], [prev.l[0], H, prev.l[2]]);
-        quad(kerb, [prev.r[0], 0.12, prev.r[2]], [r[0], 0.12, r[2]], [r[0], H, r[2]], [prev.r[0], H, prev.r[2]]);
+        if (w > 1.2) {
+          const f = Math.min(0.38, 0.32 / w);
+          quad(grass, inset(prev.l, prev.r, f), inset(l, r, f), inset(r, l, f), inset(prev.r, prev.l, f));
+        }
+        // Vertical kerb faces rising cleanly from road asphalt
+        quad(kerb, [prev.l[0], baseH, prev.l[2]], [l[0], baseH, l[2]], [l[0], H, l[2]], [prev.l[0], H, prev.l[2]]);
+        quad(kerb, [prev.r[0], baseH, prev.r[2]], [r[0], baseH, r[2]], [r[0], H, r[2]], [prev.r[0], H, prev.r[2]]);
       }
       prev = { l, r };
     }

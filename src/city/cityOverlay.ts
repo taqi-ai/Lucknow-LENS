@@ -26,8 +26,8 @@ export class CityOverlay {
   private flyoverBarrierMesh: THREE.Mesh | null = null;
   private medianMeshes: THREE.Mesh[] = [];
   private markingMesh: THREE.Mesh | null = null;
-  private medianKerbMat = new THREE.MeshStandardMaterial({ color: 0xbdb7aa, roughness: 0.9, side: THREE.DoubleSide });
-  private medianGrassMat = new THREE.MeshStandardMaterial({ color: 0x6a7a44, roughness: 1, side: THREE.DoubleSide });
+  private medianKerbMat = new THREE.MeshStandardMaterial({ color: 0xd2cdc2, roughness: 0.85, side: THREE.DoubleSide });
+  private medianGrassMat = new THREE.MeshStandardMaterial({ color: 0x4e6b26, roughness: 0.95, side: THREE.DoubleSide });
   private markingMat = new THREE.MeshStandardMaterial({ color: 0xe6e3da, roughness: 0.75, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 });
   private flyoverPierMat: THREE.MeshStandardMaterial;
   private flyoverBarrierMat: THREE.MeshStandardMaterial;

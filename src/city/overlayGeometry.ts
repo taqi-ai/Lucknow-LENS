@@ -364,83 +364,89 @@ function buildElevatedSupports(
   piersOut: number[],
   barriersOut: number[],
 ): void {
+  // Round 3: a real flyover cross-section instead of a floating ribbon.
+  //   deck      box girder: fascia faces down both edges (1.6 m) and a soffit underneath
+  //   barriers  New Jersey parapets with thickness (inner face, top, outer face)
+  //   piers     12-sided columns, twin columns under wide decks, tapered pier caps
+  //   lamps     a mast with an arm over the carriageway every ~36 m on alternating sides
+  const quad = (out: number[], a: number[], b: number[], c: number[], d: number[]) => { out.push(...a, ...b, ...c, ...a, ...c, ...d); };
   for (const road of roads) {
-    // The metro is its own system (metroSystem.ts): no road-style piers or barriers.
     if (road.type === 'subway') continue;
     const prof = profiles.get(road);
     if (!prof || prof.length < 2) continue;
-
     const cls = classifyRoad(road.type, road.subtype, road.level, road.isElevated);
     const isRail = cls === 'railway';
-    // Same width as the deck ribbon (roadHalfWidth), or barriers float beside link ramps.
     const half = isRail ? 2.6 : roadHalfWidth(cls, road.type, (road as { id?: string }).id);
+    const GIRDER = isRail ? RAIL_SOFFIT_DROP : 1.6;
 
-    let carry = 0;
+    let carry = 0, lampCarry = 18, lampSide = 1;
     for (let i = 0; i < prof.length - 1; i++) {
-      const p1 = prof[i];
-      const p2 = prof[i + 1];
-      const dx = p2.x - p1.x;
-      const dz = p2.z - p1.z;
-      const len = Math.hypot(dx, dz);
+      const p1 = prof[i], p2 = prof[i + 1];
+      const dx = p2.x - p1.x, dz = p2.z - p1.z, len = Math.hypot(dx, dz);
       if (len < 1) continue;
+      const ux = dx / len, uz = dz / len, nx = -uz, nz = ux;
+      const y1 = p1.y ?? 0, y2 = p2.y ?? 0;
+      const raised = y1 >= MIN_PIER_HEIGHT || y2 >= MIN_PIER_HEIGHT;
 
-      const ux = dx / len;
-      const uz = dz / len;
-      const nx = -uz;
-      const nz = ux;
-      const y1 = p1.y ?? 0;
-      const y2 = p2.y ?? 0;
+      // Girder fascia and soffit (only where the deck is genuinely above ground).
+      if (raised && !isRail) {
+        const g1 = Math.max(0.05, y1 - GIRDER), g2 = Math.max(0.05, y2 - GIRDER);
+        for (const side of [-1, 1]) {
+          const ax = p1.x + nx * (half + 0.15) * side, az = p1.z + nz * (half + 0.15) * side;
+          const bx = p2.x + nx * (half + 0.15) * side, bz = p2.z + nz * (half + 0.15) * side;
+          quad(piersOut, [ax, g1, az], [bx, g2, bz], [bx, y2 + 0.05, bz], [ax, y1 + 0.05, az]);
+        }
+        const sw = half * 0.82;
+        quad(piersOut, [p1.x - nx * sw, g1, p1.z - nz * sw], [p2.x - nx * sw, g2, p2.z - nz * sw], [p2.x + nx * sw, g2, p2.z + nz * sw], [p1.x + nx * sw, g1, p1.z + nz * sw]);
+      }
 
       for (let d = carry; d < len; d += PIER_SPACING) {
         const t = d / len;
         const deckY = y1 + (y2 - y1) * t;
-        const soffit = deckY - (isRail ? RAIL_SOFFIT_DROP : 0.9);
+        const soffit = deckY - (isRail ? RAIL_SOFFIT_DROP : GIRDER);
         if (soffit < MIN_PIER_HEIGHT) continue;
-
-        const cx = p1.x + ux * d;
-        const cz = p1.z + uz * d;
-
-        const sides = 8;
-        for (let s = 0; s < sides; s++) {
-          const a1 = (s / sides) * Math.PI * 2;
-          const a2 = ((s + 1) / sides) * Math.PI * 2;
-          const x1 = cx + Math.cos(a1) * PIER_RADIUS;
-          const z1 = cz + Math.sin(a1) * PIER_RADIUS;
-          const x2 = cx + Math.cos(a2) * PIER_RADIUS;
-          const z2 = cz + Math.sin(a2) * PIER_RADIUS;
-          piersOut.push(
-            x1, 0, z1, x2, 0, z2, x2, soffit, z2,
-            x1, 0, z1, x2, soffit, z2, x1, soffit, z1,
-          );
+        const cx = p1.x + ux * d, cz = p1.z + uz * d;
+        const twin = !isRail && half > 5.5;
+        const r = twin ? 0.95 : PIER_RADIUS;
+        const offs = twin ? [-half * 0.45, half * 0.45] : [0];
+        for (const o of offs) {
+          const px = cx + nx * o, pz = cz + nz * o, sides = 12;
+          for (let s2 = 0; s2 < sides; s2++) {
+            const a1 = (s2 / sides) * Math.PI * 2, a2 = ((s2 + 1) / sides) * Math.PI * 2;
+            const x1 = px + Math.cos(a1) * r, z1 = pz + Math.sin(a1) * r, x2 = px + Math.cos(a2) * r, z2 = pz + Math.sin(a2) * r;
+            quad(piersOut, [x1, 0, z1], [x2, 0, z2], [x2, soffit - 1.0, z2], [x1, soffit - 1.0, z1]);
+          }
         }
-
-        // Crosshead spreading the deck load across the column.
-        const beamW = half * 1.4;
-        const bx1 = cx - nx * (beamW / 2);
-        const bz1 = cz - nz * (beamW / 2);
-        const bx2 = cx + nx * (beamW / 2);
-        const bz2 = cz + nz * (beamW / 2);
-        piersOut.push(
-          bx1, soffit - 0.6, bz1, bx2, soffit - 0.6, bz2, bx2, soffit, bz2,
-          bx1, soffit - 0.6, bz1, bx2, soffit, bz2, bx1, soffit, bz1,
-        );
+        // Tapered pier cap: narrow at the column, full deck width at the soffit.
+        const capW = twin ? half * 0.95 : half * 0.75, capB = twin ? half * 0.6 : 1.6, capD = 1.1;
+        const C = (w: number, y: number, along: number, side: number): number[] => [cx + nx * w * side + ux * along, y, cz + nz * w * side + uz * along];
+        for (const along of [-capD, capD]) quad(piersOut, C(capB, soffit - 1.0, along, -1), C(capB, soffit - 1.0, along, 1), C(capW, soffit, along, 1), C(capW, soffit, along, -1));
+        for (const side of [-1, 1]) quad(piersOut, C(capB, soffit - 1.0, -capD, side), C(capB, soffit - 1.0, capD, side), C(capW, soffit, capD, side), C(capW, soffit, -capD, side));
       }
       carry = (carry - len) % PIER_SPACING;
       if (carry < 0) carry += PIER_SPACING;
 
-      // Crash barriers. Rail viaducts already carry parapets from appendRailway.
-      if (isRail) continue;
-      if (y1 < MIN_PIER_HEIGHT && y2 < MIN_PIER_HEIGHT) continue;
+      if (isRail || !raised) continue;
+      // New Jersey parapets with real thickness.
       for (const side of [-1, 1]) {
-        const o1x = p1.x + nx * half * side;
-        const o1z = p1.z + nz * half * side;
-        const o2x = p2.x + nx * half * side;
-        const o2z = p2.z + nz * half * side;
-        barriersOut.push(
-          o1x, y1, o1z, o2x, y2, o2z, o2x, y2 + 1.1, o2z,
-          o1x, y1, o1z, o2x, y2 + 1.1, o2z, o1x, y1 + 1.1, o1z,
-        );
+        const io = half - 0.35, oo = half + 0.15, H = 1.05;
+        const I1 = [p1.x + nx * io * side, y1, p1.z + nz * io * side], I2 = [p2.x + nx * io * side, y2, p2.z + nz * io * side];
+        const T1 = [p1.x + nx * (io + 0.25) * side, y1 + H, p1.z + nz * (io + 0.25) * side], T2 = [p2.x + nx * (io + 0.25) * side, y2 + H, p2.z + nz * (io + 0.25) * side];
+        const U1 = [p1.x + nx * oo * side, y1 + H, p1.z + nz * oo * side], U2 = [p2.x + nx * oo * side, y2 + H, p2.z + nz * oo * side];
+        const O1 = [p1.x + nx * oo * side, y1 - 0.2, p1.z + nz * oo * side], O2 = [p2.x + nx * oo * side, y2 - 0.2, p2.z + nz * oo * side];
+        quad(barriersOut, I1, I2, T2, T1); quad(barriersOut, T1, T2, U2, U1); quad(barriersOut, U1, U2, O2, O1);
       }
+      // Lamp masts on the parapet, alternating sides, arm reaching over the carriageway.
+      for (let d = lampCarry; d < len; d += 36) {
+        const t = d / len, yy = y1 + (y2 - y1) * t, side = lampSide; lampSide = -lampSide;
+        const bx = p1.x + ux * d + nx * (half - 0.1) * side, bz = p1.z + uz * d + nz * (half - 0.1) * side;
+        const w = 0.09;
+        quad(barriersOut, [bx - ux * w, yy + 1, bz - uz * w], [bx + ux * w, yy + 1, bz + uz * w], [bx + ux * w, yy + 10, bz + uz * w], [bx - ux * w, yy + 10, bz - uz * w]);
+        quad(barriersOut, [bx - nx * w, yy + 1, bz - nz * w], [bx + nx * w, yy + 1, bz + nz * w], [bx + nx * w, yy + 10, bz + nz * w], [bx - nx * w, yy + 10, bz - nz * w]);
+        const ax = bx - nx * 2.6 * side, az = bz - nz * 2.6 * side;
+        quad(barriersOut, [bx, yy + 10, bz], [ax, yy + 10.3, az], [ax, yy + 10.1, az], [bx, yy + 9.8, bz]);
+      }
+      lampCarry = ((lampCarry - len) % 36 + 36) % 36;
     }
   }
 }

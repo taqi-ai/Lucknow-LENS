@@ -64,14 +64,16 @@ export class CityOverlay {
     this.bridges = new BridgeSystem(scene);
 
     this.flyoverPierMat = new THREE.MeshStandardMaterial({
-      color: 0x2a2b30,
-      roughness: 0.85,
+      color: 0xa29d92,
+      roughness: 0.9,
       flatShading: true,
+      side: THREE.DoubleSide,
     });
     this.flyoverBarrierMat = new THREE.MeshStandardMaterial({
-      color: 0x3a3c42,
-      roughness: 0.7,
+      color: 0xc9c5ba,
+      roughness: 0.8,
       emissive: 0x261d10,
+      side: THREE.DoubleSide,
     });
 
     // Track. Ballast is crushed stone — very rough, no specular. The rails are
@@ -418,8 +420,8 @@ export class CityOverlay {
       this.waterMaterial.roughness = 0.22;
       this.waterNight.value = 1;
       this.parkMaterial.color.setHex(0x16241a);
-      this.flyoverPierMat.color.setHex(0x1e2025);
-      this.flyoverBarrierMat.color.setHex(0x2d2f36);
+      this.flyoverPierMat.color.setHex(0x4a4842);
+      this.flyoverBarrierMat.color.setHex(0x5e5b54);
       this.flyoverBarrierMat.emissive.setHex(0x382a14);
       this.railBedMat.color.setHex(0x24221f);
       this.railSleeperMat.color.setHex(0x2b2824);
@@ -433,8 +435,8 @@ export class CityOverlay {
       this.waterMaterial.roughness = 0.62;
       this.waterNight.value = 0;
       this.parkMaterial.color.setHex(0x637548);
-      this.flyoverPierMat.color.setHex(0x606268);
-      this.flyoverBarrierMat.color.setHex(0x7a7d84);
+      this.flyoverPierMat.color.setHex(0xa29d92);
+      this.flyoverBarrierMat.color.setHex(0xc9c5ba);
       this.flyoverBarrierMat.emissive.setHex(0x000000);
       this.railBedMat.color.setHex(0x6b645a);
       this.railSleeperMat.color.setHex(0x8a8478);

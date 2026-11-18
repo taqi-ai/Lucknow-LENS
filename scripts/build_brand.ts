@@ -1,7 +1,7 @@
 /** Writes public/brand/* from src/components/brand/brand.ts (SVG directly, PNG via headless Chrome). */
 import fs from 'fs';
 import puppeteer from 'puppeteer-core';
-import { BRAND, markSvg, logoSvg } from '../src/components/brand/brand';
+import { markSvgBody, BRAND, markSvg, logoSvg } from '../src/components/brand/brand';
 const D = 'public/brand';
 const C = BRAND.colors;
 const files: Record<string, string> = {
@@ -9,7 +9,8 @@ const files: Record<string, string> = {
   'lucknow-lens-logo.svg': logoSvg(C.ivory, C.charcoal),
   'lucknow-lens-logo-dark.svg': logoSvg(C.ivory, C.charcoal),
   'lucknow-lens-logo-light.svg': logoSvg(C.charcoal, C.ivory),
-  'favicon.svg': markSvg(C.ivory, C.charcoal, C.charcoal),
+  // Transparent cut-out favicon: the blades/gateway are real holes (mask), and the ink follows the browser theme.
+  'favicon.svg': `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><style>.i{fill:#16130f}@media (prefers-color-scheme:dark){.i{fill:#f3ead8}}</style><mask id="m">${markSvgBody('#fff', '#000')}</mask><rect class="i" width="100" height="100" mask="url(#m)"/></svg>`,
 };
 for (const [f, s] of Object.entries(files)) fs.writeFileSync(`${D}/${f}`, s);
 const browser = await puppeteer.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });

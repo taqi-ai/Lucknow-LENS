@@ -19,6 +19,7 @@ import { EmergencyVisualManager } from '../../city/emergencyVisuals';
 import { loadEmergencyFacilities, EmergencyFacility } from '../../city/emergencyServices';
 import { CampusAmbienceManager } from '../../city/campusAmbience';
 import { getDeviceProfile } from '../../city/deviceProfile';
+import { performanceConfig } from '../../city/performanceConfig';
 
 /**
  * Aircraft geometry and materials are created once at module scope and shared by
@@ -248,7 +249,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
 
     // DEV INSTRUMENTATION HOOK (window.__LENS) for scripts/visual_harness.mjs:
     // drive the camera, wait for streaming to settle, sample real render stats.
-    if (import.meta.env.DEV) {
+    if (import.meta.env.DEV || (typeof window !== 'undefined' && (new URLSearchParams(window.location.search).has('benchmark') || new URLSearchParams(window.location.search).has('harness')))) {
       (window as unknown as { __LENS?: unknown }).__LENS = {
         setShot(s: { t: [number, number]; az: number; pi: number; d: number; night: boolean; hour?: number }) {
           // Through React state, so the night effect does not revert it; the
@@ -352,14 +353,16 @@ export const CityViewport: React.FC<CityViewportProps> = ({
 
       materials.updateCamera(cityRenderer.camera.position);
 
-      // Adaptive shadows
-      cityRenderer.setAdaptiveShadows(altitude);
+      // Adaptive shadows (deferred during active user interaction to eliminate GPU stalls)
+      if (!performanceConfig.isInteracting) {
+        cityRenderer.setAdaptiveShadows(altitude);
 
-      if (time - lastShadowUpdateTime > 500) {
-        cityRenderer.updateSunShadowTarget(controls.target, altitude);
-        const atmos = cityRenderer.getAtmosphere();
-        materials.setHorizon(atmos.horizon, atmos.strength);
-        lastShadowUpdateTime = time;
+        if (time - lastShadowUpdateTime > 600) {
+          cityRenderer.updateSunShadowTarget(controls.target, altitude);
+          const atmos = cityRenderer.getAtmosphere();
+          materials.setHorizon(atmos.horizon, atmos.strength);
+          lastShadowUpdateTime = time;
+        }
       }
 
       // Update TileStreamer
@@ -455,7 +458,8 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       tweenRef.current?.tick();
       cityRenderer.update();
 
-      if (time - lastStatsTime > 400) {
+      // Throttle React stats updates during active finger drag / interaction to avoid triggering React component tree re-renders
+      if (time - lastStatsTime > 400 && !performanceConfig.isInteracting) {
         onUpdateStatsRef.current(cityRenderer.getRenderStats(), streamingStats);
         lastStatsTime = time;
       }

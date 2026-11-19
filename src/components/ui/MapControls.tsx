@@ -221,8 +221,9 @@ export const MapControls: React.FC<MapControlsProps> = (p) => {
       {/* dock */}
       <nav
         aria-label="Map controls"
+        style={p.compact ? { bottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' } : undefined}
         className={`pointer-events-auto z-30 ${p.compact
-          ? 'fixed inset-x-3 bottom-3 flex justify-around rounded-2xl p-1.5'
+          ? 'fixed inset-x-3 flex justify-around rounded-2xl p-1.5'
           : 'absolute right-3 top-[64px] flex flex-col gap-1 rounded-2xl p-1.5'} glass-panel`}
       >
         {DOCK.map(({ id, label, Icon }) => {
@@ -251,8 +252,9 @@ export const MapControls: React.FC<MapControlsProps> = (p) => {
       {open && (
         <section
           id="map-drawer" role="dialog" aria-label={TITLES[open]}
+          style={p.compact ? { bottom: 'calc(78px + env(safe-area-inset-bottom, 0px))' } : undefined}
           className={`pointer-events-auto z-30 glass-panel flex flex-col overflow-hidden ${p.compact
-            ? 'fixed inset-x-3 bottom-[84px] max-h-[62vh] rounded-3xl'
+            ? 'fixed inset-x-3 max-h-[62vh] rounded-3xl'
             : 'absolute right-[68px] top-3 max-h-[calc(100vh-1.5rem)] w-[340px] rounded-3xl'}`}
           data-lenis-prevent
         >

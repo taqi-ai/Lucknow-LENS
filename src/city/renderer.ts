@@ -61,15 +61,18 @@ export class CityRenderer {
     // with MSAA on asks for roughly 9x the fragment work a desktop does, which is
     // what made the city unusable on mobile rather than merely slower.
     const device = getDeviceProfile();
-    this.lastWidth = width;
-    this.lastHeight = height;
+    this.lastWidth = Math.max(1, Math.floor(width));
+    this.lastHeight = Math.max(1, Math.floor(height));
     this.renderer = new THREE.WebGLRenderer({
       antialias: performanceConfig.config.antialias,
       powerPreference: 'high-performance',
       logarithmicDepthBuffer: true,
     });
-    this.renderer.setSize(width, height);
+    // Set drawing buffer dimensions with updateStyle: false so that CSS
+    // dimensions (width: 100%, height: 100%) govern layout, preventing distortion,
+    // black borders, and viewport overflow on mobile browsers.
     this.renderer.setPixelRatio(performanceConfig.getEffectivePixelRatio());
+    this.renderer.setSize(this.lastWidth, this.lastHeight, false);
     this.maxRatio = performanceConfig.config.maxPixelRatio;
     this.renderer.shadowMap.enabled = false; // Shadows off by default — enabled adaptively at low altitude
     this.renderer.shadowMap.type = THREE.PCFShadowMap; // PCFSoft is deprecated in r185
@@ -79,7 +82,15 @@ export class CityRenderer {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
 
-    container.appendChild(this.renderer.domElement);
+    const dom = this.renderer.domElement;
+    dom.style.display = 'block';
+    dom.style.position = 'absolute';
+    dom.style.top = '0';
+    dom.style.left = '0';
+    dom.style.width = '100%';
+    dom.style.height = '100%';
+
+    container.appendChild(dom);
     this.setupContextRecovery();
 
     // 4. Setup Lighting
@@ -320,12 +331,13 @@ export class CityRenderer {
       this.lastFpsTime = now;
     }
 
-    // Dynamic resolution driven by performanceConfig:
-    // Drops DPR during active rotation/interaction to eliminate GPU fillrate stutter,
-    // then smoothly restores when idle.
+    // Stable adaptive resolution driven by performanceConfig:
+    // Only updates when a sustained performance tier switch occurs (hysteresis),
+    // never thrashing resolution back-and-forth during finger touches.
     const targetRatio = performanceConfig.getEffectivePixelRatio();
-    if (Math.abs(targetRatio - this.renderer.getPixelRatio()) > 0.02) {
+    if (Math.abs(targetRatio - this.renderer.getPixelRatio()) > 0.04) {
       this.renderer.setPixelRatio(targetRatio);
+      this.renderer.setSize(this.lastWidth, this.lastHeight, false);
     }
 
     this.renderer.render(this.scene, this.camera);
@@ -346,14 +358,23 @@ export class CityRenderer {
     };
   }
 
-  public handleResize(width: number, height: number) {
-    const safeWidth = width || 1;
-    const safeHeight = height || 1;
+  public handleResize(width: number, height: number, force = false) {
+    const safeWidth = Math.max(1, Math.floor(width));
+    const safeHeight = Math.max(1, Math.floor(height));
+
+    // Avoid redundant WebGL backbuffer reallocations if dimensions have not changed
+    if (!force && safeWidth === this.lastWidth && safeHeight === this.lastHeight) {
+      return;
+    }
+
     this.lastWidth = safeWidth;
     this.lastHeight = safeHeight;
     this.camera.aspect = safeWidth / safeHeight;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(safeWidth, safeHeight);
+
+    // updateStyle: false prevents Three.js from setting inline style pixel dimensions,
+    // keeping CSS width: 100% and height: 100% in charge of the visual canvas element.
+    this.renderer.setSize(safeWidth, safeHeight, false);
   }
 
   /**

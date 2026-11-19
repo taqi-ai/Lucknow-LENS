@@ -96,6 +96,7 @@ export class MetroSystem {
   private trains: THREE.InstancedMesh | null = null;
   private routes: Array<{ pts: number[][]; s: number[]; total: number; speed: number; offset: number }> = [];
   private dummy = new THREE.Object3D();
+  private _updateVec = new THREE.Vector3();
   private night = false;
 
   public async init(scene: THREE.Scene): Promise<void> {
@@ -331,7 +332,7 @@ export class MetroSystem {
     if (!this.trains) return;
     this.trains.visible = altitude < 6000;
     if (!this.trains.visible) return;
-    const p = new THREE.Vector3();
+    const p = this._updateVec;
     let k = 0;
     this.routes.forEach((r, ri) => {
       // Ping-pong along the line, dwelling briefly at the ends.

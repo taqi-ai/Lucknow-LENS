@@ -131,6 +131,7 @@ export class CameraController {
     e.preventDefault();
     this.presetActive = false; // Cancel preset animation on user input
     performanceConfig.startInteraction();
+    try { (e.target as HTMLElement)?.setPointerCapture?.(e.pointerId); } catch {}
 
     if (e.pointerType === 'touch') {
       this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -182,11 +183,12 @@ export class CameraController {
     const midX = (pts[0].x + pts[1].x) / 2;
     const midY = (pts[0].y + pts[1].y) / 2;
 
-    // Zoom via pinch span ratio
+    // Zoom via pinch span ratio: smooth, proportional tracking clamped to safe per-event deltas
     if (this.pinchDistance > 0 && span > 0) {
       const ratio = this.pinchDistance / span;
       if (Number.isFinite(ratio) && ratio > 0) {
-        this.destDistance *= Math.pow(ratio, 1.35);
+        const clampedZoom = Math.max(0.85, Math.min(1.18, ratio));
+        this.destDistance *= clampedZoom;
       }
     }
 
@@ -260,6 +262,7 @@ export class CameraController {
   };
 
   private onPointerUp = (e: PointerEvent) => {
+    try { (e.target as HTMLElement)?.releasePointerCapture?.(e.pointerId); } catch {}
     if (e.pointerType === 'touch') {
       this.activePointers.delete(e.pointerId);
       if (this.activePointers.size === 1) {

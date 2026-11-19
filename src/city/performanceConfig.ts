@@ -28,13 +28,13 @@ export interface RenderProfileConfig {
 }
 
 const PROFILES: Record<MobileQualityProfile, RenderProfileConfig> = {
-  // Performance: Mid-range / budget Android devices (prioritizes 30-45 FPS and fluid camera rotation)
+  // Performance: Low-end / budget Android devices (prioritizes 30-45 FPS and fluid camera rotation)
   performance: {
     name: 'performance',
-    label: 'Smooth Performance (Mid-Range)',
+    label: 'Smooth Performance (Budget Mobile)',
     targetFps: 35,
     maxPixelRatio: 1.0,
-    interactionPixelRatio: 0.85,
+    interactionPixelRatio: 1.0,
     shadowsEnabled: false,
     shadowMapSize: 1024,
     shadowMaxAltitude: 0,
@@ -49,10 +49,10 @@ const PROFILES: Record<MobileQualityProfile, RenderProfileConfig> = {
   // Balanced: Standard Android mid-range / upper mid-range (45-60 FPS target, balanced visuals)
   balanced: {
     name: 'balanced',
-    label: 'Balanced (Mobile 45-60 FPS)',
+    label: 'Balanced (Mid-Range 45-60 FPS)',
     targetFps: 50,
     maxPixelRatio: 1.25,
-    interactionPixelRatio: 0.95,
+    interactionPixelRatio: 1.25,
     shadowsEnabled: false,
     shadowMapSize: 1024,
     shadowMaxAltitude: 800,
@@ -67,10 +67,10 @@ const PROFILES: Record<MobileQualityProfile, RenderProfileConfig> = {
   // High: Premium mobile flagship devices (60 FPS target, rich detail)
   high: {
     name: 'high',
-    label: 'High Quality (Mobile 60 FPS)',
+    label: 'High Quality (Flagship Mobile 60 FPS)',
     targetFps: 60,
     maxPixelRatio: 1.5,
-    interactionPixelRatio: 1.15,
+    interactionPixelRatio: 1.5,
     shadowsEnabled: true,
     shadowMapSize: 1024,
     shadowMaxAltitude: 1600,
@@ -161,16 +161,16 @@ export class PerformanceController {
       return;
     }
 
-    // Mid-range mobile detection: check hardwareConcurrency and deviceMemory
+    // Mid-range / flagship mobile tier detection:
     const cores = navigator.hardwareConcurrency || 4;
     const memGB = (navigator as { deviceMemory?: number }).deviceMemory || 4;
 
     if (cores <= 4 || memGB <= 4) {
-      this.setProfile('performance');
+      this.setProfile('performance'); // Low-end mobile: 1.0 DPR cap
     } else if (cores <= 6 || memGB <= 6) {
-      this.setProfile('balanced');
+      this.setProfile('balanced'); // Mid-range mobile: 1.25 DPR cap
     } else {
-      this.setProfile('balanced'); // Safe default for Android mid-range to prevent rotation lag
+      this.setProfile('high'); // Flagship mobile (8+ cores, >6GB RAM): 1.5 DPR cap
     }
   }
 
@@ -221,15 +221,13 @@ export class PerformanceController {
 
   /**
    * Returns current effective pixel ratio:
-   * During active finger drag / camera rotation, applies interactionPixelRatio
-   * to eliminate GPU fillrate bottlenecks, restoring maxPixelRatio after interaction.
+   * Caps the device's physical pixel ratio to the profile's maxPixelRatio.
+   * Stability invariant: does NOT oscillate or drop during user drag,
+   * avoiding costly WebGL canvas resizing on touch down/up.
    */
   public getEffectivePixelRatio(): number {
-    const dpr = typeof window !== 'undefined' ? window.devicePixelRatio : 1;
-    const cap = this._isInteracting
-      ? this.config.interactionPixelRatio
-      : this.config.maxPixelRatio;
-    return Math.min(dpr, cap);
+    const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+    return Math.min(dpr, this.config.maxPixelRatio);
   }
 
   // --- Adaptive FPS Controller ---
@@ -238,20 +236,21 @@ export class PerformanceController {
     if (this.currentProfileKey === 'desktop') return; // Desktop maintains full quality
 
     this.frameTimes.push(deltaMs);
-    if (this.frameTimes.length > 120) this.frameTimes.shift();
+    if (this.frameTimes.length > 90) this.frameTimes.shift();
 
     const now = performance.now();
-    if (now - this.lastFpsCheck < 2000) return;
+    if (now - this.lastFpsCheck < 2500) return;
     this.lastFpsCheck = now;
 
-    if (this.frameTimes.length < 30) return;
+    if (this.frameTimes.length < 45) return;
     if (now - this.lastQualitySwitch < this.SWITCH_COOLDOWN_MS) return;
 
-    // Calculate median frame time
+    // Calculate median and 95th percentile frame time
     const sorted = [...this.frameTimes].sort((a, b) => a - b);
     const medianMs = sorted[Math.floor(sorted.length * 0.5)];
+    const p95Ms = sorted[Math.floor(sorted.length * 0.95)];
 
-    // Downgrade if sustained frame time > 33ms (< 30 FPS)
+    // Downgrade if sustained median frame time > 33ms (< 30 FPS)
     if (medianMs > 33) {
       if (this.currentProfileKey === 'high') {
         this.setProfile('balanced');
@@ -261,11 +260,19 @@ export class PerformanceController {
         this.lastQualitySwitch = now;
       }
     }
-    // Upgrade if sustained frame time < 17ms (> 58 FPS) with headroom
-    else if (medianMs < 17 && !this._isInteracting) {
+    // Upgrade if sustained median frame time < 16.6ms (> 58 FPS) and p95 < 22ms with headroom,
+    // only when idle (not actively dragging)
+    else if (medianMs < 16.6 && p95Ms < 22 && !this._isInteracting) {
       if (this.currentProfileKey === 'performance') {
         this.setProfile('balanced');
         this.lastQualitySwitch = now;
+      } else if (this.currentProfileKey === 'balanced') {
+        const cores = navigator.hardwareConcurrency || 4;
+        const memGB = (navigator as { deviceMemory?: number }).deviceMemory || 4;
+        if (cores >= 8 && memGB >= 6) {
+          this.setProfile('high');
+          this.lastQualitySwitch = now;
+        }
       }
     }
   }

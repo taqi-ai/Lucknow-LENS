@@ -978,6 +978,12 @@ class WavingFlag {
     this.mesh.castShadow = true;
   }
   update(t: number) { this.uniforms.uTime.value = t; }
+  dispose() {
+    this.mesh.geometry.dispose();
+    const mat = this.mesh.material as THREE.MeshStandardMaterial;
+    mat.map?.dispose();
+    mat.dispose();
+  }
 }
 
 function airport(g: Grounds): void {
@@ -1639,7 +1645,12 @@ function buildAll(k: Kit, g: Grounds): { flag?: WavingFlag } {
   return res;
 }
 
-export interface LandmarkLayer { group: THREE.Group; update: (t: number) => void; setNight: (n: boolean) => void }
+export interface LandmarkLayer {
+  group: THREE.Group;
+  update: (t: number) => void;
+  setNight: (n: boolean) => void;
+  dispose: () => void;
+}
 
 /** Build every landmark: architecture (shared building material), grounds, flag. */
 export function buildLandmarkLayer(material: THREE.Material): LandmarkLayer {
@@ -1670,6 +1681,13 @@ export function buildLandmarkLayer(material: THREE.Material): LandmarkLayer {
     group,
     update: (t) => flag?.update(t),
     setNight: (n) => { gmat.color.setHex(n ? 0x5a5650 : 0xffffff); gmat.emissive.setHex(n ? 0x1c130b : 0x000000); },
+    dispose: () => {
+      geo.dispose();
+      ggeo.dispose();
+      gmat.dispose();
+      flag?.dispose();
+      group.removeFromParent();
+    },
   };
 }
 

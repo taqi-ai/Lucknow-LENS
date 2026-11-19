@@ -32,6 +32,7 @@ export class TrafficSystem {
   private group = new THREE.Group();
   private lanes: Lane[] = [];
   private bodies: THREE.InstancedMesh[] = [];
+  private bodyMaterial: THREE.MeshStandardMaterial | null = null;
   private lamps: THREE.InstancedMesh | null = null;
   private max = 0;
   private slots: Array<{ lane: number; off: number; kind: number; inst: number; dir: number }> = [];
@@ -79,6 +80,7 @@ export class TrafficSystem {
     }
     // Geometry per kind, with vertex colours: body, glass band, dark wheels.
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.25 });
+    this.bodyMaterial = mat;
     for (const k of KINDS) {
       // Body (paint), tapered cabin/glass, wheels, lights; buses get a window band, two-wheelers a rider.
       const parts: Array<[THREE.BufferGeometry, number]> = [];
@@ -175,6 +177,23 @@ export class TrafficSystem {
       if (this.night) { this.lamps.count = li; this.lamps.instanceMatrix.needsUpdate = true; if (this.lamps.instanceColor) this.lamps.instanceColor.needsUpdate = true; }
     }
     void this.v;
+  }
+
+  public dispose(): void {
+    this.group.removeFromParent();
+    for (const b of this.bodies) {
+      b.geometry.dispose();
+    }
+    this.bodies = [];
+    this.bodyMaterial?.dispose();
+    this.bodyMaterial = null;
+    if (this.lamps) {
+      this.lamps.geometry.dispose();
+      (this.lamps.material as THREE.Material).dispose();
+      this.lamps = null;
+    }
+    this.slots = [];
+    this.lanes = [];
   }
 }
 

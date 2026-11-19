@@ -367,7 +367,15 @@ export class MetroSystem {
   public setVisible(v: boolean): void { this.group.visible = v; }
 
   public dispose(): void {
-    this.group.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) m.geometry.dispose(); });
+    this.group.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh) m.geometry.dispose();
+    });
+    this.concreteMat.dispose();
+    this.steelMat.dispose();
+    this.tunnelMat.dispose();
+    this.trainMat.dispose();
+    this.trains = null;
     this.group.removeFromParent();
   }
 }

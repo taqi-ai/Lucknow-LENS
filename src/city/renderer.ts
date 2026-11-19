@@ -280,24 +280,27 @@ export class CityRenderer {
   private lastWidth = 1;
   private lastHeight = 1;
 
+  private onContextLost = (e: Event) => {
+    e.preventDefault();
+    console.warn('[CityRenderer] WebGL context lost. Pausing rendering.');
+    this.isContextLost = true;
+  };
+
+  private onContextRestored = () => {
+    console.log('[CityRenderer] WebGL context restored. Rebuilding lighting and shaders.');
+    this.isContextLost = false;
+    try {
+      this.setupLighting();
+      this.renderer.setSize(this.lastWidth, this.lastHeight);
+    } catch (err) {
+      console.error('[CityRenderer] Error restoring WebGL context:', err);
+    }
+  };
+
   private setupContextRecovery(): void {
     const canvas = this.renderer.domElement;
-    canvas.addEventListener('webglcontextlost', (e: Event) => {
-      e.preventDefault();
-      console.warn('[CityRenderer] WebGL context lost. Pausing rendering.');
-      this.isContextLost = true;
-    }, false);
-
-    canvas.addEventListener('webglcontextrestored', () => {
-      console.log('[CityRenderer] WebGL context restored. Rebuilding lighting and shaders.');
-      this.isContextLost = false;
-      try {
-        this.setupLighting();
-        this.renderer.setSize(this.lastWidth, this.lastHeight);
-      } catch (err) {
-        console.error('[CityRenderer] Error restoring WebGL context:', err);
-      }
-    }, false);
+    canvas.addEventListener('webglcontextlost', this.onContextLost, false);
+    canvas.addEventListener('webglcontextrestored', this.onContextRestored, false);
   }
 
   public update() {
@@ -421,12 +424,18 @@ export class CityRenderer {
     // Clean up internal renderer render lists
     this.renderer.renderLists?.dispose?.();
 
+    // Detach WebGL context recovery event listeners
+    const dom = this.renderer.domElement;
+    if (dom) {
+      dom.removeEventListener('webglcontextlost', this.onContextLost);
+      dom.removeEventListener('webglcontextrestored', this.onContextRestored);
+    }
+
     // Dispose WebGLRenderer and force context loss to release GPU resources immediately
     this.renderer.dispose();
     this.renderer.forceContextLoss?.();
 
     // Safely remove canvas DOM element if still connected
-    const dom = this.renderer.domElement;
     if (dom && dom.parentNode) {
       dom.parentNode.removeChild(dom);
     }

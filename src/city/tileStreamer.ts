@@ -1081,9 +1081,9 @@ export class TileStreamer {
     this.workers = [];
     for (const [id, c] of this.loadedTiles) this.retireTile(id, c);
     this.hlod.dispose();
-    this.landmarks.group.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) m.geometry.dispose(); });
-    this.landmarks.group.removeFromParent();
+    this.landmarks.dispose();
     this.metro.dispose();
+    this.traffic.dispose();
     this.overlay.dispose();
     for (const g of this.treeGeometries) g.dispose();
     this.treeMaterial.dispose();

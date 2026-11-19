@@ -306,7 +306,12 @@ app.post("/api/analyst", async (req, res) => {
     return res.status(400).json({ error: "Invalid question body" });
   }
 
-  const fallback = await groundedResponse(question);
+  const cleanQuestion = question.trim().slice(0, 500);
+  if (!cleanQuestion) {
+    return res.status(400).json({ error: "Question cannot be empty" });
+  }
+
+  const fallback = await groundedResponse(cleanQuestion);
 
   if (!process.env.GEMINI_API_KEY) {
     return res.json(fallback);
@@ -342,7 +347,7 @@ app.post("/api/analyst", async (req, res) => {
         }
       }
       
-      User's Question: "${question}"
+      User's Question: "${cleanQuestion.replace(/"/g, '\\"')}"
     `;
 
     const response = await ai.models.generateContent({
@@ -373,7 +378,14 @@ app.post("/api/analyst", async (req, res) => {
 
     if (response.text) {
       const result = JSON.parse(response.text);
-      return res.json(result);
+      if (result && typeof result.answer === "string" && result.answer.trim().length > 0) {
+        return res.json({
+          answer: result.answer.trim(),
+          sources: Array.isArray(result.sources) ? result.sources : fallback.sources,
+          action: result.action && typeof result.action === "object" ? result.action : fallback.action,
+        });
+      }
+      return res.json(fallback);
     } else {
       return res.json(fallback);
     }

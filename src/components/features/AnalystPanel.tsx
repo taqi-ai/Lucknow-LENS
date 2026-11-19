@@ -114,7 +114,7 @@ export const AnalystPanel: React.FC<AnalystPanelProps> = ({ onExecuteAction }) =
           {/* Sources and Action */}
           <div className="flex flex-col gap-2 pt-2.5 border-t border-slate-800/50">
             {/* Sources list */}
-            {response.sources.length > 0 && (
+            {Array.isArray(response.sources) && response.sources.length > 0 && (
               <div className="flex flex-wrap items-center gap-1.5">
                 <Newspaper className="w-3 h-3 text-slate-500 flex-shrink-0" />
                 <span className="text-[9px] text-slate-500 font-extrabold uppercase mr-1">Sources:</span>

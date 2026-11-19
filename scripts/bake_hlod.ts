@@ -41,6 +41,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { buildOverlay, ROAD_CLASS_ORDER } from '../src/city/overlayGeometry';
 import { prepareBuilding, emitBase, type BuildingInput, type Prepared, type VertexSink } from '../src/city/buildingGeometry';
 import { BUILDING_FORMAT_VERSION, TYPOLOGY } from '../src/city/buildingTypes';
@@ -200,6 +201,13 @@ function writeSuperTile(st: SuperTile): { bytes: number; fabricBytes: number; re
 }
 
 async function main(): Promise<void> {
+  const freeRamGB = os.freemem() / 1024 / 1024 / 1024;
+  const totalRamGB = os.totalmem() / 1024 / 1024 / 1024;
+  console.log(`[HLOD Baker] System RAM: ${totalRamGB.toFixed(1)} GB total, ${freeRamGB.toFixed(1)} GB free.`);
+  if (freeRamGB < 2.5) {
+    console.warn(`[HLOD Baker] Warning: Low available memory (${freeRamGB.toFixed(1)} GB). HLOD bake may experience memory pressure.`);
+  }
+
   if (!fs.existsSync(TILES_DIR)) {
     console.error(`Source tiles not found: ${TILES_DIR}`);
     process.exit(1);

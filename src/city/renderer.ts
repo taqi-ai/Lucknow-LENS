@@ -324,7 +324,85 @@ export class CityRenderer {
     this.renderer.setSize(safeWidth, safeHeight);
   }
 
+  /**
+   * Complete WebGL resource cleanup:
+   * Disposes scene geometries, materials, textures, render targets, shadow maps,
+   * renderer WebGL context, and safely unlinks the canvas DOM element.
+   */
   public dispose() {
+    const disposedGeometries = new Set<THREE.BufferGeometry>();
+    const disposedMaterials = new Set<THREE.Material>();
+    const disposedTextures = new Set<THREE.Texture>();
+
+    const disposeTexture = (tex: any) => {
+      if (tex && typeof tex.dispose === 'function' && !disposedTextures.has(tex)) {
+        disposedTextures.add(tex);
+        tex.dispose();
+      }
+    };
+
+    const disposeMaterial = (mat: any) => {
+      if (!mat || disposedMaterials.has(mat)) return;
+      disposedMaterials.add(mat);
+
+      const textureKeys = [
+        'map', 'lightMap', 'bumpMap', 'normalMap', 'specularMap',
+        'envMap', 'alphaMap', 'aoMap', 'displacementMap',
+        'roughnessMap', 'metalnessMap', 'emissiveMap',
+      ];
+      for (const key of textureKeys) {
+        if (mat[key]) disposeTexture(mat[key]);
+      }
+
+      if (typeof mat.dispose === 'function') {
+        mat.dispose();
+      }
+    };
+
+    // Traverse scene and release all attached non-shared render resources
+    this.scene.traverse((obj: any) => {
+      if (obj.geometry && typeof obj.geometry.dispose === 'function' && !disposedGeometries.has(obj.geometry)) {
+        disposedGeometries.add(obj.geometry);
+        obj.geometry.dispose();
+      }
+
+      if (obj.material) {
+        if (Array.isArray(obj.material)) {
+          for (const m of obj.material) disposeMaterial(m);
+        } else {
+          disposeMaterial(obj.material);
+        }
+      }
+    });
+
+    // Dispose lights and shadow map render targets
+    if (this.sunLight) {
+      if (this.sunLight.shadow?.map) {
+        this.sunLight.shadow.map.dispose();
+      }
+      this.sunLight.dispose?.();
+    }
+    if (this.ambientLight) {
+      this.ambientLight.dispose?.();
+    }
+    if (this.hemiLight) {
+      this.hemiLight.dispose?.();
+    }
+
+    // Clean up internal renderer render lists
+    this.renderer.renderLists?.dispose?.();
+
+    // Dispose WebGLRenderer and force context loss to release GPU resources immediately
     this.renderer.dispose();
+    this.renderer.forceContextLoss?.();
+
+    // Safely remove canvas DOM element if still connected
+    const dom = this.renderer.domElement;
+    if (dom && dom.parentNode) {
+      dom.parentNode.removeChild(dom);
+    }
+
+    // Clear scene graph references
+    this.scene.clear();
   }
 }

@@ -682,6 +682,8 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       waypointVisuals.dispose();
       emergencyVisuals.dispose();
       campusAmbience.dispose();
+      highlightGeo.dispose();
+      highlightMat.dispose();
       cityRenderer.dispose();
       if (container.contains(cityRenderer.renderer.domElement)) {
         container.removeChild(cityRenderer.renderer.domElement);

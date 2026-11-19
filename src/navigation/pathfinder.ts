@@ -80,8 +80,8 @@ export class Pathfinder {
   ): Promise<NavigationRoute | null> {
     await this.graph.ensureLoaded();
 
-    const startMatch = this.graph.findNearestNode(start.x, start.z);
-    const destMatch = this.graph.findNearestNode(destination.x, destination.z);
+    const startMatch = this.graph.findNearestNode(start.x, start.z, 800, start.y);
+    const destMatch = this.graph.findNearestNode(destination.x, destination.z, 800, destination.y);
 
     if (!startMatch || !destMatch) {
       console.warn('[Pathfinder] Could not snap start or destination to road network');

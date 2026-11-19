@@ -17,6 +17,7 @@ import {
 import type { SkylineStyle } from './city/buildingMaterial';
 import { DEFAULT_LABEL_SETTINGS, type LabelSettings } from './city/labelManager';
 import { THEMES, themeById, type ThemeId } from './components/ui/themes';
+import { project } from './geo/projection';
 import { Pathfinder } from './navigation/pathfinder';
 import { RouteDriver } from './navigation/routeDriver';
 import type { NavigationRoute, NavigatorState, RouteWaypoint, GPSTheme } from './navigation/types';
@@ -345,61 +346,82 @@ export default function MapApp({ entryPreset = 'hero', onProgress, released = tr
   }, []);
 
   const handleExecuteAIAction = (action: AIAction) => {
-    if (!cameraController) return;
+    try {
+      if (!action || typeof action !== 'object') return;
 
-    if (action.type === 'FLY_TO' && action.latitude && action.longitude) {
-      cameraController.flyTo(action.latitude, action.longitude, 350);
-      
-      if (action.layer) {
-        setLayers(prev => ({
+      const ALLOWED_LIVE_LAYERS = new Set<string>([
+        'traffic',
+        'aqi',
+        'weather',
+        'flights',
+        'railways',
+        'cameras',
+        'news',
+        'emergency',
+      ]);
+
+      const LAYER_NAMES: Record<string, string> = {
+        traffic: 'Hazratganj Traffic Area',
+        aqi: 'Gomti Nagar AQI Zone',
+        flights: 'Amausi Flight Tracking Hub',
+        railways: 'Charbagh Railways Area',
+        news: 'Gomti News Zone',
+        weather: 'Lucknow Weather Station',
+        cameras: 'City Surveillance Network',
+        emergency: 'Emergency Services Hub',
+      };
+
+      // Safely validate and apply layer toggles if specified
+      if (action.layer && ALLOWED_LIVE_LAYERS.has(action.layer)) {
+        const layerKey = action.layer as keyof LayerState['live'];
+        const isEnable = action.type !== 'DISABLE_LAYER';
+        setLayers((prev) => ({
           ...prev,
           live: {
             ...prev.live,
-            [action.layer!]: true
-          }
+            [layerKey]: isEnable,
+          },
         }));
       }
 
-      const nameMap: Record<string, string> = {
-        'traffic': 'Hazratganj Traffic Area',
-        'aqi': 'Gomti Nagar AQI Zone',
-        'flights': 'Amausi Flight Tracking Hub',
-        'railways': 'Charbagh Railways Area',
-        'news': 'Gomti News Zone'
-      };
+      if (action.type === 'FLY_TO') {
+        const lat = action.latitude;
+        const lon = action.longitude;
 
-      const customRegistry = {
-        'traffic': { id: 'ai-traffic', name: 'Hazratganj Traffic Area', x: -382, z: 372, lat: 26.8467, lon: 80.9461 },
-        'aqi': { id: 'ai-aqi', name: 'Gomti Nagar AQI Zone', x: 3837, z: 1677, lat: 26.8315, lon: 80.9812 },
-        'flights': { id: 'ai-flights', name: 'Amausi Flight Area', x: -9987, z: 9769, lat: 26.7606, lon: 80.8893 },
-        'railways': { id: 'ai-railways', name: 'Charbagh Railways Area', x: -1499, z: 1573, lat: 26.8322, lon: 80.9221 },
-        'news': { id: 'ai-news', name: 'Gomti News Zone', x: 0, z: 0, lat: 26.8525, lon: 80.9545 }
-      };
+        // Reject invalid, non-numeric, or extreme out-of-bounds coordinates
+        const isValidLat = typeof lat === 'number' && Number.isFinite(lat) && lat >= 26.0 && lat <= 27.5;
+        const isValidLon = typeof lon === 'number' && Number.isFinite(lon) && lon >= 80.0 && lon <= 81.8;
 
-      const selectedLayer = action.layer || 'news';
-      const highlightPOI = customRegistry[selectedLayer as keyof typeof customRegistry];
-      
-      setSelectedEntity({
-        type: 'poi',
-        id: highlightPOI.id,
-        name: nameMap[selectedLayer] || 'AI Analyzed Zone',
-        details: {
-          category: 'AI Highlighted Area',
-          description: `This zone is currently highlighted on the map as part of your query analysis.`
-        },
-        latitude: highlightPOI.lat,
-        longitude: highlightPOI.lon,
-        x: highlightPOI.x,
-        z: highlightPOI.z
-      });
-    } else if (action.type === 'ENABLE_LAYER' && action.layer) {
-      setLayers(prev => ({
-        ...prev,
-        live: {
-          ...prev.live,
-          [action.layer!]: true
+        if (!isValidLat || !isValidLon) {
+          console.warn('[AI Action] Rejected invalid or out-of-bounds coordinates:', { lat, lon });
+          return;
         }
-      }));
+
+        if (cameraController) {
+          cameraController.flyTo(lat!, lon!, 350);
+        }
+
+        // Dynamically project world coordinates rather than reading undefined hardcoded dictionaries
+        const { x, z } = project(lat!, lon!);
+        const selectedLayer = action.layer && ALLOWED_LIVE_LAYERS.has(action.layer) ? action.layer : 'news';
+        const title = LAYER_NAMES[selectedLayer] || 'AI Focus Area';
+
+        setSelectedEntity({
+          type: 'poi',
+          id: `ai-focus-${Date.now()}`,
+          name: title,
+          details: {
+            category: 'AI Highlighted Area',
+            description: `Identified by City Analyst query at (${lat!.toFixed(4)}, ${lon!.toFixed(4)}).`,
+          },
+          latitude: lat!,
+          longitude: lon!,
+          x,
+          z,
+        });
+      }
+    } catch (err) {
+      console.error('[AI Action] Safely caught error during action execution:', err);
     }
   };
 

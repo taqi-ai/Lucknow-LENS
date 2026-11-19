@@ -25,6 +25,12 @@ export interface RoadSegmentOSM {
   width: number;
   type: string;
   isMajor: boolean;
+  level?: number;
+  isElevated?: boolean;
+  isLink?: boolean;
+  isTunnel?: boolean;
+  oneway?: boolean | string | number;
+  roundabout?: boolean;
 }
 
 export interface WaterwayOSM {

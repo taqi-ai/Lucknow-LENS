@@ -64,16 +64,17 @@ export class CityRenderer {
     this.lastWidth = Math.max(1, Math.floor(width));
     this.lastHeight = Math.max(1, Math.floor(height));
     this.renderer = new THREE.WebGLRenderer({
-      antialias: performanceConfig.config.antialias,
+      antialias: performanceConfig.isMobile ? performanceConfig.config.antialias : device.antialias,
       powerPreference: 'high-performance',
       logarithmicDepthBuffer: true,
     });
     // Set drawing buffer dimensions with updateStyle: false so that CSS
     // dimensions (width: 100%, height: 100%) govern layout, preventing distortion,
     // black borders, and viewport overflow on mobile browsers.
-    this.renderer.setPixelRatio(performanceConfig.getEffectivePixelRatio());
+    const initRatio = performanceConfig.isMobile ? performanceConfig.getEffectivePixelRatio() : device.maxPixelRatio;
+    this.renderer.setPixelRatio(initRatio);
     this.renderer.setSize(this.lastWidth, this.lastHeight, false);
-    this.maxRatio = performanceConfig.config.maxPixelRatio;
+    this.maxRatio = performanceConfig.isMobile ? performanceConfig.config.maxPixelRatio : device.maxPixelRatio;
     this.renderer.shadowMap.enabled = false; // Shadows off by default — enabled adaptively at low altitude
     this.renderer.shadowMap.type = THREE.PCFShadowMap; // PCFSoft is deprecated in r185
     // Explicit colour management. Materials author colours in sRGB, lighting happens
@@ -331,13 +332,24 @@ export class CityRenderer {
       this.lastFpsTime = now;
     }
 
-    // Stable adaptive resolution driven by performanceConfig:
-    // Only updates when a sustained performance tier switch occurs (hysteresis),
-    // never thrashing resolution back-and-forth during finger touches.
-    const targetRatio = performanceConfig.getEffectivePixelRatio();
-    if (Math.abs(targetRatio - this.renderer.getPixelRatio()) > 0.04) {
-      this.renderer.setPixelRatio(targetRatio);
-      this.renderer.setSize(this.lastWidth, this.lastHeight, false);
+    if (performanceConfig.isMobile) {
+      // Stable adaptive resolution driven by performanceConfig (hysteresis, no thrash while touching).
+      const targetRatio = performanceConfig.getEffectivePixelRatio();
+      if (Math.abs(targetRatio - this.renderer.getPixelRatio()) > 0.04) {
+        this.renderer.setPixelRatio(targetRatio);
+        this.renderer.setSize(this.lastWidth, this.lastHeight, false);
+      }
+    } else if (now - this.lastScaleAt > 500) {
+      // Desktop / low-end laptops keep the original dynamic resolution (down to 55% of the device cap).
+      this.lastScaleAt = now;
+      const cap = this.maxRatio;
+      let r = this.renderer.getPixelRatio();
+      if (this.ftEma > 26 && r > cap * 0.55) r = Math.max(cap * 0.55, r - 0.1);
+      else if (this.ftEma < 14 && r < cap) r = Math.min(cap, r + 0.05);
+      if (Math.abs(r - this.renderer.getPixelRatio()) > 0.01) {
+        this.renderer.setPixelRatio(r);
+        this.renderer.setSize(this.lastWidth, this.lastHeight, false);
+      }
     }
 
     this.renderer.render(this.scene, this.camera);

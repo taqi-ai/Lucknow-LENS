@@ -280,8 +280,8 @@ export const CityUI: React.FC<CityUIProps> = ({
 
       {!presentationMode && (
         <div
-          style={{ top: 'calc(0.75rem + env(safe-area-inset-top, 0px))', right: 'calc(0.75rem + env(safe-area-inset-right, 0px))' }}
-          className={`absolute z-30 ${compact ? 'top-[64px]' : ''}`}
+          style={{ top: `calc(${compact ? '64px' : '0.75rem'} + env(safe-area-inset-top, 0px))`, right: 'calc(0.75rem + env(safe-area-inset-right, 0px))' }}
+          className="absolute z-30"
         >
           <DayNightToggle night={night} onChange={(n, origin) => runDayNight(() => onNight(n), origin)} compact={compact} />
         </div>

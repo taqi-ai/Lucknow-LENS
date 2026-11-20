@@ -1,13 +1,35 @@
 import * as THREE from 'three';
 import { OSMMapData, RenderStats } from '../types';
 import { getDeviceProfile } from './deviceProfile';
+import { performanceConfig } from './performanceConfig';
+
+/** Lucknow, for the solar position. */
+const LAT = 26.85;
+const LON = 80.95;
 
 /**
- * Sun direction relative to the shadow focus point. Azimuth ~west-south-west with a
- * ~38 degree elevation: high enough to light roofs, low enough that shadows describe
- * building height and street orientation from an aerial view.
+ * Solar azimuth/elevation (NOAA low-precision formulae) for Lucknow at a local IST
+ * hour on a given day of year. Returns a unit vector toward the sun in the app frame
+ * (x east, y up, z south).
  */
-const SUN_OFFSET = new THREE.Vector3(3800, 2350, 1900);
+export function sunDirection(hourIST: number, dayOfYear: number, out = new THREE.Vector3()): THREE.Vector3 {
+  const g = (2 * Math.PI / 365) * (dayOfYear - 1 + (hourIST - 12) / 24);
+  const eqt = 229.18 * (0.000075 + 0.001868 * Math.cos(g) - 0.032077 * Math.sin(g) - 0.014615 * Math.cos(2 * g) - 0.040849 * Math.sin(2 * g));
+  const decl = 0.006918 - 0.399912 * Math.cos(g) + 0.070257 * Math.sin(g) - 0.006758 * Math.cos(2 * g)
+    + 0.000907 * Math.sin(2 * g) - 0.002697 * Math.cos(3 * g) + 0.00148 * Math.sin(3 * g);
+  const tst = hourIST * 60 + eqt + 4 * LON - 60 * 5.5; // true solar time, minutes
+  const ha = THREE.MathUtils.degToRad(tst / 4 - 180);
+  const lat = THREE.MathUtils.degToRad(LAT);
+  const cosZen = Math.sin(lat) * Math.sin(decl) + Math.cos(lat) * Math.cos(decl) * Math.cos(ha);
+  const zen = Math.acos(THREE.MathUtils.clamp(cosZen, -1, 1));
+  const el = Math.PI / 2 - zen;
+  let az = Math.acos(THREE.MathUtils.clamp((Math.sin(lat) * Math.cos(zen) - Math.sin(decl)) / (Math.cos(lat) * Math.sin(zen)), -1, 1));
+  az = ha > 0 ? (az + Math.PI) % (2 * Math.PI) : (3 * Math.PI - az) % (2 * Math.PI); // from north, clockwise
+  return out.set(Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el)).normalize();
+}
+
+/** Distance of the sun light from its shadow focus. */
+const SUN_DISTANCE = 4800;
 
 export class CityRenderer {
   public scene: THREE.Scene;
@@ -39,13 +61,20 @@ export class CityRenderer {
     // with MSAA on asks for roughly 9x the fragment work a desktop does, which is
     // what made the city unusable on mobile rather than merely slower.
     const device = getDeviceProfile();
+    this.lastWidth = Math.max(1, Math.floor(width));
+    this.lastHeight = Math.max(1, Math.floor(height));
     this.renderer = new THREE.WebGLRenderer({
-      antialias: device.antialias,
+      antialias: performanceConfig.isMobile ? performanceConfig.config.antialias : device.antialias,
       powerPreference: 'high-performance',
       logarithmicDepthBuffer: true,
     });
-    this.renderer.setSize(width, height);
-    this.renderer.setPixelRatio(device.maxPixelRatio);
+    // Set drawing buffer dimensions with updateStyle: false so that CSS
+    // dimensions (width: 100%, height: 100%) govern layout, preventing distortion,
+    // black borders, and viewport overflow on mobile browsers.
+    const initRatio = performanceConfig.isMobile ? performanceConfig.getEffectivePixelRatio() : device.maxPixelRatio;
+    this.renderer.setPixelRatio(initRatio);
+    this.renderer.setSize(this.lastWidth, this.lastHeight, false);
+    this.maxRatio = performanceConfig.isMobile ? performanceConfig.config.maxPixelRatio : device.maxPixelRatio;
     this.renderer.shadowMap.enabled = false; // Shadows off by default — enabled adaptively at low altitude
     this.renderer.shadowMap.type = THREE.PCFShadowMap; // PCFSoft is deprecated in r185
     // Explicit colour management. Materials author colours in sRGB, lighting happens
@@ -54,7 +83,16 @@ export class CityRenderer {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
 
-    container.appendChild(this.renderer.domElement);
+    const dom = this.renderer.domElement;
+    dom.style.display = 'block';
+    dom.style.position = 'absolute';
+    dom.style.top = '0';
+    dom.style.left = '0';
+    dom.style.width = '100%';
+    dom.style.height = '100%';
+
+    container.appendChild(dom);
+    this.setupContextRecovery();
 
     // 4. Setup Lighting
     try { this.setupLighting(); } catch (e) { console.error('Lighting setup error:', e); }
@@ -75,19 +113,46 @@ export class CityRenderer {
   // -------------------------------------------------------------
   // LIGHTING ENVIRONMENT (DAY / NIGHT DYNAMIC MODES)
   // -------------------------------------------------------------
+  /** Local IST hour driving the sun in daylight (default mid-afternoon). */
+  private dayHour = 15.25;
+  private dayOfYear = 320; // mid-November
+  private sunDir = new THREE.Vector3();
+  private moonDir = new THREE.Vector3(-0.35, 0.72, 0.6).normalize();
+  private shadowTarget = new THREE.Vector3();
+
+  /** Set the time of day for the daylight sun (IST hours, 6-18). */
+  public setTimeOfDay(hour: number, dayOfYear = this.dayOfYear): void {
+    this.dayHour = THREE.MathUtils.clamp(hour, 6.5, 17.8);
+    this.dayOfYear = dayOfYear;
+    this.updateSunPosition();
+  }
+
+  private updateSunPosition(): void {
+    if (!this.sunLight) return;
+    if (this.isNight) this.sunDir.copy(this.moonDir);
+    else sunDirection(this.dayHour, this.dayOfYear, this.sunDir);
+    if (this.sunDir.y < 0.12) this.sunDir.y = 0.12;
+    this.sunDir.normalize();
+    const t = this.shadowTarget;
+    this.sunLight.position.set(t.x + this.sunDir.x * SUN_DISTANCE, t.y + this.sunDir.y * SUN_DISTANCE, t.z + this.sunDir.z * SUN_DISTANCE);
+    this.sunLight.target.position.copy(t);
+    this.sunLight.target.updateMatrixWorld();
+  }
+
   private setupLighting() {
     // Key sun. Mid-afternoon elevation (~38 deg) rather than overhead, so buildings
     // throw shadows long enough to read street layout and massing from the air.
     this.sunLight = new THREE.DirectionalLight(0xfff2dc, 3.2);
-    this.sunLight.position.copy(SUN_OFFSET);
     this.sunLight.castShadow = false; // Enabled adaptively at low altitude
 
-    this.sunLight.shadow.mapSize.width = 2048;
-    this.sunLight.shadow.mapSize.height = 2048;
+    const shadowSize = getDeviceProfile().shadowMapSize;
+    this.sunLight.shadow.mapSize.width = shadowSize;
+    this.sunLight.shadow.mapSize.height = shadowSize;
     this.sunLight.shadow.camera.near = 10;
-    this.sunLight.shadow.camera.far = 14000;
-    this.sunLight.shadow.bias = -0.0004;
-    this.sunLight.shadow.normalBias = 0.6;
+    this.sunLight.shadow.camera.far = 12000;
+    this.sunLight.shadow.bias = -0.0003;
+    this.sunLight.shadow.normalBias = 0.5;
+    this.sunLight.shadow.radius = 2;
     this.scene.add(this.sunLight);
     this.scene.add(this.sunLight.target);
 
@@ -110,13 +175,11 @@ export class CityRenderer {
    */
   public updateSunShadowTarget(target: THREE.Vector3, altitude = 1000): void {
     if (!this.sunLight) return;
-    this.sunLight.position.set(
-      target.x + SUN_OFFSET.x, target.y + SUN_OFFSET.y, target.z + SUN_OFFSET.z,
-    );
-    this.sunLight.target.position.copy(target);
-    this.sunLight.target.updateMatrixWorld();
-
-    const extent = THREE.MathUtils.clamp(altitude * 1.1, 300, 4000);
+    // Snap the focus to a texel-sized grid so shadows do not crawl as the camera pans.
+    const extent = THREE.MathUtils.clamp(altitude * 0.9, 220, 3200);
+    const texel = (extent * 2) / this.sunLight.shadow.mapSize.width;
+    this.shadowTarget.set(Math.round(target.x / texel) * texel, 0, Math.round(target.z / texel) * texel);
+    this.updateSunPosition();
     const cam = this.sunLight.shadow.camera;
     if (cam.right !== extent) {
       cam.left = -extent;
@@ -129,22 +192,20 @@ export class CityRenderer {
 
   /** Enable/disable shadows based on camera altitude — huge perf win at zoom-out */
   public setAdaptiveShadows(altitude: number): void {
-    // Shadow maps are a second full scene traversal per frame; mobile GPUs pay
-    // for it in bandwidth they do not have.
-    const shouldEnable = getDeviceProfile().allowShadows && altitude < 3000;
+    if (!performanceConfig.config.shadowsEnabled) {
+      if (this.shadowsActive) {
+        this.shadowsActive = false;
+        this.renderer.shadowMap.enabled = false;
+        this.sunLight.castShadow = false;
+      }
+      return;
+    }
+    const dp = getDeviceProfile();
+    const shouldEnable = dp.allowShadows && altitude < dp.shadowMaxAltitude && !this.isNight;
     if (shouldEnable === this.shadowsActive) return;
     this.shadowsActive = shouldEnable;
     this.renderer.shadowMap.enabled = shouldEnable;
     this.sunLight.castShadow = shouldEnable;
-    // Mark all materials as needing shadow update
-    this.scene.traverse((obj) => {
-      if ((obj as THREE.Mesh).isMesh) {
-        const mat = (obj as THREE.Mesh).material;
-        if (mat && !Array.isArray(mat)) {
-          mat.needsUpdate = true;
-        }
-      }
-    });
   }
 
   public setSkylineStyle(style: 'warm' | 'clear' | 'cyberpunk'): void {
@@ -158,89 +219,55 @@ export class CityRenderer {
     this.applyDayNightState(night);
   }
 
+  /**
+   * Lighting presets per (time of day x style). Applied as targets and eased in
+   * update(), so switching day and night is a ~1.6 s dusk/dawn instead of a cut.
+   */
+  private lightTarget: { sun: THREE.Color; sunI: number; amb: THREE.Color; ambI: number; sky: THREE.Color; ground: THREE.Color; hemiI: number; exposure: number } | null = null;
+  private lastLightTick = performance.now();
+
   private applyDayNightState(night: boolean): void {
     this.scene.background = null;
-
+    const P = (sun: number, sunI: number, amb: number, ambI: number, sky: number, ground: number, hemiI: number, exposure: number) => ({
+      sun: new THREE.Color(sun), sunI, amb: new THREE.Color(amb), ambI, sky: new THREE.Color(sky), ground: new THREE.Color(ground), hemiI, exposure,
+    });
+    const st = this.skylineStyle;
+    let t;
     if (night) {
-      if (this.skylineStyle === 'cyberpunk') {
-        // True Cyberpunk Night: High contrast dark indigo backdrop, neon-accented lighting
-        this.scene.fog = new THREE.FogExp2(0x050714, 0.000000);
-        this.sunLight.color.setHex(0x00f0ff); // Electric cyan directional
-        this.sunLight.intensity = 1.6;
-        this.ambientLight.color.setHex(0x1a0a2a); // Deep magenta ambient fill
-        this.ambientLight.intensity = 1.8;
-        this.hemiLight.color.setHex(0x00d2ff); // Cyan sky
-        this.hemiLight.groundColor.setHex(0x380036); // Magenta ground
-        this.hemiLight.intensity = 2.2;
-        this.renderer.toneMappingExposure = 1.8;
-      } else {
-        // Realistic Lucknow Night
-        this.scene.fog = new THREE.FogExp2(0x0a1220, 0.000000);
-        this.sunLight.color.setHex(0x9fc0e8);
-        this.sunLight.intensity = 1.2;
-        this.ambientLight.color.setHex(0x607490);
-        this.ambientLight.intensity = 2.0;
-        this.hemiLight.color.setHex(0x6a87ae);
-        this.hemiLight.groundColor.setHex(0x2a3040);
-        this.hemiLight.intensity = 1.8;
-        this.renderer.toneMappingExposure = 1.6;
-      }
+      // Moonlight is a faint cool key; most of what you see is emitted city light, so
+      // exposure is lifted rather than flooding ambient (which flattened the old night).
+      if (st === 'cyberpunk') t = P(0x00f0ff, 0.7, 0x1a0a2a, 0.9, 0x00d2ff, 0x380036, 1.2, 1.7);
+      else if (st === 'clear') t = P(0xb8cdf0, 0.55, 0x3d4a60, 0.7, 0x4a5f80, 0x22293a, 0.9, 1.55);
+      else t = P(0xc4d2ec, 0.5, 0x4a4038, 0.75, 0x46597a, 0x3a2c22, 0.95, 1.6);
     } else {
-      if (this.skylineStyle === 'clear') {
-        // NATURAL WHITE — midday, neutral white balance. The reference the other
-        // two are read against, so it commits to nothing: white sun, faintly
-        // cool sky fill, neutral ground bounce.
-        this.scene.fog = new THREE.FogExp2(0xe6ebf0, 0.000000);
-        this.sunLight.color.setHex(0xffffff);
-        this.sunLight.intensity = 3.6;
-        this.ambientLight.color.setHex(0xdfe7f0);
-        this.ambientLight.intensity = 0.34;
-        this.hemiLight.color.setHex(0xd6e6f7);
-        this.hemiLight.groundColor.setHex(0x95999e);
-        this.hemiLight.intensity = 0.78;
-        this.renderer.toneMappingExposure = 0.95;
-      } else if (this.skylineStyle === 'cyberpunk') {
-        // CYBERPUNK — a genuinely different profile, not a tinted day. The key
-        // is that almost no light comes from the sky: a deep indigo environment
-        // with a cold cyan key from one side and a magenta ground bounce from
-        // the other, so surfaces split into cyan-lit and magenta-shadowed. The
-        // building shader's uCyber term supplies the neon windows and accents.
-        this.scene.fog = new THREE.FogExp2(0x0e1430, 0.000000);
-        this.sunLight.color.setHex(0x7af0ff);
-        this.sunLight.intensity = 3.4;
-        this.ambientLight.color.setHex(0x2a1a55);
-        this.ambientLight.intensity = 0.42;
-        // A strong cyan hemisphere floods the ground plane, which is what turned
-        // the whole city into a flat cyan sheet. Kept low; the sun carries the key.
-        this.hemiLight.color.setHex(0x5fd0f5);
-        this.hemiLight.groundColor.setHex(0x4a1440);
-        this.hemiLight.intensity = 0.50;
-        this.renderer.toneMappingExposure = 1.02;
-      } else {
-        // WARM WHITE — crisp, natural daylight with warm sunlight and cool sky fill.
-        // Balances warm sunlight with sky-blue ambient fill so shadows create
-        // high 3D contrast across building facades and roofs without amber washout.
-        this.scene.fog = new THREE.FogExp2(0xd6e5f3, 0.000000);
-        this.sunLight.color.setHex(0xfff6ea);
-        this.sunLight.intensity = 3.8;
-        this.ambientLight.color.setHex(0x9bc4e6);
-        this.ambientLight.intensity = 0.35;
-        this.hemiLight.color.setHex(0xb5dbf7);
-        this.hemiLight.groundColor.setHex(0x8a7f72);
-        this.hemiLight.intensity = 0.65;
-        this.renderer.toneMappingExposure = 1.0;
-      }
+      // Warm, slightly hazy afternoon sun; a dusty ground bounce in the hemisphere.
+      if (st === 'clear') t = P(0xfff6ea, 3.3, 0xdfe7f0, 0.30, 0xcfe0f2, 0x9a9890, 0.85, 0.95);
+      else if (st === 'cyberpunk') t = P(0x7af0ff, 3.0, 0x2a1a55, 0.40, 0x5fd0f5, 0x4a1440, 0.6, 1.0);
+      else t = P(0xffe4c4, 3.1, 0xd4d2c8, 0.30, 0xc8d6e4, 0x8f7d62, 0.95, 0.98);
     }
+    // Fog (aerial perspective) is owned by AtmosphericSky so it always matches the horizon.
+    this.lightTarget = t;
+    this.stepLighting(1);
+    this.updateSunPosition();
   }
 
-  /** Horizon colour + haze strength currently in effect, for the building shader. */
+  /** Ease the lights toward the current target. k = 1 snaps. */
+  private stepLighting(k: number): void {
+    const t = this.lightTarget;
+    if (!t || !this.sunLight) return;
+    this.sunLight.color.lerp(t.sun, k);
+    this.sunLight.intensity += (t.sunI - this.sunLight.intensity) * k;
+    this.ambientLight.color.lerp(t.amb, k);
+    this.ambientLight.intensity += (t.ambI - this.ambientLight.intensity) * k;
+    this.hemiLight.color.lerp(t.sky, k);
+    this.hemiLight.groundColor.lerp(t.ground, k);
+    this.hemiLight.intensity += (t.hemiI - this.hemiLight.intensity) * k;
+    this.renderer.toneMappingExposure += (t.exposure - this.renderer.toneMappingExposure) * k;
+  }
+
+  /** Kept for API compatibility; haze is scene fog owned by AtmosphericSky. */
   public getAtmosphere(): { horizon: THREE.Color; strength: number } {
-    if (this.isNight) {
-      const col = this.skylineStyle === 'cyberpunk' ? 0x050714 : 0x0a1220;
-      return { horizon: new THREE.Color(col), strength: 0.000000 };
-    }
-    const col = this.skylineStyle === 'clear' ? 0xe2e8f0 : (this.skylineStyle === 'cyberpunk' ? 0x1a2035 : 0xcfdcea);
-    return { horizon: new THREE.Color(col), strength: 0.000000 };
+    return { horizon: new THREE.Color(this.isNight ? 0x2a2420 : 0xe4dfd1), strength: 0 };
   }
 
   // -------------------------------------------------------------
@@ -261,17 +288,76 @@ export class CityRenderer {
   // -------------------------------------------------------------
   // RENDER LOOP & STATS
   // -------------------------------------------------------------
+  private isContextLost = false;
+  private lastWidth = 1;
+  private lastHeight = 1;
+
+  private onContextLost = (e: Event) => {
+    e.preventDefault();
+    console.warn('[CityRenderer] WebGL context lost. Pausing rendering.');
+    this.isContextLost = true;
+  };
+
+  private onContextRestored = () => {
+    console.log('[CityRenderer] WebGL context restored. Rebuilding lighting and shaders.');
+    this.isContextLost = false;
+    try {
+      this.setupLighting();
+      this.renderer.setSize(this.lastWidth, this.lastHeight);
+    } catch (err) {
+      console.error('[CityRenderer] Error restoring WebGL context:', err);
+    }
+  };
+
+  private setupContextRecovery(): void {
+    const canvas = this.renderer.domElement;
+    canvas.addEventListener('webglcontextlost', this.onContextLost, false);
+    canvas.addEventListener('webglcontextrestored', this.onContextRestored, false);
+  }
+
   public update() {
+    if (this.isContextLost) return;
     this.frameCount++;
     const now = performance.now();
+    const ft = now - (this.lastFrameAt || now);
+    this.lastFrameAt = now;
+    if (ft > 0 && ft < 250) {
+      this.ftEma = this.ftEma * 0.92 + ft * 0.08;
+      performanceConfig.recordFrameTime(ft);
+    }
+
     if (now - this.lastFpsTime >= 1000) {
       this.currentFps = Math.round((this.frameCount * 1000) / (now - this.lastFpsTime));
       this.frameCount = 0;
       this.lastFpsTime = now;
     }
 
+    if (performanceConfig.isMobile) {
+      // Stable adaptive resolution driven by performanceConfig (hysteresis, no thrash while touching).
+      const targetRatio = performanceConfig.getEffectivePixelRatio();
+      if (Math.abs(targetRatio - this.renderer.getPixelRatio()) > 0.04) {
+        this.renderer.setPixelRatio(targetRatio);
+        this.renderer.setSize(this.lastWidth, this.lastHeight, false);
+      }
+    } else if (now - this.lastScaleAt > 500) {
+      // Desktop / low-end laptops keep the original dynamic resolution (down to 55% of the device cap).
+      this.lastScaleAt = now;
+      const cap = this.maxRatio;
+      let r = this.renderer.getPixelRatio();
+      if (this.ftEma > 26 && r > cap * 0.55) r = Math.max(cap * 0.55, r - 0.1);
+      else if (this.ftEma < 14 && r < cap) r = Math.min(cap, r + 0.05);
+      if (Math.abs(r - this.renderer.getPixelRatio()) > 0.01) {
+        this.renderer.setPixelRatio(r);
+        this.renderer.setSize(this.lastWidth, this.lastHeight, false);
+      }
+    }
+
     this.renderer.render(this.scene, this.camera);
   }
+  private lastFrameAt = 0;
+  private lastScaleAt = 0;
+  private ftEma = 16;
+  private maxRatio = 1;
 
   public getRenderStats(): RenderStats {
     const info = this.renderer.info;
@@ -284,15 +370,110 @@ export class CityRenderer {
     };
   }
 
-  public handleResize(width: number, height: number) {
-    const safeWidth = width || 1;
-    const safeHeight = height || 1;
+  public handleResize(width: number, height: number, force = false) {
+    const safeWidth = Math.max(1, Math.floor(width));
+    const safeHeight = Math.max(1, Math.floor(height));
+
+    // Avoid redundant WebGL backbuffer reallocations if dimensions have not changed
+    if (!force && safeWidth === this.lastWidth && safeHeight === this.lastHeight) {
+      return;
+    }
+
+    this.lastWidth = safeWidth;
+    this.lastHeight = safeHeight;
     this.camera.aspect = safeWidth / safeHeight;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(safeWidth, safeHeight);
+
+    // updateStyle: false prevents Three.js from setting inline style pixel dimensions,
+    // keeping CSS width: 100% and height: 100% in charge of the visual canvas element.
+    this.renderer.setSize(safeWidth, safeHeight, false);
   }
 
+  /**
+   * Complete WebGL resource cleanup:
+   * Disposes scene geometries, materials, textures, render targets, shadow maps,
+   * renderer WebGL context, and safely unlinks the canvas DOM element.
+   */
   public dispose() {
+    const disposedGeometries = new Set<THREE.BufferGeometry>();
+    const disposedMaterials = new Set<THREE.Material>();
+    const disposedTextures = new Set<THREE.Texture>();
+
+    const disposeTexture = (tex: any) => {
+      if (tex && typeof tex.dispose === 'function' && !disposedTextures.has(tex)) {
+        disposedTextures.add(tex);
+        tex.dispose();
+      }
+    };
+
+    const disposeMaterial = (mat: any) => {
+      if (!mat || disposedMaterials.has(mat)) return;
+      disposedMaterials.add(mat);
+
+      const textureKeys = [
+        'map', 'lightMap', 'bumpMap', 'normalMap', 'specularMap',
+        'envMap', 'alphaMap', 'aoMap', 'displacementMap',
+        'roughnessMap', 'metalnessMap', 'emissiveMap',
+      ];
+      for (const key of textureKeys) {
+        if (mat[key]) disposeTexture(mat[key]);
+      }
+
+      if (typeof mat.dispose === 'function') {
+        mat.dispose();
+      }
+    };
+
+    // Traverse scene and release all attached non-shared render resources
+    this.scene.traverse((obj: any) => {
+      if (obj.geometry && typeof obj.geometry.dispose === 'function' && !disposedGeometries.has(obj.geometry)) {
+        disposedGeometries.add(obj.geometry);
+        obj.geometry.dispose();
+      }
+
+      if (obj.material) {
+        if (Array.isArray(obj.material)) {
+          for (const m of obj.material) disposeMaterial(m);
+        } else {
+          disposeMaterial(obj.material);
+        }
+      }
+    });
+
+    // Dispose lights and shadow map render targets
+    if (this.sunLight) {
+      if (this.sunLight.shadow?.map) {
+        this.sunLight.shadow.map.dispose();
+      }
+      this.sunLight.dispose?.();
+    }
+    if (this.ambientLight) {
+      this.ambientLight.dispose?.();
+    }
+    if (this.hemiLight) {
+      this.hemiLight.dispose?.();
+    }
+
+    // Clean up internal renderer render lists
+    this.renderer.renderLists?.dispose?.();
+
+    // Detach WebGL context recovery event listeners
+    const dom = this.renderer.domElement;
+    if (dom) {
+      dom.removeEventListener('webglcontextlost', this.onContextLost);
+      dom.removeEventListener('webglcontextrestored', this.onContextRestored);
+    }
+
+    // Dispose WebGLRenderer and force context loss to release GPU resources immediately
     this.renderer.dispose();
+    this.renderer.forceContextLoss?.();
+
+    // Safely remove canvas DOM element if still connected
+    if (dom && dom.parentNode) {
+      dom.parentNode.removeChild(dom);
+    }
+
+    // Clear scene graph references
+    this.scene.clear();
   }
 }

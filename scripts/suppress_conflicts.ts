@@ -46,11 +46,11 @@ interface Corridor {
   half: number;
 }
 
-function writeFileRetry(file: string, data: string, attempts = 5): void {
+function writeFileRetry(file: string, data: string, attempts = 40): void {
   for (let i = 0; ; i++) {
     try { fs.writeFileSync(file, data); return; } catch (err) {
       if (i >= attempts - 1) throw err;
-      const until = Date.now() + 60 * (i + 1);
+      const until = Date.now() + Math.min(2000, 100 * (i + 1));
       while (Date.now() < until) { /* backoff */ }
     }
   }
@@ -199,7 +199,7 @@ function main(): void {
     if (w.isPolygon && pts.length >= 3) {
       waterAreas.add(pts);
     } else {
-      const half = Math.min(90, Math.max(10, ((w.width as number) ?? 35) / 2));
+      const half = Math.max(1, ((w.width as number) ?? 4) / 2);
       for (let i = 0; i < pts.length - 1; i++) {
         waterLines.add({ ax: pts[i].x, az: pts[i].z, bx: pts[i + 1].x, bz: pts[i + 1].z, half });
       }

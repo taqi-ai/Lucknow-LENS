@@ -46,8 +46,6 @@ export interface NavigationRoute {
   transportMode: TransportMode;
   preference: RoutePreference;
   majorRoads: string[];
-  trafficConditions: 'clear' | 'moderate' | 'congested';
-  trafficDelayMinutes: number;
   closuresAvoidedCount: number;
   isAlternative?: boolean;
   alternativeRoutes?: NavigationRoute[];

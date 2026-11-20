@@ -29,7 +29,7 @@ interface Candidate {
   z: number;
   importance: number;
   type: string;
-  kind: 'place' | 'road';
+  kind: 'place' | 'road' | 'district';
 }
 
 // ─── Per-LOD configuration ────────────────────────────────────────────────────
@@ -60,6 +60,26 @@ const LOD_CONFIG: Record<LODLevel, LODConfig> = {
   // STREET — what is actually within walking distance
   3: { placeMinImp: 5, placeMax: 12, roadMinImp: 6,  roadMax: 8,  visRadius: 900,   baseScale: 1.0, labelHeight: 30  },
 };
+
+export interface LabelSettings {
+  places: boolean;
+  roads: boolean;
+  /** Only monuments and major landmarks. */
+  landmarksOnly: boolean;
+  density: 'minimal' | 'balanced' | 'rich';
+  size: 'small' | 'medium' | 'large';
+}
+
+/** Calm by default: a few place anchors, no road names until asked for. */
+export const DEFAULT_LABEL_SETTINGS: LabelSettings = {
+  places: true, roads: false, landmarksOnly: false, density: 'balanced', size: 'medium',
+};
+
+const DENSITY = { minimal: { count: 0.5, imp: 1 }, balanced: { count: 1, imp: 0 }, rich: { count: 1.8, imp: -1 } } as const;
+const SIZE = { small: 0.82, medium: 0.95, large: 1.15 } as const;
+const LANDMARK_TYPES = new Set(['landmark', 'monument', 'landmark_and_historical_building']);
+const CITY_LANDMARK = /imambara|darwaza|gate|masjid|mosque|mandir|temple|church|gurudwara|park|memorial|smarak|residency|station|junction|airport|stadium|tower|ghanta|kothi|manzil|maqbara|tomb|baradari|ghat|vidhan|bhawan|university|college|hospital|zoo|museum|gallery|palace|mahal|bridge|riverfront|chowk|bazaar|market|ganj/i;
+const NOT_LANDMARK = /institute|academy|coaching|classes|healthcare|clinic|office|dairy|oyo|hotel|residency inn|pvt|ltd|store|shop|services|consult/i;
 
 // ─── Canvas sprite factory ────────────────────────────────────────────────────
 
@@ -155,6 +175,143 @@ function createTextSprite(style: SpriteStyle): THREE.Sprite {
   return sprite;
 }
 
+// ─── Lucknow label style ──────────────────────────────────────────────────────
+//
+// Landmarks get a small plaque: a cusped Awadhi arch glyph in zardozi gold and
+// the name set in Rozha One. Everything else is bare type on a soft halo, the
+// way good printed maps do it, so the city is not buried under pills.
+
+export const LABEL_FONTS = { display: '"Rozha One", Georgia, serif', text: 'Mukta, "Hanken Grotesk", system-ui, sans-serif' };
+
+type LabelKind = 'landmark' | 'major' | 'place' | 'road' | 'roadMajor' | 'district';
+
+function drawArch(ctx: CanvasRenderingContext2D, x: number, y: number, h: number, color: string) {
+  // a three-lobed (cusped) arch on two slim piers
+  const w = h * 0.72, r = w / 2;
+  ctx.save();
+  ctx.strokeStyle = color; ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x - r, y + h / 2);
+  ctx.lineTo(x - r, y - h * 0.02);
+  ctx.quadraticCurveTo(x - r, y - h * 0.32, x - r * 0.42, y - h * 0.3);
+  ctx.quadraticCurveTo(x - r * 0.38, y - h * 0.52, x, y - h / 2);
+  ctx.quadraticCurveTo(x + r * 0.38, y - h * 0.52, x + r * 0.42, y - h * 0.3);
+  ctx.quadraticCurveTo(x + r, y - h * 0.32, x + r, y - h * 0.02);
+  ctx.lineTo(x + r, y + h / 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function createLabelSprite(text: string, kind: LabelKind, night: boolean): THREE.Sprite {
+  const dpr = 2;
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d')!;
+  const plaque = kind === 'landmark';
+  const size = kind === 'district' ? 15 : plaque ? 15 : kind === 'major' ? 13 : kind === 'place' ? 12 : kind === 'roadMajor' ? 11 : 10;
+  const font = kind === 'district' ? `700 ${size}px ${LABEL_FONTS.text}` : plaque ? `400 ${size}px ${LABEL_FONTS.display}` : kind.startsWith('road') ? `500 ${size}px ${LABEL_FONTS.text}` : `${kind === 'major' ? 700 : 600} ${size}px ${LABEL_FONTS.text}`;
+  const label = kind.startsWith('road') || kind === 'district' ? text.toUpperCase() : text;
+  const tracking = kind === 'district' ? 3.2 : kind.startsWith('road') ? 1.2 : 0;
+  ctx.font = font;
+  if ('letterSpacing' in ctx) (ctx as unknown as { letterSpacing: string }).letterSpacing = `${tracking}px`;
+  const tw = ctx.measureText(label).width;
+
+  const padH = plaque ? 11 : 6, padV = plaque ? 7 : 5;
+  const glyph = plaque ? 16 : kind === 'major' ? 9 : 0;
+  const W = Math.ceil(tw + padH * 2 + glyph + 2), H = Math.ceil(size * 1.25 + padV * 2);
+  canvas.width = W * dpr; canvas.height = H * dpr;
+  ctx.scale(dpr, dpr);
+  ctx.font = font;
+  if ('letterSpacing' in ctx) (ctx as unknown as { letterSpacing: string }).letterSpacing = `${tracking}px`;
+  ctx.textBaseline = 'middle';
+
+  const gold = night ? '#e2c27a' : '#a87b24';
+  const ink = night ? '#f4efe4' : '#1d2a26';
+  const halo = night ? 'rgba(8,12,18,0.92)' : 'rgba(250,247,240,0.95)';
+
+  if (plaque) {
+    const r = H / 2;
+    ctx.shadowColor = 'rgba(0,0,0,0.28)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 2;
+    ctx.fillStyle = night ? 'rgba(18,24,22,0.94)' : 'rgba(252,249,242,0.97)';
+    ctx.beginPath(); ctx.roundRect(1, 1, W - 2, H - 2, r); ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.strokeStyle = night ? 'rgba(226,194,122,0.55)' : 'rgba(168,123,36,0.55)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(3.5, 3.5, W - 7, H - 7, r - 2.5); ctx.stroke();
+    drawArch(ctx, padH + 5, H / 2 + 0.5, H * 0.5, gold);
+    ctx.fillStyle = ink;
+    ctx.fillText(label, padH + glyph, H / 2 + 1);
+  } else {
+    const x = 2 + padH + glyph;
+    if (kind === 'major') {
+      // a small gold lozenge marks institutions and districts
+      ctx.save(); ctx.translate(padH + 3, H / 2); ctx.rotate(Math.PI / 4);
+      ctx.fillStyle = gold; ctx.fillRect(-2.6, -2.6, 5.2, 5.2); ctx.restore();
+    }
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = halo; ctx.lineWidth = kind.startsWith('road') ? 3 : kind === 'district' ? 4.4 : 3.6;
+    ctx.strokeText(label, x, H / 2 + 1);
+    ctx.fillStyle = kind === 'district' ? (night ? 'rgba(236,214,160,0.95)' : 'rgba(96,66,20,0.92)') : kind.startsWith('road') ? (night ? 'rgba(214,222,234,0.78)' : 'rgba(58,70,66,0.82)') : kind === 'place' ? (night ? 'rgba(244,239,228,0.86)' : 'rgba(29,42,38,0.86)') : ink;
+    ctx.fillText(label, x, H / 2 + 1);
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.generateMipmaps = true;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, sizeAttenuation: false }));
+  (sprite as any).__canvasW = W;
+  (sprite as any).__canvasH = H;
+  return sprite;
+}
+
+// ─── Name hygiene and district tier (round 3) ────────────────────────────────
+
+/**
+ * Overture place names include advertising copy ("Best Hospital in ... Lucknow", phone
+ * numbers, "price 5500 call me"). Those are dropped; long names are cut at the first
+ * separator and then truncated at a word boundary so no label dominates the map.
+ */
+const SPAM = /price|call me|whats\s?app|\b\d{7,}\b|\bbest\b.*\b(in|for)\b|\?{2,}|₹|\brs\.?\s?\d/i;
+const MAX_LABEL_CHARS = 30;
+const cleanCache = new Map<string, string | null>();
+function cleanName(raw: string): string | null {
+  const hit = cleanCache.get(raw);
+  if (hit !== undefined) return hit;
+  let n = raw.trim();
+  let out: string | null = null;
+  if (n && !SPAM.test(n)) {
+    n = n.split(/\s[|–—-]\s|,/)[0].trim();
+    n = n.replace(/\s+(lucknow|uttar pradesh|india)$/i, '').trim();
+    if (n.length > MAX_LABEL_CHARS) {
+      const cut = n.slice(0, MAX_LABEL_CHARS + 1);
+      const sp = cut.lastIndexOf(' ');
+      n = (sp > 14 ? cut.slice(0, sp) : cut.slice(0, MAX_LABEL_CHARS)).trim() + '…';
+    }
+    out = n.length >= 2 ? n : null;
+  }
+  cleanCache.set(raw, out);
+  return out;
+}
+
+/**
+ * Level-1 district names. Positions come from named anchors present in the data (the
+ * Hazratganj chauraha, the Charbagh station site, Chowk Hospital and Stadium, the Aminabad
+ * Road park, Alambagh bus station, the Cantonment Board Hospital, the Taj and Ambedkar
+ * sites near Gomti Nagar and the Dubagga TV tower site). They are label anchors, not
+ * boundaries. No Hindi names are included because none are in the source data.
+ */
+export const DISTRICTS: Array<{ id: string; name: string; x: number; z: number }> = [
+  { id: 'district:hazratganj', name: 'Hazratganj', x: -420, z: 340 },
+  { id: 'district:hussainabad', name: 'Hussainabad', x: -4000, z: -2300 },
+  { id: 'district:chowk', name: 'Chowk', x: -4000, z: -1800 },
+  { id: 'district:aminabad', name: 'Aminabad', x: -2340, z: 300 },
+  { id: 'district:charbagh', name: 'Charbagh', x: -2599, z: 2111 },
+  { id: 'district:alambagh', name: 'Alambagh', x: -4500, z: 3600 },
+  { id: 'district:cantonment', name: 'Cantonment', x: -500, z: 2700 },
+  { id: 'district:gomtinagar', name: 'Gomti Nagar', x: 2300, z: -250 },
+  { id: 'district:dubagga', name: 'Dubagga', x: -8372, z: -2707 },
+];
+
 // ─── LabelManager ─────────────────────────────────────────────────────────────
 
 export class LabelManager {
@@ -166,12 +323,21 @@ export class LabelManager {
   private loaded = false;
 
   private activeSprites = new Set<THREE.Sprite>();
+  /** Ids shown at the last rebuild: ranked up so labels do not flicker as the camera drifts. */
+  private shownIds = new Set<string>();
+  private selectedId: string | null = null;
   // Caching to prevent recreating canvas textures
   private spriteCache = new Map<string, THREE.Sprite>();
 
   private currentLOD: LODLevel = 0;
   private isNight = true;
-  public enabled = true;
+  private _enabled = true;
+  public get enabled(): boolean { return this._enabled; }
+  public set enabled(v: boolean) {
+    if (v && !this._enabled) this.lastCamPos.set(1e9, 0, 0); // re-enabled: rebuild even if the camera has not moved
+    this._enabled = v;
+  }
+  private settings: LabelSettings = DEFAULT_LABEL_SETTINGS;
 
   // Track camera movement to trigger rebuilds
   private lastCamPos = new THREE.Vector3();
@@ -198,6 +364,14 @@ export class LabelManager {
         loadJSON<RoadLabel[]>('/overture_tiles_full/road_labels.json'),
       ]);
 
+      // Canvas text uses whatever font is loaded at draw time, so wait for the label faces (briefly).
+      if (typeof document !== 'undefined' && document.fonts?.load) {
+        await Promise.race([
+          Promise.all([document.fonts.load(`15px ${LABEL_FONTS.display}`), document.fonts.load(`600 12px ${LABEL_FONTS.text}`), document.fonts.load(`700 13px ${LABEL_FONTS.text}`)]),
+          new Promise((r) => setTimeout(r, 2500)),
+        ]).catch(() => undefined);
+        this.clearCache();
+      }
       this.allPlaces = places.slice().sort((a, b) => b.importance - a.importance);
       this.allRoads = roads;
       this.loaded = true;
@@ -209,10 +383,23 @@ export class LabelManager {
 
   public setCamera(cam: THREE.Camera): void { this.camera = cam; }
 
+  /** A selected place always gets its label, ahead of budgets and collisions. */
+  public setSelected(id: string | null): void {
+    if (this.selectedId === id) return;
+    this.selectedId = id;
+    this.lastCamPos.set(1e9, 0, 0);
+  }
+
+  public setSettings(next: LabelSettings): void {
+    this.settings = next;
+    this.lastCamPos.set(1e9, 0, 0); // force a rebuild on the next frame
+  }
+
   public setNightMode(night: boolean): void {
     if (this.isNight === night) return;
     this.isNight = night;
     this.clearCache();
+    this.lastCamPos.set(1e9, 0, 0); // redraw in the new palette without waiting for the camera to move
   }
 
   public setViewport(w: number, h: number): void {
@@ -250,12 +437,29 @@ export class LabelManager {
 
   private rebuild(camPos: THREE.Vector3, lod: LODLevel): void {
     this.hideAll();
-    const cfg = LOD_CONFIG[lod];
+    const base = LOD_CONFIG[lod];
+    const dens = DENSITY[this.settings.density];
+    const cfg: LODConfig = {
+      ...base,
+      placeMinImp: base.placeMinImp + dens.imp,
+      roadMinImp: base.roadMinImp + dens.imp,
+      placeMax: Math.max(1, Math.round(base.placeMax * dens.count)),
+      roadMax: Math.max(1, Math.round(base.roadMax * dens.count)),
+      baseScale: base.baseScale * SIZE[this.settings.size],
+    };
     const camX = camPos.x, camZ = camPos.z;
 
     // ── Screen-space occupancy grid (pixel rects) ──────────────────────────────
     const occupied: { cx: number; cy: number; hw: number; hh: number }[] = [];
-    const PADDING = 20; // Screen pixels padding between labels
+    const PADX = 12, PADY = 7; // pixel gaps between labels
+    const vw = this.viewport.x, vh = this.viewport.y;
+    // Screen regions the interface occupies: left toolbar, top pill, right dock, footer credit.
+    const reserved = [
+      { x0: 0, x1: 80, y0: 0, y1: 150 },
+      { x0: vw / 2 - 110, x1: vw / 2 + 110, y0: 0, y1: 62 },
+      { x0: vw - 76, x1: vw, y0: 56, y1: 440 },
+      { x0: 0, x1: vw, y0: vh - 30, y1: vh },
+    ];
 
     const ndcOf = (wx: number, wz: number, wy: number): THREE.Vector3 | null => {
       if (!this.camera) return null;
@@ -269,10 +473,13 @@ export class LabelManager {
     const overlaps = (px: number, py: number, hw: number, hh: number): boolean => {
       for (const r of occupied) {
         if (
-          Math.abs(px - r.cx) < (hw + r.hw + PADDING) &&
-          Math.abs(py - r.cy) < (hh + r.hh + PADDING)
+          Math.abs(px - r.cx) < (hw + r.hw + PADX) &&
+          Math.abs(py - r.cy) < (hh + r.hh + PADY)
         ) return true;
       }
+      // Never off-screen, never under the interface.
+      if (px - hw < 4 || px + hw > vw - 4 || py - hh < 4 || py + hh > vh - 4) return true;
+      for (const q of reserved) if (px + hw > q.x0 && px - hw < q.x1 && py + hh > q.y0 && py - hh < q.y1) return true;
       return false;
     };
 
@@ -280,23 +487,44 @@ export class LabelManager {
     let candidates: Candidate[] = [];
 
     // Filter places
-    for (const p of this.allPlaces) {
-      if (p.importance < cfg.placeMinImp) break; // Array is sorted by importance desc
+    for (const p of (this.settings.places ? this.allPlaces : [])) {
+      if (p.importance < cfg.placeMinImp) break;
+      if (this.settings.landmarksOnly && !(LANDMARK_TYPES.has(p.type) || p.importance >= 9)) continue; // Array is sorted by importance desc
       // Filter out ordinary businesses at high LODs
       if (lod <= 1 && (p.type === 'shop' || p.type === 'business' || p.type === 'restaurant' || p.importance < 6)) {
          continue;
       }
+      // At city and district scale only genuine monuments and city landmarks may show: Overture
+      // tags coaching centres, dairies and hotels as "landmark" too (round 3 label clean-up).
+      if (lod <= 1 && (!CITY_LANDMARK.test(p.name) || NOT_LANDMARK.test(p.name))) continue;
       const dist = Math.hypot(p.x - camX, p.z - camZ);
       if (dist > cfg.visRadius) continue;
-      candidates.push({ ...p, kind: 'place' });
+      const clean = cleanName(p.name);
+      if (!clean) continue;
+      candidates.push({ ...p, name: clean, kind: 'place' });
     }
 
     // Filter roads
-    for (const r of this.allRoads) {
+    for (const r of (this.settings.roads ? this.allRoads : [])) {
       if (r.importance < cfg.roadMinImp) break;
       const dist = Math.hypot(r.x - camX, r.z - camZ);
       if (dist > cfg.visRadius) continue;
       candidates.push({ ...r, kind: 'road' });
+    }
+
+    // Districts: the only text at wide scale, fading out as street scale approaches.
+    if (this.settings.places && lod <= 1) {
+      for (const d of DISTRICTS) {
+        if (Math.hypot(d.x - camX, d.z - camZ) > 40000) continue;
+        candidates.push({ id: d.id, name: d.name, x: d.x, z: d.z, importance: 12, type: 'district', kind: 'district' });
+      }
+    }
+    // The selected place always competes first, even below the importance floor.
+    if (this.selectedId) {
+      const sel = this.allPlaces.find((q) => q.id === this.selectedId);
+      if (sel && !candidates.some((q) => q.id === sel.id)) {
+        candidates.push({ ...sel, name: cleanName(sel.name) ?? sel.name, importance: 11, kind: 'place' });
+      }
     }
 
     // Rank: landmark place types first, then importance, then proximity. Without the
@@ -305,18 +533,27 @@ export class LabelManager {
     const rank = (c: Candidate): number => {
       const isLandmark = (c.kind === 'place' && (c as PlaceLabel).type === 'landmark') ? 20 : 0;
       const dist = Math.hypot(c.x - camX, c.z - camZ);
-      return isLandmark + c.importance * 3 - (dist / cfg.visRadius) * 4;
+      const stay = this.shownIds.has(c.id) ? 8 : 0;
+      const sel = c.id === this.selectedId ? 1000 : 0;
+      const dis = c.kind === 'district' ? 60 : 0;
+      return sel + dis + stay + isLandmark + c.importance * 3 - (dist / cfg.visRadius) * 4;
     };
     candidates.sort((a, b) => rank(b) - rank(a));
 
     let placesAdded = 0;
     let roadsAdded = 0;
 
+    const seenNames = new Set<string>();
+    const nextShown = new Set<string>();
     for (const c of candidates) {
-      if (c.kind === 'place' && placesAdded >= cfg.placeMax) continue;
+      const isSel = c.id === this.selectedId;
+      if (c.kind === 'place' && !isSel && placesAdded >= cfg.placeMax) continue;
       if (c.kind === 'road' && roadsAdded >= cfg.roadMax) continue;
+      // A chain or repeated name appears once per view.
+      const nameKey = c.name.toLowerCase();
+      if (c.kind !== 'district' && !isSel && seenNames.has(nameKey)) continue;
 
-      const wy = c.kind === 'place' ? this.labelHeightAt(c.importance, cfg) : cfg.labelHeight * 0.6;
+      const wy = c.kind === 'district' ? cfg.labelHeight * 1.4 : c.kind === 'place' ? this.labelHeightAt(c.importance, cfg) : cfg.labelHeight * 0.6;
       const ndc = ndcOf(c.x, c.z, wy);
       if (!ndc) continue;
 
@@ -325,14 +562,15 @@ export class LabelManager {
       const cw = (sprite as any).__canvasW as number;
       const ch = (sprite as any).__canvasH as number;
 
-      const hw = cw / 2;
-      const hh = ch / 2;
+      const hw = (cw * cfg.baseScale) / 2;
+      const hh = (ch * cfg.baseScale) / 2;
 
       // Convert NDC [-1,1] to pixel space for overlap check
       const px = (ndc.x * 0.5 + 0.5) * this.viewport.x;
       const py = (1 - (ndc.y * 0.5 + 0.5)) * this.viewport.y;
 
-      if (overlaps(px, py, hw, hh)) continue;
+      if (!isSel && overlaps(px, py, hw, hh)) continue;
+      seenNames.add(nameKey); nextShown.add(c.id);
 
       // Register occupancy
       occupied.push({ cx: px, cy: py, hw, hh });
@@ -354,8 +592,9 @@ export class LabelManager {
       this.activeSprites.add(sprite);
 
       if (c.kind === 'place') placesAdded++;
-      else roadsAdded++;
+      else if (c.kind === 'road') roadsAdded++;
     }
+    this.shownIds = nextShown;
   }
 
   private labelHeightAt(imp: number, cfg: LODConfig): number {
@@ -369,8 +608,10 @@ export class LabelManager {
       return this.spriteCache.get(key)!;
     }
 
-    const sprite = c.kind === 'place' 
-      ? this.makePlaceSprite(c, cfg) 
+    const sprite = c.kind === 'district'
+      ? this.makeDistrictSprite(c)
+      : c.kind === 'place'
+      ? this.makePlaceSprite(c, cfg)
       : this.makeRoadSprite(c, cfg);
     
     sprite.visible = false;
@@ -379,99 +620,22 @@ export class LabelManager {
     return sprite;
   }
 
-  private makePlaceSprite(p: Candidate, cfg: LODConfig): THREE.Sprite {
-    const isLandmark = (p as PlaceLabel).type === 'landmark' || 
-                       (p as PlaceLabel).type === 'monument' || 
-                       (p as PlaceLabel).type === 'landmark_and_historical_building' ||
-                       p.importance >= 9;
-    const highImp = isLandmark || p.importance >= 8;
-    const midImp  = p.importance >= 6;
-
-    let bgColor: string;
-    let textColor: string;
-    let borderColor: string | undefined;
-    let badgeColor: string | undefined;
-
-    if (this.isNight) {
-      if (isLandmark) {
-        bgColor = 'rgba(245, 175, 75, 0.95)';
-        textColor = '#0f172a';
-        borderColor = 'rgba(255, 235, 180, 0.85)';
-        badgeColor = '#b45309';
-      } else if (highImp) {
-        bgColor = 'rgba(15, 23, 42, 0.88)';
-        textColor = '#f8fafc';
-        borderColor = 'rgba(255, 255, 255, 0.25)';
-        badgeColor = '#38bdf8';
-      } else {
-        bgColor = midImp ? 'rgba(15, 23, 42, 0.78)' : 'rgba(10, 14, 22, 0.70)';
-        textColor = midImp ? '#cbd5e1' : '#94a3b8';
-        borderColor = 'rgba(255, 255, 255, 0.12)';
-      }
-    } else {
-      if (isLandmark) {
-        bgColor = 'rgba(194, 95, 20, 0.96)';
-        textColor = '#ffffff';
-        borderColor = 'rgba(255, 255, 255, 0.4)';
-        badgeColor = '#fef08a';
-      } else if (highImp) {
-        bgColor = 'rgba(255, 255, 255, 0.94)';
-        textColor = '#0f172a';
-        borderColor = 'rgba(0, 0, 0, 0.16)';
-        badgeColor = '#0284c7';
-      } else {
-        bgColor = midImp ? 'rgba(255, 255, 255, 0.86)' : 'rgba(255, 255, 255, 0.75)';
-        textColor = midImp ? '#1e293b' : '#475569';
-        borderColor = 'rgba(0, 0, 0, 0.08)';
-      }
-    }
-
-    const fontSize = isLandmark ? 15 : highImp ? 13 : midImp ? 12 : 11;
-    const bold = highImp;
-
-    const sprite = createTextSprite({
-      text: p.name,
-      textColor,
-      bgColor,
-      borderColor,
-      badgeColor,
-      fontSize,
-      bold,
-      paddingH: isLandmark ? 11 : 9,
-      paddingV: isLandmark ? 6 : 4,
-    });
+  private makePlaceSprite(p: Candidate, _cfg: LODConfig): THREE.Sprite {
+    const isLandmark = LANDMARK_TYPES.has((p as PlaceLabel).type) || (p.importance >= 10 && !/mall|palassio|plaza|hotel|bus|terminal/i.test(p.name));
+    const kind: LabelKind = isLandmark ? 'landmark' : p.importance >= 7 ? 'major' : 'place';
+    const sprite = createLabelSprite(p.name, kind, this.isNight);
     sprite.renderOrder = isLandmark ? 1000 : 999;
     return sprite;
   }
 
-  private makeRoadSprite(r: Candidate, cfg: LODConfig): THREE.Sprite {
-    const highImp = r.importance >= 8;
+  private makeDistrictSprite(d: Candidate): THREE.Sprite {
+    const sprite = createLabelSprite(d.name, 'district', this.isNight);
+    sprite.renderOrder = 1001;
+    return sprite;
+  }
 
-    // Roads read as unobtrusive route markers, never as chips competing with places.
-    const bgColor = this.isNight
-      ? 'rgba(15, 23, 42, 0.65)'
-      : 'rgba(255, 255, 255, 0.72)';
-
-    const textColor = this.isNight
-      ? (highImp ? '#93c5fd' : '#94a3b8')
-      : (highImp ? '#0369a1' : '#475569');
-
-    const borderColor = this.isNight
-      ? 'rgba(148, 163, 184, 0.2)'
-      : 'rgba(0, 0, 0, 0.08)';
-
-    const fontSize = highImp ? 12 : 10;
-
-    const sprite = createTextSprite({
-      text: r.name,
-      textColor,
-      bgColor,
-      borderColor,
-      fontSize,
-      bold: highImp,
-      paddingH: 8,
-      paddingV: 3,
-    });
+  private makeRoadSprite(r: Candidate, _cfg: LODConfig): THREE.Sprite {
+    const sprite = createLabelSprite(r.name, r.importance >= 8 ? 'roadMajor' : 'road', this.isNight);
     sprite.renderOrder = 998;
     return sprite;
   }

@@ -1,193 +1,167 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useId } from 'react';
 import { SearchResult, OSMMapData } from '../../types';
-import { SearchIndex } from '../../search/SearchIndex';
-import {
-  Search,
-  MapPin,
-  Hospital,
-  Utensils,
-  Hotel,
-  ShoppingBag,
-  Landmark,
-  Navigation,
-  Plane,
-  TreePine,
-  Building2,
-  X,
-  Compass,
-} from 'lucide-react';
+import { SearchIndex, unproject } from '../../search/SearchIndex';
+import { DESTINATIONS, searchDestinations, type Destination } from '../../city/destinations';
+import { Search, MapPin, Hospital, Utensils, Hotel, ShoppingBag, Landmark, Train, Plane, TreePine, Building2, GraduationCap, X, Navigation, Loader2 } from 'lucide-react';
 
 interface SearchUIProps {
   mapData: OSMMapData;
   onSelectResult: (result: SearchResult) => void;
   onSetDestinationWaypoint?: (dest: { x: number; z: number; name: string }) => void;
-  isNavigationMode?: boolean;
-  onToggleNavigationMode?: (active: boolean) => void;
 }
 
-const getCategoryIcon = (category: string) => {
-  const cat = category.toLowerCase();
-  if (cat.includes('hospital') || cat.includes('medical') || cat.includes('health')) return <Hospital className="w-4 h-4 text-emerald-400" />;
-  if (cat.includes('restaurant') || cat.includes('food') || cat.includes('cafe') || cat.includes('bakery')) return <Utensils className="w-4 h-4 text-orange-400" />;
-  if (cat.includes('hotel') || cat.includes('lodging') || cat.includes('resort')) return <Hotel className="w-4 h-4 text-indigo-400" />;
-  if (cat.includes('shopping') || cat.includes('mall') || cat.includes('store') || cat.includes('retail')) return <ShoppingBag className="w-4 h-4 text-amber-400" />;
-  if (cat.includes('landmark') || cat.includes('historic') || cat.includes('monument') || cat.includes('museum')) return <Landmark className="w-4 h-4 text-yellow-400" />;
-  if (cat.includes('station') || cat.includes('bus') || cat.includes('railway') || cat.includes('train')) return <Navigation className="w-4 h-4 text-sky-400" />;
-  if (cat.includes('airport') || cat.includes('flight')) return <Plane className="w-4 h-4 text-cyan-400" />;
-  if (cat.includes('park') || cat.includes('green') || cat.includes('garden') || cat.includes('forest')) return <TreePine className="w-4 h-4 text-green-400" />;
-  if (cat.includes('government') || cat.includes('political') || cat.includes('office') || cat.includes('university') || cat.includes('school')) return <Building2 className="w-4 h-4 text-rose-400" />;
-  return <MapPin className="w-4 h-4 text-slate-400" />;
+/**
+ * Overture place types are noisy (Charbagh station is tagged `beauty_salon`), so
+ * raw categories are never shown. Each type is folded into a plain-English kind,
+ * and anything unrecognised is just "Place".
+ */
+const KINDS: [RegExp, string, React.ElementType][] = [
+  [/hospital|clinic|medical|health|doctor|pharma/, 'Health', Hospital],
+  [/restaurant|food|cafe|bakery|sweet|dhaba|eat/, 'Food', Utensils],
+  [/hotel|lodg|resort|guest/, 'Stay', Hotel],
+  [/mall|shop|store|market|retail/, 'Shopping', ShoppingBag],
+  [/landmark|historic|monument|museum|memorial|mosque|temple|church|imambara/, 'Landmark', Landmark],
+  [/station|railway|train|bus|metro/, 'Transport', Train],
+  [/airport/, 'Airport', Plane],
+  [/park|garden|green|forest|zoo/, 'Park', TreePine],
+  [/school|college|university|institute/, 'Education', GraduationCap],
+  [/government|office|court|assembly|police|fire/, 'Civic', Building2],
+  [/^road$/, 'Road', Navigation],
+];
+const kindOf = (category: string, name: string): [string, React.ElementType] => {
+  const n = name.toLowerCase();
+  // the name is often more reliable than the type
+  if (/station|junction/.test(n)) return ['Transport', Train];
+  if (/airport/.test(n)) return ['Airport', Plane];
+  if (/hospital|medical/.test(n)) return ['Health', Hospital];
+  const c = category.toLowerCase();
+  for (const [re, label, Icon] of KINDS) if (re.test(c)) return [label, Icon];
+  return ['Place', MapPin];
 };
 
-export const SearchUI: React.FC<SearchUIProps> = ({
-  mapData,
-  onSelectResult,
-  onSetDestinationWaypoint,
-  isNavigationMode = false,
-  onToggleNavigationMode,
-}) => {
+const toResult = (d: Destination): SearchResult => {
+  const ll = unproject(d.x, d.z);
+  return { id: `dest:${d.id}`, name: d.name, category: d.category === 'heritage' ? 'landmark' : d.category === 'parks' ? 'park' : d.category === 'transport' ? 'station' : 'landmark',
+    latitude: ll.lat, longitude: ll.lon, x: d.x, z: d.z, importance: 10, presetId: `dest:${d.id}` };
+};
+const FEATURED = DESTINATIONS.filter((d) => d.tier !== 'C' || d.category === 'parks').slice(0, 14).map(toResult);
+
+export const SearchUI: React.FC<SearchUIProps> = ({ mapData, onSelectResult, onSetDestinationWaypoint }) => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const searchIndexRef = useRef<SearchIndex | null>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [active, setActive] = useState(0);
+  const indexRef = useRef<SearchIndex | null>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const listId = useId();
 
-  // Initialize SearchIndex
+  // The index parses a 7 MB file; results wait for it instead of silently coming back empty.
   useEffect(() => {
+    let live = true;
     const index = new SearchIndex();
-    index.initialize();
-    searchIndexRef.current = index;
+    indexRef.current = index;
+    index.initialize().then(() => { if (live) setReady(true); });
+    return () => { live = false; };
   }, []);
 
-  // Handle Search Input Change
   useEffect(() => {
-    if (!searchIndexRef.current || !query.trim()) {
-      setResults([]);
-      return;
-    }
-    const found = searchIndexRef.current.search(query, mapData);
-    setResults(found);
-  }, [query, mapData]);
+    const q = query.trim();
+    if (!indexRef.current || !q || !ready) { setResults([]); return; }
+    const t = window.setTimeout(() => { {
+      const dest = searchDestinations(q).map(toResult);
+      const ids = new Set(dest.map((r) => r.name.toLowerCase()));
+      setResults([...dest, ...indexRef.current!.search(q, mapData).filter((r) => !ids.has(r.name.toLowerCase()))]);
+    } setActive(0); }, 90);
+    return () => window.clearTimeout(t);
+  }, [query, mapData, ready]);
 
-  // Close dropdown on click outside
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setShowDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    const onDown = (e: MouseEvent) => { if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
   }, []);
 
-  const handleSelect = (result: SearchResult) => {
-    onSelectResult(result);
-    setQuery(result.name);
-    setShowDropdown(false);
-  };
+  const pick = (r: SearchResult) => { onSelectResult(r); setQuery(r.name); setOpen(false); (document.activeElement as HTMLElement | null)?.blur(); };
 
-  const handleClear = () => {
-    setQuery('');
-    setResults([]);
-    setShowDropdown(false);
-  };
+  const featuredMode = open && query.trim().length === 0;
+  const list = featuredMode ? FEATURED : results;
+  const showList = open && (query.trim().length > 0 || featuredMode);
 
   return (
-    <div className="relative w-full z-30 space-y-2" ref={dropdownRef}>
-      {/* Dual Mode Switch: [ EXPLORE ] and [ NAVIGATE ] */}
-      {onToggleNavigationMode && (
-        <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-900/90 border border-slate-700/60 backdrop-blur-xl rounded-2xl shadow-xl">
-          <button
-            onClick={() => onToggleNavigationMode(false)}
-            className={`py-1.5 px-3 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all ${
-              !isNavigationMode
-                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Compass className="w-3.5 h-3.5" />
-            <span>EXPLORE</span>
+    <div ref={boxRef} className="w-full">
+      <div className="glass-panel flex items-center gap-2.5 rounded-2xl px-3.5 py-2.5 transition-shadow focus-within:shadow-[0_0_0_1px_rgba(216,182,106,.55),0_18px_50px_-18px_rgba(0,0,0,.65)]">
+        <Search className="h-4 w-4 flex-shrink-0 text-paper/50" />
+        <input
+          type="search"
+          role="combobox"
+          aria-expanded={showList}
+          aria-controls={listId}
+          aria-activedescendant={showList && list[active] ? `${listId}-${active}` : undefined}
+          placeholder="Search places, roads, landmarks"
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={(e) => {
+            if (!showList || list.length === 0) { if (e.key === 'Escape') setOpen(false); return; }
+            if (e.key === 'ArrowDown') { e.preventDefault(); setActive((i) => (i + 1) % list.length); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((i) => (i - 1 + list.length) % list.length); }
+            else if (e.key === 'Enter') { e.preventDefault(); pick(list[active]); }
+            else if (e.key === 'Escape') setOpen(false);
+          }}
+          className="w-full min-w-0 border-none bg-transparent text-[13px] font-medium text-paper outline-none placeholder:text-paper/40 [&::-webkit-search-cancel-button]:hidden"
+        />
+        {query && (
+          <button onClick={() => { setQuery(''); setResults([]); }} aria-label="Clear search" className="flex-shrink-0 rounded-lg p-1 text-paper/50 hover:bg-white/10 hover:text-paper">
+            <X className="h-3.5 w-3.5" />
           </button>
+        )}
+      </div>
 
-          <button
-            onClick={() => onToggleNavigationMode(true)}
-            className={`py-1.5 px-3 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all ${
-              isNavigationMode
-                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Navigation className="w-3.5 h-3.5" />
-            <span>NAVIGATE</span>
-          </button>
-        </div>
-      )}
-
-      {/* Search Input Box */}
-      {!isNavigationMode && (
-        <div className="flex items-center gap-2.5 bg-slate-900/80 border border-slate-700/60 backdrop-blur-xl rounded-2xl p-2.5 shadow-2xl transition-all duration-300 focus-within:border-amber-500/50 focus-within:shadow-[0_0_20px_rgba(245,158,11,0.15)]">
-          <Search className="w-4 h-4 text-slate-400 ml-1 flex-shrink-0" />
-          <input
-            type="text"
-            placeholder="Search Lucknow landmarks, roads, places..."
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setShowDropdown(true);
-            }}
-            onFocus={() => setShowDropdown(true)}
-            className="w-full bg-transparent border-none outline-none text-white text-xs font-medium placeholder-slate-500"
-          />
-          {query && (
-            <button
-              onClick={handleClear}
-              className="p-1 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors flex-shrink-0"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
+      {/* In normal flow, not absolutely positioned: the left column scrolls, and an absolute list was being clipped out of sight. */}
+      {showList && (
+        <div className="glass-panel mt-2 overflow-hidden rounded-2xl">
+          {!ready && !featuredMode ? (
+            <p className="flex items-center gap-2 px-4 py-3.5 text-[12.5px] text-paper/60"><Loader2 className="h-3.5 w-3.5 animate-spin" />Loading 48,000 places…</p>
+          ) : list.length === 0 ? (
+            <p className="px-4 py-3.5 text-[12.5px] leading-[1.5] text-paper/60">Nothing called “{query.trim()}”. Try a landmark like Rumi Darwaza, or a road like Shaheed Path.</p>
+          ) : (
+            <ul id={listId} role="listbox" className="max-h-[320px] overflow-y-auto p-1.5 no-scrollbar">
+              {featuredMode && <li className="px-2.5 pb-1 pt-1 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-sand/70">Suggested places · fly to</li>}
+              {list.map((r, i) => {
+                const [kind, Icon] = kindOf(r.category, r.name);
+                return (
+                  <li key={r.id} id={`${listId}-${i}`} role="option" aria-selected={i === active} onMouseEnter={() => setActive(i)}
+                    className={`group flex items-center gap-1 rounded-xl ${i === active ? 'bg-white/[0.08]' : ''}`}>
+                    <button onClick={() => pick(r)} className="flex min-w-0 flex-1 items-center gap-3 px-2.5 py-2 text-left">
+                      <span className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-lg bg-white/[0.07]"><Icon className="h-4 w-4 text-[#e0a55a]" strokeWidth={1.7} /></span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-[13px] font-medium text-paper">{r.name}</span>
+                        <span className="block text-[11px] text-paper/45">{kind}</span>
+                      </span>
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); pick(r); }}
+                      title={`Fly to ${r.name}`} aria-label={`Fly to ${r.name}`}
+                      className="flex flex-shrink-0 items-center gap-1 rounded-lg bg-[#e0a55a]/15 px-2 py-1.5 text-[11px] font-semibold text-[#e8b872] transition-colors hover:bg-[#e0a55a]/30"
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z" fill="currentColor" /></svg>
+                      Fly to
+                    </button>
+                    {onSetDestinationWaypoint && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onSetDestinationWaypoint({ x: r.x, z: r.z, name: r.name }); setOpen(false); }}
+                        title={`Route to ${r.name}`} aria-label={`Route to ${r.name}`}
+                        className="mr-1.5 flex-shrink-0 rounded-lg px-2 py-1.5 text-[11px] font-semibold text-paper/55 opacity-0 transition-opacity hover:bg-white/10 hover:text-paper group-hover:opacity-100 focus:opacity-100"
+                      >
+                        Route
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
           )}
-        </div>
-      )}
-
-      {/* Autocomplete Dropdown List */}
-      {!isNavigationMode && showDropdown && results.length > 0 && (
-        <div className="absolute top-full left-0 right-0 mt-2 bg-slate-900/95 border border-slate-700/80 backdrop-blur-2xl rounded-2xl shadow-2xl max-h-72 overflow-y-auto p-1.5 space-y-1">
-          {results.slice(0, 10).map((item) => (
-            <div
-              key={item.id}
-              onClick={() => handleSelect(item)}
-              className="group flex items-center justify-between p-2 rounded-xl hover:bg-slate-800/80 cursor-pointer transition-colors"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="p-1.5 rounded-lg bg-slate-800 group-hover:bg-slate-700 text-slate-300">
-                  {getCategoryIcon(item.category)}
-                </div>
-                <div className="min-w-0">
-                  <h4 className="text-xs font-bold text-white truncate group-hover:text-amber-400 transition-colors">
-                    {item.name}
-                  </h4>
-                  <span className="text-[10px] text-slate-400 capitalize">
-                    {item.category}
-                  </span>
-                </div>
-              </div>
-
-              {onSetDestinationWaypoint && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSetDestinationWaypoint({ x: item.x, z: item.z, name: item.name });
-                    handleClear();
-                  }}
-                  className="px-2 py-1 bg-purple-500/20 hover:bg-purple-500/40 border border-purple-500/40 text-purple-300 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 flex-shrink-0 ml-2"
-                  title="Navigate here"
-                >
-                  <Navigation className="w-3 h-3" />
-                  <span>Route</span>
-                </button>
-              )}
-            </div>
-          ))}
         </div>
       )}
     </div>

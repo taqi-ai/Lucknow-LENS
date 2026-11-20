@@ -14,7 +14,7 @@
 
 import {
   appendRailway, appendRibbon, buildElevationProfiles, classifyRoad, railGaugeFor,
-  ROAD_HALF_WIDTH, ROAD_LAYER_Y, type Pt, type RailSinks, type RoadClass,
+  ROAD_HALF_WIDTH, ROAD_LAYER_Y, roadHalfWidth, type Pt, type RailSinks, type RoadClass,
 } from './ribbon';
 import { triangulate } from './buildingGeometry';
 import { METRO_STATIONS } from './metroStations';
@@ -34,7 +34,7 @@ export interface OverlayRoad {
   level?: number;
   isElevated?: boolean;
 }
-export interface OverlayWater { id?: string; points: Pt[]; width?: number; isPolygon?: boolean }
+export interface OverlayWater { id?: string; points: Pt[]; width?: number; isPolygon?: boolean; cls?: string; bridgeable?: boolean }
 export interface OverlayArea { id?: string; points: Pt[] }
 
 export interface OverlaySource {
@@ -46,13 +46,25 @@ export interface OverlaySource {
 export interface OverlayBuild {
   /** Road ribbon positions keyed by class. */
   roads: Record<string, Float32Array>;
+  /** Per-vertex (u across -1..1, v metres along) for each road class buffer. */
+  roadsUv: Record<string, Float32Array>;
   water: Float32Array;
+  /** Stone embankment ribbon along river polygon outlines. */
+  riverBank: Float32Array;
   parks: Float32Array;
   bridgeDeck: Float32Array;
   bridgePier: Float32Array;
   bridgeRail: Float32Array;
   flyoverPiers: Float32Array;
   flyoverBarriers: Float32Array;
+  /** Gomti riverfront promenade (paved walk outside the embankment). */
+  promenade: Float32Array;
+  /** Raised median kerbs between paired one-way carriageways. */
+  medianKerb: Float32Array;
+  /** Planted median infill. */
+  medianGrass: Float32Array;
+  /** Zebra crossings and stop lines at junctions. */
+  markings: Float32Array;
   /** Ballast prism at grade / box girder on viaduct. */
   railBed: Float32Array;
   /** Concrete sleepers — street-level detail. */
@@ -176,7 +188,9 @@ function buildRiverIndex(waterways: OverlayWater[]): Map<string, RiverSeg[]> {
   const index = new Map<string, RiverSeg[]>();
   for (const w of waterways) {
     if (w.isPolygon || !w.points || w.points.length < 2) continue;
-    const half = Math.max(18, (w.width ?? 45) / 2);
+    // Only real rivers and major canals get bridges (scripts/py/build_hydrology.py).
+    if (!w.bridgeable) continue;
+    const half = Math.max(6, (w.width ?? 20) / 2);
     for (let i = 0; i < w.points.length - 1; i++) {
       const a = w.points[i];
       const b = w.points[i + 1];
@@ -212,7 +226,7 @@ function findCrossings(roads: OverlayRoad[], waterways: OverlayWater[]): Crossin
     // An elevated feature already carries a deck from its elevation profile;
     // synthesising a river bridge under it too would double the geometry.
     if (road.isElevated || (road.level ?? 0) > 0) continue;
-    const half = Math.max(ROAD_HALF_WIDTH[cls], (road.width ?? 0) / 2);
+    const half = roadHalfWidth(cls, road.type, (road as { id?: string }).id);
 
     for (let i = 0; i < road.points.length - 1; i++) {
       const a = road.points[i];
@@ -320,19 +334,30 @@ function appendBridge(c: Crossing, deck: number[], pier: number[], rail: number[
     }
   }
 
-  const pierCount = span > 90 ? 4 : 2;
+  // River bridge (round 3): a deep girder, a pier every ~30 m standing in the water on a
+  // pointed cutwater footing, pier caps across the deck, parapets with posts and deck lamps.
+  box(pier, -span, span, DECK_Y - 2.2, DECK_Y - 0.55, -half + 0.4, half - 0.4);
+  const pierCount = Math.max(2, Math.round((span * 2) / 30));
   for (let i = 0; i < pierCount; i++) {
-    const tt = (i + 0.5) / pierCount;
-    const pu = -span + tt * span * 2;
-    for (const sv of [-1, 1]) {
-      const pv = sv * half * 0.62;
-      box(pier, pu - 1.6, pu + 1.6, -0.6, DECK_Y - 0.5, pv - 2.2, pv + 2.2);
+    const pu = -span + ((i + 0.5) / pierCount) * span * 2;
+    box(pier, pu - 1.3, pu + 1.3, -1.5, DECK_Y - 2.2, -half * 0.75, half * 0.75);   // wall pier
+    box(pier, pu - 1.8, pu + 1.8, -1.5, 1.2, -half * 0.8 - 1, half * 0.8 + 1);     // footing
+    for (const sv of [-1, 1]) {                                                   // pointed cutwaters
+      const v0 = sv * (half * 0.8 + 1), v1 = sv * (half * 0.8 + 3.2);
+      const q = (a: number[], b: number[], c2: number[]) => { W(a[0], a[1], a[2], pier); W(b[0], b[1], b[2], pier); W(c2[0], c2[1], c2[2], pier); };
+      for (const y of [-1.5, 1.2]) q([pu - 1.8, y, v0], [pu + 1.8, y, v0], [pu, y, v1]);
+      q([pu - 1.8, -1.5, v0], [pu, -1.5, v1], [pu, 1.2, v1]); q([pu - 1.8, -1.5, v0], [pu, 1.2, v1], [pu - 1.8, 1.2, v0]);
+      q([pu + 1.8, -1.5, v0], [pu, 1.2, v1], [pu, -1.5, v1]); q([pu + 1.8, -1.5, v0], [pu + 1.8, 1.2, v0], [pu, 1.2, v1]);
     }
+    box(pier, pu - 1.6, pu + 1.6, DECK_Y - 2.9, DECK_Y - 2.2, -half - 0.3, half + 0.3);  // cap
   }
 
   for (const sv of [-1, 1]) {
     const pv = sv * half;
-    box(rail, -span, span, DECK_Y + 0.55, DECK_Y + 1.85, pv - 0.25, pv + 0.25);
+    box(rail, -span, span, DECK_Y + 0.55, DECK_Y + 0.85, pv - 0.3, pv + 0.3);
+    box(rail, -span, span, DECK_Y + 1.6, DECK_Y + 1.8, pv - 0.18, pv + 0.18);
+    for (let u = -span; u <= span; u += 3) box(rail, u - 0.12, u + 0.12, DECK_Y + 0.85, DECK_Y + 1.6, pv - 0.12, pv + 0.12);
+    for (let u = -span + 10; u < span; u += 30) box(rail, u - 0.12, u + 0.12, DECK_Y + 0.55, DECK_Y + 9, pv - 0.12, pv + 0.12);
   }
 }
 
@@ -358,80 +383,210 @@ function buildElevatedSupports(
   piersOut: number[],
   barriersOut: number[],
 ): void {
+  // Round 3: a real flyover cross-section instead of a floating ribbon.
+  //   deck      box girder: fascia faces down both edges (1.6 m) and a soffit underneath
+  //   barriers  New Jersey parapets with thickness (inner face, top, outer face)
+  //   piers     12-sided columns, twin columns under wide decks, tapered pier caps
+  //   lamps     a mast with an arm over the carriageway every ~36 m on alternating sides
+  const quad = (out: number[], a: number[], b: number[], c: number[], d: number[]) => { out.push(...a, ...b, ...c, ...a, ...c, ...d); };
   for (const road of roads) {
+    if (road.type === 'subway') continue;
     const prof = profiles.get(road);
     if (!prof || prof.length < 2) continue;
-
     const cls = classifyRoad(road.type, road.subtype, road.level, road.isElevated);
     const isRail = cls === 'railway';
-    const half = isRail ? 2.6 : Math.max(ROAD_HALF_WIDTH[cls], (road.width ?? 0) / 2);
+    const half = isRail ? 2.6 : roadHalfWidth(cls, road.type, (road as { id?: string }).id);
+    const GIRDER = isRail ? RAIL_SOFFIT_DROP : 1.6;
 
-    let carry = 0;
+    let carry = 0, lampCarry = 18, lampSide = 1;
     for (let i = 0; i < prof.length - 1; i++) {
-      const p1 = prof[i];
-      const p2 = prof[i + 1];
-      const dx = p2.x - p1.x;
-      const dz = p2.z - p1.z;
-      const len = Math.hypot(dx, dz);
+      const p1 = prof[i], p2 = prof[i + 1];
+      const dx = p2.x - p1.x, dz = p2.z - p1.z, len = Math.hypot(dx, dz);
       if (len < 1) continue;
+      const ux = dx / len, uz = dz / len, nx = -uz, nz = ux;
+      const y1 = p1.y ?? 0, y2 = p2.y ?? 0;
+      const raised = y1 >= MIN_PIER_HEIGHT || y2 >= MIN_PIER_HEIGHT;
 
-      const ux = dx / len;
-      const uz = dz / len;
-      const nx = -uz;
-      const nz = ux;
-      const y1 = p1.y ?? 0;
-      const y2 = p2.y ?? 0;
+      // Girder fascia and soffit (only where the deck is genuinely above ground).
+      if (raised && !isRail) {
+        const g1 = Math.max(0.05, y1 - GIRDER), g2 = Math.max(0.05, y2 - GIRDER);
+        for (const side of [-1, 1]) {
+          const ax = p1.x + nx * (half + 0.15) * side, az = p1.z + nz * (half + 0.15) * side;
+          const bx = p2.x + nx * (half + 0.15) * side, bz = p2.z + nz * (half + 0.15) * side;
+          quad(piersOut, [ax, g1, az], [bx, g2, bz], [bx, y2 + 0.05, bz], [ax, y1 + 0.05, az]);
+        }
+        const sw = half * 0.82;
+        quad(piersOut, [p1.x - nx * sw, g1, p1.z - nz * sw], [p2.x - nx * sw, g2, p2.z - nz * sw], [p2.x + nx * sw, g2, p2.z + nz * sw], [p1.x + nx * sw, g1, p1.z + nz * sw]);
+      }
 
       for (let d = carry; d < len; d += PIER_SPACING) {
         const t = d / len;
         const deckY = y1 + (y2 - y1) * t;
-        const soffit = deckY - (isRail ? RAIL_SOFFIT_DROP : 0.9);
+        const soffit = deckY - (isRail ? RAIL_SOFFIT_DROP : GIRDER);
         if (soffit < MIN_PIER_HEIGHT) continue;
-
-        const cx = p1.x + ux * d;
-        const cz = p1.z + uz * d;
-
-        const sides = 8;
-        for (let s = 0; s < sides; s++) {
-          const a1 = (s / sides) * Math.PI * 2;
-          const a2 = ((s + 1) / sides) * Math.PI * 2;
-          const x1 = cx + Math.cos(a1) * PIER_RADIUS;
-          const z1 = cz + Math.sin(a1) * PIER_RADIUS;
-          const x2 = cx + Math.cos(a2) * PIER_RADIUS;
-          const z2 = cz + Math.sin(a2) * PIER_RADIUS;
-          piersOut.push(
-            x1, 0, z1, x2, 0, z2, x2, soffit, z2,
-            x1, 0, z1, x2, soffit, z2, x1, soffit, z1,
-          );
+        const cx = p1.x + ux * d, cz = p1.z + uz * d;
+        const twin = !isRail && half > 5.5;
+        const r = twin ? 0.95 : PIER_RADIUS;
+        const offs = twin ? [-half * 0.45, half * 0.45] : [0];
+        for (const o of offs) {
+          const px = cx + nx * o, pz = cz + nz * o, sides = 12;
+          for (let s2 = 0; s2 < sides; s2++) {
+            const a1 = (s2 / sides) * Math.PI * 2, a2 = ((s2 + 1) / sides) * Math.PI * 2;
+            const x1 = px + Math.cos(a1) * r, z1 = pz + Math.sin(a1) * r, x2 = px + Math.cos(a2) * r, z2 = pz + Math.sin(a2) * r;
+            quad(piersOut, [x1, 0, z1], [x2, 0, z2], [x2, soffit - 1.0, z2], [x1, soffit - 1.0, z1]);
+          }
         }
+        // Tapered pier cap: narrow at the column, full deck width at the soffit.
+        const capW = twin ? half * 0.95 : half * 0.75, capB = twin ? half * 0.6 : 1.6, capD = 1.1;
+        const C = (w: number, y: number, along: number, side: number): number[] => [cx + nx * w * side + ux * along, y, cz + nz * w * side + uz * along];
+        for (const along of [-capD, capD]) quad(piersOut, C(capB, soffit - 1.0, along, -1), C(capB, soffit - 1.0, along, 1), C(capW, soffit, along, 1), C(capW, soffit, along, -1));
+        for (const side of [-1, 1]) quad(piersOut, C(capB, soffit - 1.0, -capD, side), C(capB, soffit - 1.0, capD, side), C(capW, soffit, capD, side), C(capW, soffit, -capD, side));
 
-        // Crosshead spreading the deck load across the column.
-        const beamW = half * 1.4;
-        const bx1 = cx - nx * (beamW / 2);
-        const bz1 = cz - nz * (beamW / 2);
-        const bx2 = cx + nx * (beamW / 2);
-        const bz2 = cz + nz * (beamW / 2);
-        piersOut.push(
-          bx1, soffit - 0.6, bz1, bx2, soffit - 0.6, bz2, bx2, soffit, bz2,
-          bx1, soffit - 0.6, bz1, bx2, soffit, bz2, bx1, soffit, bz1,
-        );
+        // Transverse expansion joint across the deck at the pier
+        if (!isRail) {
+          const jw = 0.14, jy = deckY + 0.05, jSpan = half - 0.25;
+          const jA = [cx - nx * jSpan - ux * jw, jy, cz - nz * jSpan - uz * jw];
+          const jB = [cx + nx * jSpan - ux * jw, jy, cz + nz * jSpan - uz * jw];
+          const jC = [cx + nx * jSpan + ux * jw, jy, cz + nz * jSpan + uz * jw];
+          const jD = [cx - nx * jSpan + ux * jw, jy, cz - nz * jSpan + uz * jw];
+          quad(barriersOut, jA, jB, jC, jD);
+        }
       }
       carry = (carry - len) % PIER_SPACING;
       if (carry < 0) carry += PIER_SPACING;
 
-      // Crash barriers. Rail viaducts already carry parapets from appendRailway.
-      if (isRail) continue;
-      if (y1 < MIN_PIER_HEIGHT && y2 < MIN_PIER_HEIGHT) continue;
+      if (isRail || !raised) continue;
+      // New Jersey parapets with real thickness.
       for (const side of [-1, 1]) {
-        const o1x = p1.x + nx * half * side;
-        const o1z = p1.z + nz * half * side;
-        const o2x = p2.x + nx * half * side;
-        const o2z = p2.z + nz * half * side;
-        barriersOut.push(
-          o1x, y1, o1z, o2x, y2, o2z, o2x, y2 + 1.1, o2z,
-          o1x, y1, o1z, o2x, y2 + 1.1, o2z, o1x, y1 + 1.1, o1z,
-        );
+        const io = half - 0.35, oo = half + 0.15, H = 1.05;
+        const I1 = [p1.x + nx * io * side, y1, p1.z + nz * io * side], I2 = [p2.x + nx * io * side, y2, p2.z + nz * io * side];
+        const T1 = [p1.x + nx * (io + 0.25) * side, y1 + H, p1.z + nz * (io + 0.25) * side], T2 = [p2.x + nx * (io + 0.25) * side, y2 + H, p2.z + nz * (io + 0.25) * side];
+        const U1 = [p1.x + nx * oo * side, y1 + H, p1.z + nz * oo * side], U2 = [p2.x + nx * oo * side, y2 + H, p2.z + nz * oo * side];
+        const O1 = [p1.x + nx * oo * side, y1 - 0.2, p1.z + nz * oo * side], O2 = [p2.x + nx * oo * side, y2 - 0.2, p2.z + nz * oo * side];
+        quad(barriersOut, I1, I2, T2, T1); quad(barriersOut, T1, T2, U2, U1); quad(barriersOut, U1, U2, O2, O1);
       }
+      // Lamp masts on the parapet, alternating sides, arm reaching over the carriageway.
+      for (let d = lampCarry; d < len; d += 36) {
+        const t = d / len, yy = y1 + (y2 - y1) * t, side = lampSide; lampSide = -lampSide;
+        const bx = p1.x + ux * d + nx * (half - 0.1) * side, bz = p1.z + uz * d + nz * (half - 0.1) * side;
+        const w = 0.09;
+        quad(barriersOut, [bx - ux * w, yy + 1, bz - uz * w], [bx + ux * w, yy + 1, bz + uz * w], [bx + ux * w, yy + 10, bz + uz * w], [bx - ux * w, yy + 10, bz - uz * w]);
+        quad(barriersOut, [bx - nx * w, yy + 1, bz - nz * w], [bx + nx * w, yy + 1, bz + nz * w], [bx + nx * w, yy + 10, bz + nz * w], [bx - nx * w, yy + 10, bz - nz * w]);
+        const ax = bx - nx * 2.6 * side, az = bz - nz * 2.6 * side;
+        quad(barriersOut, [bx, yy + 10, bz], [ax, yy + 10.3, az], [ax, yy + 10.1, az], [bx, yy + 9.8, bz]);
+      }
+      lampCarry = ((lampCarry - len) % 36 + 36) % 36;
+    }
+  }
+}
+
+
+/**
+ * Medians: Lucknow's dual carriageways are mapped as two one-way roads. Where a major road runs
+ * anti-parallel to another of the same class with a gap between their edges of 0.6-14 m, the gap
+ * is filled with a raised kerbed median with planting. Matching is per 6 m sample, so medians
+ * follow the real geometry and stop where the carriageways merge.
+ *
+ * Junction markings: where three or more ground-level major roads meet, each approach gets a
+ * zebra crossing about 9 m back from the node and a stop line just behind it.
+ */
+const MEDIAN_CLASSES = new Set(['motorway', 'trunk', 'primary', 'secondary']);
+function buildMediansAndMarkings(roads: OverlayRoad[], kerb: number[], grass: number[], marks: number[]): void {
+  type Seg = { r: number; ax: number; az: number; bx: number; bz: number; ux: number; uz: number; len: number; half: number; cls: RoadClass };
+  const ground = roads.filter((r) => r?.points?.length >= 2 && !r.isElevated && !((r.level ?? 0) > 0));
+  const segs: Seg[] = [];
+  const grid = new Map<string, number[]>();
+  const G = 40;
+  ground.forEach((r, ri) => {
+    const cls = classifyRoad(r.type, r.subtype, r.level, r.isElevated);
+    if (!MEDIAN_CLASSES.has(cls)) return;
+    const half = roadHalfWidth(cls, r.type, (r as { id?: string }).id);
+    for (let i = 0; i < r.points.length - 1; i++) {
+      const a = r.points[i], b = r.points[i + 1], dx = b.x - a.x, dz = b.z - a.z, len = Math.hypot(dx, dz);
+      if (len < 2) continue;
+      const k = segs.length;
+      segs.push({ r: ri, ax: a.x, az: a.z, bx: b.x, bz: b.z, ux: dx / len, uz: dz / len, len, half, cls });
+      const x0 = Math.floor(Math.min(a.x, b.x) / G) - 1, x1 = Math.floor(Math.max(a.x, b.x) / G) + 1;
+      const z0 = Math.floor(Math.min(a.z, b.z) / G) - 1, z1 = Math.floor(Math.max(a.z, b.z) / G) + 1;
+      for (let gx = x0; gx <= x1; gx++) for (let gz = z0; gz <= z1; gz++) { const key = gx + ',' + gz; let l = grid.get(key); if (!l) grid.set(key, (l = [])); l.push(k); }
+    }
+  });
+  const quad = (out: number[], a: number[], b: number[], c: number[], d: number[]) => { out.push(...a, ...b, ...c, ...a, ...c, ...d); };
+  for (const sA of segs) {
+    let prev: { l: number[]; r: number[] } | null = null;
+    for (let d = 0; d <= sA.len; d += 6) {
+      const mx = sA.ax + sA.ux * d, mz = sA.az + sA.uz * d;
+      let best: { dist: number; px: number; pz: number; half: number } | null = null;
+      for (const k of grid.get(Math.floor(mx / G) + ',' + Math.floor(mz / G)) ?? []) {
+        const sB = segs[k];
+        if (sB.r === sA.r || sB.cls !== sA.cls || sB.r < sA.r) continue;      // each pair once
+        if (sA.ux * sB.ux + sA.uz * sB.uz > -0.92) continue;                    // opposite directions
+        const t = Math.max(0, Math.min(sB.len, (mx - sB.ax) * sB.ux + (mz - sB.az) * sB.uz));
+        if (t <= 0 || t >= sB.len) continue;
+        const px = sB.ax + sB.ux * t, pz = sB.az + sB.uz * t, dist = Math.hypot(px - mx, pz - mz);
+        const gap = dist - sA.half - sB.half;
+        if (gap < 0.6 || gap > 14) continue;
+        if (!best || dist < best.dist) best = { dist, px, pz, half: sB.half };
+      }
+      if (!best) { prev = null; continue; }
+      const nx = (best.px - mx) / best.dist, nz = (best.pz - mz) / best.dist;
+      let l = [mx + nx * sA.half, 0.3, mz + nz * sA.half];
+      let r = [best.px - nx * best.half, 0.3, best.pz - nz * best.half];
+      let w = Math.hypot(r[0] - l[0], r[2] - l[2]);
+      // Closely spaced carriageways: ensure minimum 1.2 m median width so the divider never collapses into a hairline
+      if (w < 1.2) {
+        const expand = (1.2 - w) * 0.5;
+        l = [l[0] - nx * expand, 0.3, l[2] - nz * expand];
+        r = [r[0] + nx * expand, 0.3, r[2] + nz * expand];
+        w = 1.2;
+      }
+      if (prev) {
+        const H = 0.52; // Raised concrete median barrier/kerb, 0.20-0.28m above road surface
+        const baseH = 0.16;
+        quad(kerb, [prev.l[0], H, prev.l[2]], [l[0], H, l[2]], [r[0], H, r[2]], [prev.r[0], H, prev.r[2]]);
+        const inset = (p: number[], q: number[], f: number) => [p[0] + (q[0] - p[0]) * f, H + 0.03, p[2] + (q[2] - p[2]) * f];
+        if (w > 1.2) {
+          const f = Math.min(0.38, 0.32 / w);
+          quad(grass, inset(prev.l, prev.r, f), inset(l, r, f), inset(r, l, f), inset(prev.r, prev.l, f));
+        }
+        // Vertical kerb faces rising cleanly from road asphalt
+        quad(kerb, [prev.l[0], baseH, prev.l[2]], [l[0], baseH, l[2]], [l[0], H, l[2]], [prev.l[0], H, prev.l[2]]);
+        quad(kerb, [prev.r[0], baseH, prev.r[2]], [r[0], baseH, r[2]], [r[0], H, r[2]], [prev.r[0], H, prev.r[2]]);
+      }
+      prev = { l, r };
+    }
+  }
+
+  // Junction nodes: endpoints of ground major roads, quantised to 3 m.
+  const node = new Map<string, number>();
+  const key = (x: number, z: number) => Math.round(x / 3) + ',' + Math.round(z / 3);
+  for (const r of ground) {
+    const cls = classifyRoad(r.type, r.subtype, r.level, r.isElevated);
+    if (cls === 'railway' || cls === 'footway' || cls === 'service') continue;
+    for (const p of [r.points[0], r.points[r.points.length - 1]]) node.set(key(p.x, p.z), (node.get(key(p.x, p.z)) ?? 0) + 1);
+  }
+  const placed: Array<[number, number]> = [];
+  for (const r of ground) {
+    const cls = classifyRoad(r.type, r.subtype, r.level, r.isElevated);
+    if (!['motorway', 'trunk', 'primary', 'secondary', 'tertiary'].includes(cls)) continue;
+    const half = roadHalfWidth(cls, r.type, (r as { id?: string }).id);
+    const ends: Array<[number, number]> = [[0, 1], [r.points.length - 1, r.points.length - 2]];
+    for (const [i0, i1] of ends) {
+      const a = r.points[i0], b = r.points[i1];
+      const deg = node.get(key(a.x, a.z)) ?? 0;
+      if (deg < 3 || deg > 4) continue;                       // plain junctions only; roundabouts and fan-outs stay clean
+      if (placed.some(([px, pz]) => Math.hypot(px - a.x, pz - a.z) < 16)) continue;   // one crossing per approach cluster
+      const dx = b.x - a.x, dz = b.z - a.z, len = Math.hypot(dx, dz);
+      if (len < 16) continue;
+      placed.push([a.x, a.z]);
+      const ux = dx / len, uz = dz / len, nx = -uz, nz = ux;
+      const y = ROAD_LAYER_Y[cls] + 0.32, c0 = 7, c1 = 10.5;   // clear of the road surface: no z-fighting while the camera moves
+      for (let o = -half + 0.6; o < half - 0.4; o += 1.1) {                        // zebra bars
+        const P = (along: number, off: number) => [a.x + ux * along + nx * off, y, a.z + uz * along + nz * off];
+        quad(marks, P(c0, o), P(c1, o), P(c1, o + 0.55), P(c0, o + 0.55));
+      }
+      const S = (along: number, off: number) => [a.x + ux * along + nx * off, y, a.z + uz * along + nz * off];
+      quad(marks, S(c1 + 1.2, -half + 0.3), S(c1 + 1.6, -half + 0.3), S(c1 + 1.6, half - 0.3), S(c1 + 1.2, half - 0.3));  // stop line
     }
   }
 }
@@ -545,34 +700,88 @@ function buildMetroStationsGeom(
   return placed;
 }
 
+function polyArea(p: Array<{ x: number; z: number }>): number {
+  let a = 0;
+  for (let i = 0; i < p.length; i++) { const j = (i + 1) % p.length; a += p[i].x * p[j].z - p[j].x * p[i].z; }
+  return Math.abs(a) / 2;
+}
+
+/**
+ * Ground roads that cross the Gomti (or a canal) are bridges in reality but are often not tagged
+ * as such. They are lifted to level 1 so the elevation profile gives them a deck ~7.5 m above the
+ * water with ramps, piers and parapets, instead of a road lying on the river surface.
+ */
+export function liftRiverCrossings<T extends { points: Array<{ x: number; z: number }>; type?: string; subtype?: string; level?: number; isElevated?: boolean }>(
+  roads: T[], waterways: Array<{ points: Array<{ x: number; z: number }>; isPolygon?: boolean; cls?: string }>,
+): T[] {
+  const rivers = waterways.filter((w) => w.isPolygon && (w.cls === 'river_poly' || w.cls === 'canal_poly') && w.points?.length > 2);
+  const inside = (x: number, z: number, P: Array<{ x: number; z: number }>) => { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const a = P[i], b = P[j]; if ((a.z > z) !== (b.z > z) && x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z) + a.x) c = !c; } return c; };
+  const boxes = rivers.map((w) => { let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity; for (const p of w.points) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z); } return { w, x0, x1, z0, z1 }; });
+  return roads.map((r) => {
+    if (r.subtype === 'rail' || r.type === 'subway' || r.type === 'footway' || r.type === 'path') return r;
+    const pts = r.points; let wet = false;
+    for (let i = 0; i < pts.length - 1 && !wet; i++) for (const t of [0.25, 0.5, 0.75]) {
+      const x = pts[i].x + (pts[i + 1].x - pts[i].x) * t, z = pts[i].z + (pts[i + 1].z - pts[i].z) * t;
+      if (boxes.some((b) => x >= b.x0 && x <= b.x1 && z >= b.z0 && z <= b.z1 && inside(x, z, b.w.points))) { wet = true; break; }
+    }
+    return wet ? { ...r, isElevated: true, level: Math.max(1, r.level ?? 1), riverBridge: true } : r;
+  });
+}
+
 export function buildOverlay(src: OverlaySource): OverlayBuild {
-  const roads = src.majorRoads ?? [];
-  const waterways = src.waterways ?? [];
-  const greenAreas = src.greenAreas ?? [];
+  // Deterministic feature identity: one physical carriageway, one surface. Overture
+  // occasionally ships the same polyline twice under different ids; identical
+  // quantised endpoints + vertex count + level + class are the same road.
+  const seenRoad = new Set<string>();
+  const roads0 = (src.majorRoads ?? []).filter((r) => {
+    const p = r?.points;
+    if (!p || p.length < 2) return true;
+    const a = p[0], b = p[p.length - 1];
+    const ka = `${Math.round(a.x)},${Math.round(a.z)}`, kb = `${Math.round(b.x)},${Math.round(b.z)}`;
+    const key = `${ka < kb ? ka + '|' + kb : kb + '|' + ka}|${p.length}|${r.level ?? 0}|${r.type}`;
+    if (seenRoad.has(key)) return false;
+    seenRoad.add(key);
+    return true;
+  });
+  const roads = liftRiverCrossings(roads0, (src.waterways ?? []) as never);
+  // Sewage lagoons and treatment basins are not open water; they read as false
+  // blue patches. Genuine rivers, canals, lakes, reservoirs and ponds remain.
+  const NOT_OPEN_WATER = new Set(['wastewater', 'basin']);
+  const waterways = (src.waterways ?? []).filter((w) => !(w as { cls?: string }).cls || !NOT_OPEN_WATER.has((w as { cls?: string }).cls!));
+  // Tree clearings (data/overrides/tree_clearings.json, mirrored here): a park whose centroid lies in
+  // a clearing is open dusty ground in the satellite view, not lawn, so it is not painted green.
+  const CLEARINGS = [{ x: -4176, z: -2675, r: 150 }, { x: -4150, z: -2745, r: 120 }];
+  const greenAreas = (src.greenAreas ?? []).filter((a) => {
+    const p = a?.points; if (!p || p.length < 3) return true;
+    const cx = p.reduce((m, q) => m + q.x, 0) / p.length, cz = p.reduce((m, q) => m + q.z, 0) / p.length;
+    return !CLEARINGS.some((c) => Math.hypot(cx - c.x, cz - c.z) < c.r);
+  });
 
   // ── Elevation ────────────────────────────────────────────────────────────
   // Real Overture level / isElevated drives a ramp-hold-ramp profile per feature.
-  const profiles = buildElevationProfiles(roads);
+  const profiles = buildElevationProfiles(roads);  // roads already lifted at river crossings
 
   // ── Roads ────────────────────────────────────────────────────────────────
   const byClass = new Map<RoadClass, number[]>();
+  const uvByClass = new Map<RoadClass, number[]>();
   const railways: OverlayRoad[] = [];
   for (const road of roads) {
     if (!road?.points || road.points.length < 2) continue;
     const cls = classifyRoad(road.type, road.subtype, road.level, road.isElevated);
     if (cls === 'railway') { railways.push(road); continue; }
-    const half = Math.max(ROAD_HALF_WIDTH[cls], (road.width ?? 0) / 2);
+    const half = roadHalfWidth(cls, road.type, (road as { id?: string }).id);
     let arr = byClass.get(cls);
-    if (!arr) { arr = []; byClass.set(cls, arr); }
+    if (!arr) { arr = []; byClass.set(cls, arr); uvByClass.set(cls, []); }
     // A profiled polyline carries per-vertex y, which overrides the class offset.
     // Class Y offset is baked in so the client needs no per-class mesh offset.
-    appendRibbon(arr, profiles.get(road) ?? road.points, { half, y: ROAD_LAYER_Y[cls] });
+    appendRibbon(arr, profiles.get(road) ?? road.points, { half, y: ROAD_LAYER_Y[cls], uvOut: uvByClass.get(cls) });
   }
 
   // ── Railway ──────────────────────────────────────────────────────────────
   // Ballast, sleepers and rails at the correct gauge, or a box girder on viaduct.
   const railSinks: RailSinks = { bed: [], sleepers: [], rails: [] };
   for (const road of railways) {
+    if (road.type === 'subway') continue; // metroSystem.ts owns the metro viaduct and track
     appendRailway(railSinks, profiles.get(road) ?? road.points, {
       gauge: railGaugeFor(road.type),
       elevated: Boolean(road.isElevated) || (road.level ?? 0) > 0,
@@ -582,18 +791,66 @@ export function buildOverlay(src: OverlaySource): OverlayBuild {
   }
 
   const roadsOut: Record<string, Float32Array> = {};
+  const roadsUv: Record<string, Float32Array> = {};
   for (const [cls, verts] of byClass) {
-    if (verts.length) roadsOut[cls] = new Float32Array(verts);
+    if (verts.length) { roadsOut[cls] = new Float32Array(verts); roadsUv[cls] = new Float32Array(uvByClass.get(cls)!); }
   }
 
   // ── Water ────────────────────────────────────────────────────────────────
   const water: number[] = [];
-  for (const w of waterways) {
+  const riverBank: number[] = [];
+  const promenade: number[] = [];
+  // Rivers and lakes are digitised as straight segments; two rounds of Chaikin corner-cutting give
+  // natural bends without moving the banks by more than a few metres or adding channels.
+  const chaikin = (pts: Array<{ x: number; z: number }>, rounds: number) => {
+    let p = pts;
+    for (let r = 0; r < rounds; r++) {
+      const q: Array<{ x: number; z: number }> = [];
+      for (let i = 0; i < p.length; i++) {
+        const a = p[i], b = p[(i + 1) % p.length];
+        q.push({ x: a.x * 0.75 + b.x * 0.25, z: a.z * 0.75 + b.z * 0.25 }, { x: a.x * 0.25 + b.x * 0.75, z: a.z * 0.25 + b.z * 0.75 });
+      }
+      p = q;
+    }
+    return p;
+  };
+  for (const w0 of waterways) {
+    const w = (w0?.isPolygon && w0.points?.length >= 3 && w0.points.length < 4000) ? { ...w0, points: chaikin(w0.points, 2) } : w0;
     if (!w?.points || w.points.length < 2) continue;
     if (w.isPolygon && w.points.length >= 3) {
-      triangulateArea(water, w.points, -0.25);
+      // Lakes, ponds and reservoirs sit ABOVE the park and ground layers (y 0.04): at -0.25 the
+      // surrounding park polygon painted over them, so Janeshwar Mishra Park's two lakes were
+      // invisible. Rivers keep the lower level (the ground raster is already cut out for them).
+      const still = w.cls === 'pond' || w.cls === 'lake' || w.cls === 'reservoir' || w.cls === 'water';
+      triangulateArea(water, w.points, still ? 0.07 : -0.25);
+      // Stone-stepped bank along still water over 1 ha (as at Janeshwar Mishra Park).
+      if (still && polyArea(w.points) > 1e4) appendRibbon(riverBank, [...w.points, w.points[0]], { half: 1.3, y: 0.11 });
+      // Embankment along the real bank line of the river channel (round 2).
+      if (w.cls === 'river_poly') {
+        appendRibbon(riverBank, [...w.points, w.points[0]], { half: 3.2, y: 0.05 });
+        // Riverfront promenade (round 3): an 8 m paved walk with a parapet edge just outside the
+        // embankment, on the developed central reach (Hanuman Setu to Gomti Nagar).
+        const P = w.points, inside = (x: number, z: number) => { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const a = P[i], b = P[j]; if ((a.z > z) !== (b.z > z) && x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z) + a.x) c = !c; } return c; };
+        for (let i = 0; i < P.length; i++) {
+          const a = P[i], b = P[(i + 1) % P.length], dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz);
+          if (L < 1 || L > 400) continue;
+          const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2;
+          if (mx < -2700 || mx > 5200) continue;
+          let nx = -dz / L, nz = dx / L;
+          if (inside(mx + nx * 6, mz + nz * 6)) { nx = -nx; nz = -nz; }
+          const q = (o0: number, o1: number, y: number) => promenade.push(
+            a.x + nx * o0, y, a.z + nz * o0, b.x + nx * o0, y, b.z + nz * o0, b.x + nx * o1, y, b.z + nz * o1,
+            a.x + nx * o0, y, a.z + nz * o0, b.x + nx * o1, y, b.z + nz * o1, a.x + nx * o1, y, a.z + nz * o1);
+          q(3.4, 11.5, 0.16);
+          // parapet wall on the water side
+          promenade.push(a.x + nx * 3.4, 0.16, a.z + nz * 3.4, b.x + nx * 3.4, 0.16, b.z + nz * 3.4, b.x + nx * 3.4, 1.15, b.z + nz * 3.4,
+                         a.x + nx * 3.4, 0.16, a.z + nz * 3.4, b.x + nx * 3.4, 1.15, b.z + nz * 3.4, a.x + nx * 3.4, 1.15, a.z + nz * 3.4);
+          q(3.4, 3.9, 1.15);
+        }
+      }
     } else {
-      appendRibbon(water, w.points, { half: Math.min(90, Math.max(14, (w.width ?? 45) / 2)), y: -0.25 });
+      // Measured / class width from the hydrology layer; never a fixed broad buffer.
+      appendRibbon(water, w.points, { half: Math.max(1.0, (w.width ?? 4) / 2), y: -0.25 });
     }
   }
 
@@ -616,11 +873,16 @@ export function buildOverlay(src: OverlaySource): OverlayBuild {
   const flyoverBarriers: number[] = [];
   buildElevatedSupports(roads, profiles, flyoverPiers, flyoverBarriers);
 
+  // ── Medians and junction markings (round 3) ─────────────────────────────
+  const medianKerb: number[] = [], medianGrass: number[] = [], markings: number[] = [];
+  buildMediansAndMarkings(roads, medianKerb, medianGrass, markings);
+
   // ── Metro stations ────────────────────────────────────────────────────────
   const metroDeck: number[] = [];
   const metroCanopy: number[] = [];
   const metroColumn: number[] = [];
-  const stations = buildMetroStationsGeom(roads, profiles, metroDeck, metroCanopy, metroColumn);
+  // Stations are now built by metroSystem.ts on the metro's own viaduct (round 2).
+  const stations = 0; void buildMetroStationsGeom;
 
   // ── Named structures ──────────────────────────────────────────────────────
   // Signature detail along the real centreline of each curated bridge/flyover.
@@ -639,7 +901,7 @@ export function buildOverlay(src: OverlaySource): OverlayBuild {
     const def = matchStructure(road.name);
     if (!def) continue;
     const cls = classifyRoad(road.type, road.subtype, road.level, road.isElevated);
-    const half = cls === 'railway' ? 2.6 : Math.max(ROAD_HALF_WIDTH[cls], (road.width ?? 0) / 2);
+    const half = cls === 'railway' ? 2.6 : roadHalfWidth(cls, road.type, (road as { id?: string }).id);
     const list = byLabel.get(def.label) ?? [];
     list.push({ name: road.name, half, prof });
     byLabel.set(def.label, list);
@@ -661,13 +923,19 @@ export function buildOverlay(src: OverlaySource): OverlayBuild {
 
   return {
     roads: roadsOut,
+    roadsUv,
     water: new Float32Array(water),
+    riverBank: new Float32Array(riverBank),
     parks: new Float32Array(parks),
     bridgeDeck: new Float32Array(deck),
     bridgePier: new Float32Array(pier),
     bridgeRail: new Float32Array(rail),
     flyoverPiers: new Float32Array(flyoverPiers),
     flyoverBarriers: new Float32Array(flyoverBarriers),
+    promenade: new Float32Array(promenade),
+    medianKerb: new Float32Array(medianKerb),
+    medianGrass: new Float32Array(medianGrass),
+    markings: new Float32Array(markings),
     railBed: new Float32Array(railSinks.bed),
     railSleepers: new Float32Array(railSinks.sleepers),
     railRails: new Float32Array(railSinks.rails),

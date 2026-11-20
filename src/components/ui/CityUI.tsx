@@ -4,15 +4,18 @@ import { CameraPreset, OSMMapData, RenderStats, CityStreamingStats, SelectedEnti
 import { ReportModal } from './ReportModal';
 import { CameraWidget } from './CameraWidget';
 import { SearchUI } from '../features/SearchUI';
-import { LayerControl, LayerState } from '../features/LayerControl';
+import type { LayerState } from '../features/LayerControl';
+import { MapControls } from './MapControls';
+import { DayNightToggle } from './DayNight';
+import { runDayNight } from '../../landing/dayNightTransition';
+import type { ThemeId } from './themes';
+import type { LabelSettings } from '../../city/labelManager';
 import { InfoPanel } from '../features/InfoPanel';
-import { AnalystPanel } from '../features/AnalystPanel';
 import { LiveDataPanel } from '../features/LiveDataPanel';
 import { NavigationHUD } from '../features/NavigationHUD';
-import { NavigationPanel } from '../features/NavigationPanel';
-import type { NavigationRoute, NavigatorState, GPSTheme, RouteWaypoint, TransportMode, RoutePreference } from '../../navigation/types';
-import type { SpatialIncident } from '../../spatial/types';
-import { Compass, Building2, FileText, Activity, Map, Navigation, MapPin, Grid, Globe, ShieldCheck, Sun, Moon, Tag, Palette, Maximize2, Eye, SlidersHorizontal, X } from 'lucide-react';
+import { LucknowLensMark } from '../brand/LucknowLensLogo';
+import type { NavigationRoute, NavigatorState, GPSTheme, RouteWaypoint } from '../../navigation/types';
+import { Eye, Search as SearchIcon, PanelLeftOpen, PanelLeftClose } from 'lucide-react';
 import { CameraController } from '../../city/cameraController';
 
 interface CityUIProps {
@@ -20,19 +23,23 @@ interface CityUIProps {
   cameraController: CameraController | null;
   renderStats: RenderStats;
   streamingStats?: CityStreamingStats;
-  nightMode: boolean;
   showLabels: boolean;
+  labelSettings: LabelSettings;
+  onLabelSettings: (s: LabelSettings) => void;
+  theme: ThemeId;
+  onTheme: (t: ThemeId) => void;
+  night: boolean;
+  onNight: (n: boolean) => void;
+  windowView: boolean;
+  onWindowView: (v: boolean) => void;
   presentationMode: boolean;
   mapOnly: boolean;
   layers: LayerState;
   selectedEntity: SelectedEntity | null;
   flights: SimulatedFlight[];
-  onToggleNightMode: () => void;
   onToggleLabels: () => void;
   onTogglePresentationMode: () => void;
   onToggleMapOnly: () => void;
-  skylineStyle?: 'warm' | 'clear' | 'cyberpunk';
-  onCycleSkyline?: () => void;
   flightFeed?: { status: 'ok' | 'stale' | 'unavailable'; provider: string; ageSeconds: number | null; reason?: string };
   weatherFeed?: LiveFeedState<LiveWeatherDTO>;
   airFeed?: LiveFeedState<LiveAirQualityDTO>;
@@ -41,7 +48,7 @@ interface CityUIProps {
   newsFeed?: LiveListState<LiveNewsDTO>;
   onCameraSignal: (signal: CameraPreset) => void;
   onReloadOSM: () => void;
-  onToggleLayer: (category: 'base' | 'live' | 'hazards' | 'incidents' | 'navigation' | 'pulse', layer: string) => void;
+  onToggleLayer: (category: 'base' | 'live', layer: string) => void;
   onSelectEntity: (entity: SelectedEntity | null) => void;
   onExecuteAction: (action: AIAction) => void;
 
@@ -56,39 +63,36 @@ interface CityUIProps {
   onChangeTheme?: (theme: GPSTheme) => void;
   onClearRoute?: () => void;
   onSetDestinationWaypoint?: (dest: RouteWaypoint) => void;
-
-  // Spatial Intelligence & GTA Navigation Extensions
-  isNavigationMode?: boolean;
-  onToggleNavigationMode?: (active: boolean) => void;
-  onFindRoute?: (start: RouteWaypoint, dest: RouteWaypoint, mode: TransportMode, preference: RoutePreference) => void;
-  onSimulateReroute?: () => void;
-  isGPSActive?: boolean;
-  onToggleGPS?: () => void;
-  rerouteNotification?: string | null;
-  onCheckRouteImpact?: (incident: SpatialIncident) => void;
-  onFindAlternativeRoute?: (incident: SpatialIncident) => void;
-  onFlyToLocation?: (lat: number, lon: number, distance?: number) => void;
-  cameraCoordinates?: { lat: number; lon: number };
 }
+
+const QUICK = [
+  { id: 'husainabad', label: 'Bara Imambara' }, { id: 'rumi_darwaza', label: 'Rumi Darwaza' }, { id: 'hazratganj', label: 'Hazratganj' },
+  { id: 'charbagh', label: 'Charbagh' }, { id: 'ambedkar_park', label: 'Ambedkar Park' }, { id: 'janeshwar_park', label: 'Janeshwar' },
+  { id: 'ekana', label: 'Ekana' }, { id: 'vidhan_sabha', label: 'Vidhan Sabha' }, { id: 'ccs_airport', label: 'Airport' },
+];
 
 export const CityUI: React.FC<CityUIProps> = ({
   mapData,
   cameraController,
   renderStats,
   streamingStats,
-  nightMode,
   showLabels,
+  labelSettings,
+  onLabelSettings,
+  theme,
+  onTheme,
+  night,
+  onNight,
+  windowView,
+  onWindowView,
   presentationMode,
   mapOnly,
   layers,
   selectedEntity,
   flights,
-  onToggleNightMode,
   onToggleLabels,
   onTogglePresentationMode,
   onToggleMapOnly,
-  skylineStyle,
-  onCycleSkyline,
   flightFeed,
   weatherFeed,
   airFeed,
@@ -110,24 +114,16 @@ export const CityUI: React.FC<CityUIProps> = ({
   onChangeTheme,
   onClearRoute,
   onSetDestinationWaypoint,
-  isNavigationMode = false,
-  onToggleNavigationMode,
-  onFindRoute,
-  onSimulateReroute,
-  isGPSActive = false,
-  onToggleGPS,
-  rerouteNotification = null,
-  onCheckRouteImpact,
-  onFindAlternativeRoute,
-  onFlyToLocation,
-  cameraCoordinates,
 }) => {
   const [isReportOpen, setIsReportOpen] = useState(false);
 
+  // Panels start minimised (icons only). Expanding is one click and is remembered.
+  const [minimal, setMinimal] = useState<boolean>(() => { try { return localStorage.getItem('terralyt.map.ui.expanded') !== '1'; } catch { return true; } });
+  const toggleMinimal = () => setMinimal((m) => { try { localStorage.setItem('terralyt.map.ui.expanded', m ? '1' : '0'); } catch { /* storage blocked */ } return !m; });
+  const [searchOpen, setSearchOpen] = useState(false);
   const [compact, setCompact] = useState(
     () => typeof window !== 'undefined' && window.innerWidth < 640,
   );
-  const [sheetOpen, setSheetOpen] = useState(false);
   useEffect(() => {
     const onResize = () => setCompact(window.innerWidth < 640);
     window.addEventListener('resize', onResize);
@@ -138,13 +134,10 @@ export const CityUI: React.FC<CityUIProps> = ({
     };
   }, []);
 
-  useEffect(() => {
-    if (compact && selectedEntity) setSheetOpen(true);
-  }, [compact, selectedEntity]);
-
   const handleSearchResultClick = (result: SearchResult) => {
+    if (result.presetId) onCameraSignal(result.presetId as CameraPreset);
     if (cameraController) {
-      cameraController.flyTo(result.latitude, result.longitude, 350);
+      if (!result.presetId) cameraController.flyTo(result.latitude, result.longitude, 350);
       onSelectEntity({
         type: result.category === 'Road' ? 'poi' : (result.category === 'Building' ? 'building' : 'poi'),
         id: result.id,
@@ -160,14 +153,13 @@ export const CityUI: React.FC<CityUIProps> = ({
 
   if (mapOnly) {
     return (
-      <div className="absolute bottom-4 right-4 z-30 pointer-events-auto">
+      <div className="pointer-events-none absolute inset-x-0 bottom-5 z-30 flex justify-center">
         <button
           onClick={onToggleMapOnly}
-          className="w-11 h-11 rounded-full bg-slate-900/55 hover:bg-slate-900/85 backdrop-blur-md border border-white/10 text-slate-200 flex items-center justify-center shadow-2xl transition-all"
-          title="Show panels (Esc)"
-          aria-label="Show panels"
+          className="map-only-pill pointer-events-auto flex items-center gap-2.5 rounded-full border border-white/15 bg-[#0c161d]/80 py-2.5 pl-4 pr-2.5 text-[13px] font-semibold text-[#eae9df] shadow-[0_14px_40px_-12px_rgba(0,0,0,.7)] backdrop-blur-xl hover:bg-[#0c161d]"
         >
-          <Eye className="w-4 h-4" />
+          <Eye className="h-4 w-4 text-[#e0a55a]" /> Show controls
+          {!compact && <kbd className="rounded-md bg-white/10 px-1.5 py-0.5 font-mono text-[10.5px] text-white/70">M</kbd>}
         </button>
       </div>
     );
@@ -175,7 +167,6 @@ export const CityUI: React.FC<CityUIProps> = ({
 
   return (
     <>
-      {/* GTA GPS Navigation HUD Overlay */}
       {navigationRoute && (
         <NavigationHUD
           route={navigationRoute}
@@ -190,307 +181,132 @@ export const CityUI: React.FC<CityUIProps> = ({
         />
       )}
 
-      {/* Presentation Mode keeps branding, search, scale controls and layers. */}
-      <>
-        {/* Left Column Dashboard Stack */}
-        <div className={`absolute top-3 left-3 z-20 overflow-y-auto no-scrollbar pointer-events-none flex flex-col gap-2.5 ${compact ? "right-3 w-auto max-h-[40vh]" : "w-[290px] max-h-[calc(100vh-1.5rem)]"}`}>
-          {/* Branding header badge */}
-          <div className="pointer-events-auto glass-panel rounded-2xl p-3.5 flex items-center gap-4 transition-all hover:bg-slate-900/80">
-            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 via-orange-500 to-amber-300 flex items-center justify-center text-slate-950 shadow-[0_0_15px_rgba(245,158,11,0.3)]">
-              <Building2 className="w-5 h-5 font-bold" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2 mb-0.5">
-                <h1 className="text-sm font-display font-extrabold text-white tracking-wide">
-                  LUCKNOW LENS
-                </h1>
-                <span className="bg-emerald-500/10 text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-500/20 uppercase tracking-wider">
-                  DYNAMIC LOD
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-400 font-medium tracking-wide">
-                Lat {mapData.bounds.centerLat.toFixed(4)}° • Lon {mapData.bounds.centerLon.toFixed(4)}°
-              </p>
-            </div>
+      {/* Left: where am I, and find something. Minimised: two icons. */}
+      {minimal ? (
+        <div
+          style={{ top: 'calc(0.75rem + env(safe-area-inset-top, 0px))', left: 'calc(0.75rem + env(safe-area-inset-left, 0px))' }}
+          className="absolute z-20 flex flex-col gap-2"
+        >
+          <button onClick={toggleMinimal} title="Show panels" aria-label="Show panels" className="glass-panel grid h-11 w-11 place-items-center rounded-full text-paper/80 hover:text-paper">
+            <PanelLeftOpen className="h-[18px] w-[18px]" strokeWidth={1.7} />
+          </button>
+          <button onClick={() => setSearchOpen((v) => !v)} title="Search" aria-label="Search" aria-expanded={searchOpen} className={`glass-panel grid h-11 w-11 place-items-center rounded-full transition-colors ${searchOpen ? 'text-sand' : 'text-paper/80 hover:text-paper'}`}>
+            <SearchIcon className="h-[18px] w-[18px]" strokeWidth={1.7} />
+          </button>
+          <button onClick={() => window.dispatchEvent(new Event('lens:start-tour'))} title="Guided tour of Lucknow" aria-label="Guided tour of Lucknow"
+            className="flex h-11 items-center gap-2 self-start rounded-full bg-[#e0a55a] px-4 text-[13px] font-semibold text-[#2a1a10] shadow-[0_8px_22px_-8px_rgba(224,165,90,.8)] transition-transform hover:scale-105 active:scale-95">
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 1.5v11l9-5.5z" fill="currentColor" /></svg>
+            <span>Guided tour</span>
+          </button>
+          {/* Quick fly-to chips: one tap flies to a highlight. */}
+          <div className="pointer-events-auto flex max-w-[calc(100vw-6rem)] sm:max-w-[300px] gap-1.5 overflow-x-auto no-scrollbar pb-0.5" role="list" aria-label="Quick fly to">
+            {QUICK.map((q) => (
+              <button key={q.id} role="listitem" onClick={() => onCameraSignal(`dest:${q.id}` as CameraPreset)}
+                className="glass-panel flex-shrink-0 rounded-full px-3 py-1.5 text-[11.5px] font-semibold text-paper/85 hover:text-paper">{q.label}</button>
+            ))}
           </div>
-
-          {/* Search bar autocomplete input widget */}
-          <div className="pointer-events-auto">
-            <SearchUI
-              mapData={mapData}
-              onSelectResult={handleSearchResultClick}
-              onSetDestinationWaypoint={onSetDestinationWaypoint}
-              isNavigationMode={isNavigationMode}
-              onToggleNavigationMode={onToggleNavigationMode}
-            />
-          </div>
-
-          {/* GTA Navigation Drawer Panel */}
-          {isNavigationMode && onFindRoute && (
-            <div className="pointer-events-auto">
-              <NavigationPanel
-                onFindRoute={onFindRoute}
-                onClose={() => onToggleNavigationMode?.(false)}
-                onSimulateReroute={onSimulateReroute}
-                activeRoute={navigationRoute}
-                isGPSActive={isGPSActive}
-                onToggleGPS={onToggleGPS}
-                rerouteNotification={rerouteNotification}
-              />
+          {searchOpen && (
+            <div className={`${compact ? 'w-[calc(100vw-5.5rem)] max-w-[320px]' : 'w-[300px]'} -mt-[52px] ml-[52px]`}>
+              <SearchUI mapData={mapData} onSelectResult={(r) => { handleSearchResultClick(r); setSearchOpen(false); }} onSetDestinationWaypoint={onSetDestinationWaypoint} />
             </div>
           )}
-
-          {/* Ask Lucknow Lens AI Panel */}
-          {!presentationMode && !compact && (
-            <div className="pointer-events-auto">
-              <AnalystPanel
-                onExecuteAction={onExecuteAction}
-                cameraCoordinates={cameraCoordinates}
-              />
+          {selectedEntity && (
+            <div className={`${compact ? 'w-[calc(100vw-1.5rem)] max-w-[320px]' : 'w-[300px]'} max-h-[60vh] overflow-y-auto no-scrollbar`}>
+              <InfoPanel entity={selectedEntity} onClose={() => onSelectEntity(null)} onSetDestinationWaypoint={onSetDestinationWaypoint} />
             </div>
           )}
         </div>
-
-        {/* Right Column HUD Stack */}
-        <div className={`absolute top-3 right-3 z-20 overflow-y-auto no-scrollbar pointer-events-none flex flex-col items-end gap-2.5 ${
-          compact
-            ? `fixed inset-x-0 bottom-0 top-auto z-40 max-h-[75vh] w-full rounded-t-3xl bg-slate-950/95 p-4 border-t border-white/10 transition-transform ${sheetOpen ? 'translate-y-0' : 'translate-y-full'}`
-            : 'w-[310px] max-h-[calc(100vh-1.5rem)]'
-        }`}>
-          {/* Top Quick Actions Bar */}
-          <div className="pointer-events-auto flex flex-wrap justify-end gap-1.5 bg-slate-900/80 border border-slate-700/60 backdrop-blur-xl p-1.5 rounded-2xl shadow-2xl">
-            <button
-              onClick={onToggleNightMode}
-              className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 border ${
-                nightMode
-                  ? 'bg-indigo-600 text-amber-300 border-indigo-500 shadow-lg shadow-indigo-600/30'
-                  : 'bg-amber-400 text-slate-950 border-amber-300 shadow-lg shadow-amber-400/30'
-              }`}
-              title="Toggle Day / Night Mode Atmosphere"
-            >
-              {nightMode ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5 text-slate-950" />}
-              <span>{nightMode ? 'NIGHT' : 'DAY'}</span>
-            </button>
-
-            <button
-              onClick={() => onCameraSignal('fullcity')}
-              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold rounded-xl transition-all shadow-lg shadow-amber-500/25 flex items-center gap-1.5"
-              title="Frame Complete Lucknow Dataset Bounding Box"
-            >
-              <Globe className="w-3.5 h-3.5" />
-              <span>[ FULL ]</span>
-            </button>
-
-            <button
-              id="btn-toggle-labels"
-              onClick={onToggleLabels}
-              className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 border ${
-                showLabels
-                  ? 'bg-violet-500 text-white border-violet-400 shadow-lg shadow-violet-500/20'
-                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border-slate-700'
-              }`}
-              title="Toggle Geographic Labels"
-            >
-              <Tag className="w-3.5 h-3.5" />
-              <span>LABELS</span>
-            </button>
-
-            <button
-              onClick={onToggleMapOnly}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 border border-slate-700"
-              title="Hide all panels and show only the map"
-            >
-              <Maximize2 className="w-3.5 h-3.5" />
-              <span>MAP ONLY</span>
-            </button>
-
-            {/* Camera Fly-To Location Selector */}
-            <div className="relative flex items-center">
-              <select
-                aria-label="Fly to Location"
-                onChange={(e) => {
-                  if (e.target.value) {
-                    onCameraSignal(e.target.value as CameraPreset);
-                    e.target.value = '';
-                  }
-                }}
-                defaultValue=""
-                className="px-2.5 py-1.5 bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-300 hover:text-amber-200 text-xs font-bold rounded-xl transition-all border border-amber-500/40 focus:outline-none focus:ring-1 focus:ring-amber-400 cursor-pointer shadow-lg shadow-amber-500/10"
-                title="Fly camera to key Lucknow location or perspective"
-              >
-                <option value="" disabled className="bg-slate-900 text-slate-400">FLY TO LOCATION ▾</option>
-                <option value="rumi" className="bg-slate-900 text-amber-300">🏛️ Rumi Darwaza</option>
-                <option value="oldlucknow" className="bg-slate-900 text-amber-300">🕌 Bara Imambara & Asafi</option>
-                <option value="clocktower" className="bg-slate-900 text-amber-300">🕰️ Hussainabad Clock Tower</option>
-                <option value="vidhansabha" className="bg-slate-900 text-amber-300">🏛️ Vidhan Sabha Assembly</option>
-                <option value="ambedkar" className="bg-slate-900 text-amber-300">🏞️ Ambedkar Memorial Park</option>
-                <option value="hazratganj" className="bg-slate-900 text-amber-300">🛍️ Hazratganj Boulevard</option>
-                <option value="gomti" className="bg-slate-900 text-amber-300">🌊 Gomti Riverfront</option>
-                <option value="ekana" className="bg-slate-900 text-amber-300">🏟️ Ekana Stadium</option>
-                <option value="charbagh" className="bg-slate-900 text-amber-300">🚆 Charbagh Railway Grand Terminal</option>
-                <option value="airport" className="bg-slate-900 text-amber-300">✈️ CCS International Airport (T3)</option>
-                <option value="hero" className="bg-slate-900 text-amber-300">🌆 Full City Skyline</option>
-              </select>
-            </div>
-
-            <button
-              onClick={() => onCameraSignal('overview')}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition-all border border-slate-700/60 flex items-center gap-1.5"
-              title="District Overview Perspective"
-            >
-              <Compass className="w-3.5 h-3.5 text-amber-400" />
-              <span>DISTRICT</span>
-            </button>
-
-            <button
-              onClick={() => onCameraSignal('neighborhood')}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition-all border border-slate-700/60 flex items-center gap-1.5"
-              title="Neighborhood Level Perspective"
-            >
-              <Navigation className="w-3.5 h-3.5 text-sky-400" />
-              <span>NEIGHBORHOOD</span>
-            </button>
-
-            <button
-              onClick={() => onCameraSignal('street')}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition-all border border-slate-700/60 flex items-center gap-1.5"
-              title="Low Angle Street Level"
-            >
-              <Building2 className="w-3.5 h-3.5 text-emerald-400" />
-              <span>STREET</span>
-            </button>
-
-            <button
-              onClick={() => onCameraSignal('top')}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition-all border border-slate-700/60 flex items-center gap-1.5"
-              title="Top-Down Orthographic View"
-            >
-              <Grid className="w-3.5 h-3.5 text-amber-400" />
-              <span>TOP MAP</span>
-            </button>
-
-            {!presentationMode && (
-            <button
-              onClick={() => setIsReportOpen(true)}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition-all border border-slate-700/60 flex items-center gap-1.5"
-              title="Open City Analytics Report"
-            >
-              <FileText className="w-3.5 h-3.5 text-amber-400" />
-              <span>REPORT</span>
-            </button>
-            )}
-
-            <button
-              onClick={onCycleSkyline}
-              className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 border ${
-                skylineStyle === 'cyberpunk'
-                  ? 'bg-fuchsia-600 text-white border-fuchsia-400 shadow-lg shadow-fuchsia-600/30'
-                  : skylineStyle === 'clear'
-                    ? 'bg-sky-100 text-slate-900 border-sky-200'
-                    : 'bg-amber-500 text-slate-950 border-amber-400'
-              }`}
-              title="Cycle skyline look"
-            >
-              <Palette className="w-3.5 h-3.5" />
-              <span>{skylineStyle === 'cyberpunk' ? 'CYBER' : skylineStyle === 'clear' ? 'CLEAR' : 'WARM'}</span>
-            </button>
-
-            {!presentationMode && (
-            <button
-              onClick={onTogglePresentationMode}
-              className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-xl transition-all shadow-lg shadow-rose-600/30 flex items-center gap-1.5"
-              title="Enter Cinematic Presentation Mode"
-            >
-              <Globe className="w-3.5 h-3.5" />
-              <span>PRESENT</span>
-            </button>
-            )}
+      ) : (
+      <div
+        style={{ top: 'calc(0.75rem + env(safe-area-inset-top, 0px))', left: 'calc(0.75rem + env(safe-area-inset-left, 0px))' }}
+        className={`absolute z-20 pointer-events-none flex flex-col gap-2.5 overflow-y-auto no-scrollbar ${compact ? 'right-[68px] max-h-[55vh]' : 'w-[300px] max-h-[calc(100vh-1.5rem)]'}`}
+      >
+        <div className="pointer-events-auto glass-panel flex items-center gap-3 rounded-2xl px-3.5 py-2.5">
+          <LucknowLensMark className="h-9 w-9 flex-shrink-0 object-contain" />
+          <div className="min-w-0 flex-1">
+            <h1 className="font-display text-[1.15rem] leading-none text-paper">Lucknow Lens <span className="font-deva text-[0.9rem] text-sand">लखनऊ</span></h1>
+            <p className="mt-1 text-[11px] text-paper/45">{mapData.bounds.centerLat.toFixed(3)}° N, {mapData.bounds.centerLon.toFixed(3)}° E</p>
           </div>
-
-          {/* Live feed status */}
-          {flightFeed && layers.live.flights && (
-            <div className="pointer-events-auto flex items-center gap-2 bg-slate-900/90 border border-slate-700/80 backdrop-blur-xl rounded-xl px-3 py-1.5 text-[11px] shadow-2xl">
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${
-                  flightFeed.status === 'ok'
-                    ? 'bg-emerald-400'
-                    : flightFeed.status === 'stale'
-                      ? 'bg-amber-400'
-                      : 'bg-rose-500'
-                }`}
-              />
-              <span className="font-bold uppercase tracking-wide text-slate-300">
-                {flightFeed.status === 'ok' ? 'Live' : flightFeed.status === 'stale' ? 'Stale' : 'Unavailable'}
-              </span>
-              <span className="text-slate-500">
-                {flightFeed.status === 'unavailable'
-                  ? (flightFeed.reason ?? 'No provider')
-                  : `${flights.length} aircraft · ${flightFeed.ageSeconds ?? '?'}s ago · ${flightFeed.provider}`}
-              </span>
-            </div>
-          )}
-
-          {/* Live weather */}
-          {weatherFeed && layers.live.weather && (
-            <div className="pointer-events-auto flex items-center gap-2 bg-slate-900/90 border border-slate-700/80 backdrop-blur-xl rounded-xl px-3 py-1.5 text-[11px] shadow-2xl">
-              <span className={`w-1.5 h-1.5 rounded-full ${
-                weatherFeed.status === 'ok' ? 'bg-emerald-400'
-                  : weatherFeed.status === 'stale' ? 'bg-amber-400' : 'bg-rose-500'}`} />
-              {weatherFeed.value ? (
-                <>
-                  <span className="font-bold text-slate-100">
-                    {weatherFeed.value.temperatureC.toFixed(1)}&deg;C
-                  </span>
-                  <span className="text-slate-400">{weatherFeed.value.description}</span>
-                  <span className="text-slate-500">
-                    feels {weatherFeed.value.apparentTemperatureC?.toFixed(1) ?? '?'}&deg; &middot;{' '}
-                    {weatherFeed.value.humidityPct ?? '?'}% RH &middot;{' '}
-                    {weatherFeed.value.windSpeedKph?.toFixed(0) ?? '?'} km/h
-                  </span>
-                </>
-              ) : (
-                <span className="text-slate-500">
-                  Weather unavailable{weatherFeed.reason ? ` · ${weatherFeed.reason}` : ''}
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* Live air quality */}
-          {airFeed && layers.live.aqi && (
-            <div className="pointer-events-auto flex items-center gap-2 bg-slate-900/90 border border-slate-700/80 backdrop-blur-xl rounded-xl px-3 py-1.5 text-[11px] shadow-2xl">
-              <span className={`w-1.5 h-1.5 rounded-full ${
-                airFeed.status === 'ok' ? 'bg-emerald-400'
-                  : airFeed.status === 'stale' ? 'bg-amber-400' : 'bg-rose-500'}`} />
-              {airFeed.value ? (
-                <>
-                  <span className="font-bold text-slate-100">AQI {airFeed.value.usAqi}</span>
-                  <span className={
-                    airFeed.value.usAqi <= 50 ? 'text-emerald-400'
-                      : airFeed.value.usAqi <= 100 ? 'text-yellow-400'
-                      : airFeed.value.usAqi <= 150 ? 'text-orange-400'
-                      : airFeed.value.usAqi <= 200 ? 'text-rose-400' : 'text-fuchsia-400'
-                  }>{airFeed.value.category}</span>
-                  <span className="text-slate-500">
-                    {airFeed.value.dominantPollutant} &middot; PM2.5 {airFeed.value.pm25?.toFixed(0) ?? '?'}
-                    &micro;g/m&sup3;
-                  </span>
-                </>
-              ) : (
-                <span className="text-slate-500">
-                  Air quality unavailable{airFeed.reason ? ` · ${airFeed.reason}` : ''}
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* Layers control manager widget */}
-          <div className="pointer-events-auto w-full">
-            <LayerControl layers={layers} onToggleLayer={onToggleLayer} />
+          <button onClick={toggleMinimal} title="Minimise panels" aria-label="Minimise panels" className="grid h-8 w-8 place-items-center rounded-full text-paper/60 hover:bg-white/10 hover:text-paper">
+            <PanelLeftClose className="h-4 w-4" strokeWidth={1.7} />
+          </button>
+        </div>
+        <div className="pointer-events-auto">
+          <SearchUI mapData={mapData} onSelectResult={handleSearchResultClick} onSetDestinationWaypoint={onSetDestinationWaypoint} />
+        </div>
+        <div className="pointer-events-auto">
+          <button onClick={() => window.dispatchEvent(new Event('lens:start-tour'))}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#e0a55a] px-4 py-2.5 text-[13.5px] font-semibold text-[#2a1a10] shadow-[0_10px_28px_-10px_rgba(224,165,90,.8)] transition-transform hover:scale-[1.015] active:scale-[0.98]">
+            <svg width="13" height="13" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 1.5v11l9-5.5z" fill="currentColor" /></svg>
+            Guided tour of Lucknow
+          </button>
+        </div>
+        {/* Quick fly-to chips: one tap flies to a highlight. */}
+          <div className="pointer-events-auto flex max-w-[calc(100vw-6rem)] sm:max-w-[300px] gap-1.5 overflow-x-auto no-scrollbar pb-0.5" role="list" aria-label="Quick fly to">
+            {QUICK.map((q) => (
+              <button key={q.id} role="listitem" onClick={() => onCameraSignal(`dest:${q.id}` as CameraPreset)}
+                className="glass-panel flex-shrink-0 rounded-full px-3 py-1.5 text-[11.5px] font-semibold text-paper/85 hover:text-paper">{q.label}</button>
+            ))}
           </div>
+        {selectedEntity && (
+          <div className="pointer-events-auto">
+            <InfoPanel entity={selectedEntity} onClose={() => onSelectEntity(null)} onSetDestinationWaypoint={onSetDestinationWaypoint} />
+          </div>
+        )}
+      </div>
+      )}
 
-          {/* Detailed live-data popup */}
-          <div className="pointer-events-auto w-full">
+      {/* Bottom-left: only the live feeds you switched on */}
+      <div
+        style={compact ? { bottom: 'calc(78px + env(safe-area-inset-bottom, 0px))', left: 'calc(0.75rem + env(safe-area-inset-left, 0px))' } : undefined}
+        className={`absolute z-20 pointer-events-none flex flex-col gap-1.5 ${compact ? '' : 'bottom-3 left-3'}`}
+      >
+        {flightFeed && layers.live.flights && (
+          <Chip status={flightFeed.status}>
+            {flightFeed.status === 'unavailable' ? (flightFeed.reason ?? 'Aircraft unavailable') : `${flights.length} aircraft · ${flightFeed.ageSeconds ?? '?'}s ago`}
+          </Chip>
+        )}
+        {weatherFeed && layers.live.weather && (
+          <Chip status={weatherFeed.status}>
+            {weatherFeed.value ? `${weatherFeed.value.temperatureC.toFixed(0)}°C · ${weatherFeed.value.description} · ${weatherFeed.value.humidityPct ?? '?'}% humidity` : 'Weather unavailable'}
+          </Chip>
+        )}
+        {airFeed && layers.live.aqi && (
+          <Chip status={airFeed.status}>
+            {airFeed.value ? `AQI ${airFeed.value.usAqi} · ${airFeed.value.category}` : 'Air quality unavailable'}
+          </Chip>
+        )}
+      </div>
+
+      {!presentationMode && (
+        <div
+          style={{ top: `calc(${compact ? '64px' : '0.75rem'} + env(safe-area-inset-top, 0px))`, right: 'calc(0.75rem + env(safe-area-inset-right, 0px))' }}
+          className="absolute z-30"
+        >
+          <DayNightToggle night={night} onChange={(n, origin) => runDayNight(() => onNight(n), origin)} compact={compact} />
+        </div>
+      )}
+      {!presentationMode && (
+        <MapControls
+          compact={compact}
+          layers={layers}
+          onToggleLayer={onToggleLayer}
+          showLabels={showLabels}
+          onToggleLabels={onToggleLabels}
+          labelSettings={labelSettings}
+          onLabelSettings={onLabelSettings}
+          theme={theme}
+          onTheme={onTheme}
+          night={night}
+          cameraPanel={<CameraWidget controller={cameraController} embedded />}
+          windowView={windowView}
+          onWindowView={onWindowView}
+          onCameraSignal={onCameraSignal}
+          onExecuteAction={onExecuteAction}
+          onReport={() => setIsReportOpen(true)}
+          onPresent={onTogglePresentationMode}
+          onMapOnly={onToggleMapOnly}
+          liveDetails={
             <LiveDataPanel
               layers={layers.live}
               weatherFeed={weatherFeed}
@@ -501,74 +317,28 @@ export const CityUI: React.FC<CityUIProps> = ({
               trafficFeed={trafficFeed}
               newsFeed={newsFeed}
             />
-          </div>
+          }
+        />
+      )}
 
-          {/* Selected entity inspector info panel card */}
-          {selectedEntity && (
-            <div className="pointer-events-auto w-full">
-              <InfoPanel
-                entity={selectedEntity}
-                onClose={() => onSelectEntity(null)}
-                onSetDestinationWaypoint={onSetDestinationWaypoint}
-                onCheckRouteImpact={onCheckRouteImpact}
-                onFindAlternativeRoute={onFindAlternativeRoute}
-                onFlyToLocation={onFlyToLocation}
-              />
-            </div>
-          )}
-        </div>
-      </>
-
-      {/* Floating Presentation Mode Exit Button */}
       {presentationMode && (
         <div className="absolute bottom-6 right-6 z-30">
-          <button
-            onClick={onTogglePresentationMode}
-            className="px-4 py-2.5 bg-slate-900/80 hover:bg-slate-800 backdrop-blur-xl border border-white/10 text-white text-xs font-bold rounded-xl transition-all shadow-2xl flex items-center gap-2 group"
-          >
-            <span>Exit Presentation</span>
-            <kbd className="font-mono text-[10px] bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded group-hover:bg-slate-700">ESC</kbd>
+          <button onClick={onTogglePresentationMode} className="group flex items-center gap-2 rounded-xl border border-white/10 bg-cabin/80 px-4 py-2.5 text-xs font-bold text-paper shadow-2xl backdrop-blur-xl hover:bg-cabin">
+            <span>Exit presentation</span>
+            <kbd className="rounded bg-white/10 px-1.5 py-0.5 font-mono text-[10px] text-paper/70">ESC</kbd>
           </button>
         </div>
       )}
 
-      {/* Camera Controls Widget */}
-      {!compact && <CameraWidget controller={cameraController} />}
 
-      {/* Compact layout sheet handle */}
-      {compact && !presentationMode && (
-        <div className="absolute bottom-4 right-4 z-30 pointer-events-auto flex flex-col gap-2">
-          <button
-            onClick={onToggleMapOnly}
-            className="w-11 h-11 rounded-full bg-slate-900/60 hover:bg-slate-900/85 backdrop-blur-md border border-white/10 text-slate-200 flex items-center justify-center shadow-2xl"
-            title="Map only"
-            aria-label="Map only"
-          >
-            <Maximize2 className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setSheetOpen((v) => !v)}
-            className={`w-11 h-11 rounded-full backdrop-blur-md border flex items-center justify-center shadow-2xl transition-all ${
-              sheetOpen
-                ? 'bg-amber-500 border-amber-400 text-slate-950'
-                : 'bg-slate-900/60 hover:bg-slate-900/85 border-white/10 text-slate-200'
-            }`}
-            title={sheetOpen ? 'Hide controls' : 'Show controls'}
-            aria-label={sheetOpen ? 'Hide controls' : 'Show controls'}
-            aria-expanded={sheetOpen}
-          >
-            {sheetOpen ? <X className="w-4 h-4" /> : <SlidersHorizontal className="w-4 h-4" />}
-          </button>
-        </div>
-      )}
-
-      {/* Report Modal */}
-      <ReportModal
-        isOpen={isReportOpen}
-        onClose={() => setIsReportOpen(false)}
-        mapData={mapData}
-        renderStats={renderStats}
-      />
+      <ReportModal isOpen={isReportOpen} onClose={() => setIsReportOpen(false)} mapData={mapData} renderStats={renderStats} />
     </>
   );
 };
+
+const Chip: React.FC<{ status: 'ok' | 'stale' | 'unavailable'; children: React.ReactNode }> = ({ status, children }) => (
+  <div className="glass-panel flex w-fit max-w-[70vw] items-center gap-2 truncate rounded-full px-3 py-1.5 text-[11.5px] text-paper/80">
+    <span className={`h-1.5 w-1.5 rounded-full ${status === 'ok' ? 'bg-amber-300' : status === 'stale' ? 'bg-amber-400' : 'bg-rose-500'}`} />
+    {children}
+  </div>
+);

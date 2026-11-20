@@ -1,0 +1,11 @@
+[
+  { "n": "phase1_fly_close", "t": [6086, -1310], "az": 0.8, "pi": 0.3, "d": 380, "night": false },
+  { "n": "phase1_fly_night", "t": [6086, -1310], "az": 0.8, "pi": 0.3, "d": 380, "night": true },
+  { "n": "phase1_bridge_a", "t": [1700, -400], "az": 0.9, "pi": 0.5, "d": 1600, "night": false },
+  { "n": "phase1_bridge_water", "t": [220, -500], "az": 0.35, "pi": 0.32, "d": 650, "night": false },
+  { "n": "phase1_median_close", "t": [2554, 319], "az": 0.5, "pi": 0.35, "d": 450, "night": false },
+  { "n": "phase1_median_shaheed", "t": [4500, 2200], "az": 0.7, "pi": 0.45, "d": 1200, "night": false },
+  { "n": "phase1_zebra_close", "t": [-420, 340], "az": 0.6, "pi": 0.28, "d": 280, "night": false },
+  { "n": "phase1_road_surface", "t": [-382, 372], "az": 0.6, "pi": 0.22, "d": 240, "night": false }
+]
+

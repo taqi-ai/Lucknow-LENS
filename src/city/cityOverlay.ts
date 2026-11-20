@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { loadBuffer } from '../data/resourceCache';
 import { type RoadClass } from './ribbon';
+import { createRoadMaterial, applyRoadPalette, roadUniforms } from './roadMaterial';
 import { BridgeSystem } from './bridges';
 
 /**
@@ -16,48 +17,6 @@ import { BridgeSystem } from './bridges';
  * roads win the depth test where both exist.
  */
 
-const ROAD_COLORS_DAY: Record<RoadClass, number> = {
-  motorway: 0x16181d, // deep black highway asphalt
-  trunk: 0x1a1c22, // dark trunk asphalt
-  primary: 0x1e2128, // dark primary arterial
-  secondary: 0x242830, // dark secondary road
-  tertiary: 0x2a2e37, // dark tertiary street
-  residential: 0x30353f, // dark neighborhood lane
-  service: 0x363b46, // service lane
-  footway: 0x484e5a, // paved pedestrian walkway
-  railway: 0x222429, // dark rail trackbed
-  flyover: 0x181a20, // dark elevated flyover asphalt
-};
-
-/**
- * Night road hierarchy: deep midnight black asphalt with warm golden sodium
- * streetlight wash along carriageways.
- */
-const ROAD_COLORS_NIGHT: Record<RoadClass, number> = {
-  motorway: 0x0f1115,
-  trunk: 0x121418,
-  primary: 0x14161b,
-  secondary: 0x16181e,
-  tertiary: 0x181b22,
-  residential: 0x1b1e26,
-  service: 0x1e212a,
-  footway: 0x20242e,
-  railway: 0x15161b,
-  flyover: 0x111317,
-};
-
-const ROAD_EMISSIVE_NIGHT: Record<RoadClass, number> = {
-  motorway: 0x7a5b32, // bright sodium luminaire wash
-  trunk: 0x6e522c,
-  primary: 0x624826,
-  secondary: 0x543c1f,
-  tertiary: 0x443018,
-  residential: 0x322210,
-  service: 0x1e140a,
-  footway: 0x0f0b05,
-  railway: 0x1a1d24,
-  flyover: 0x856236,
-};
 
 export class CityOverlay {
   private group = new THREE.Group();
@@ -65,6 +24,12 @@ export class CityOverlay {
   private roadMaterials = new Map<RoadClass, THREE.MeshStandardMaterial>();
   private flyoverPierMesh: THREE.Mesh | null = null;
   private flyoverBarrierMesh: THREE.Mesh | null = null;
+  private medianMeshes: THREE.Mesh[] = [];
+  private markingMesh: THREE.Mesh | null = null;
+  private promenadeMat = new THREE.MeshStandardMaterial({ color: 0xc4b59a, roughness: 0.92, side: THREE.DoubleSide });
+  private medianKerbMat = new THREE.MeshStandardMaterial({ color: 0xd2cdc2, roughness: 0.85, side: THREE.DoubleSide });
+  private medianGrassMat = new THREE.MeshStandardMaterial({ color: 0x4e6b26, roughness: 0.95, side: THREE.DoubleSide });
+  private markingMat = new THREE.MeshStandardMaterial({ color: 0xe6e3da, roughness: 0.75, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 });
   private flyoverPierMat: THREE.MeshStandardMaterial;
   private flyoverBarrierMat: THREE.MeshStandardMaterial;
   private railBedMesh: THREE.Mesh | null = null;
@@ -84,6 +49,7 @@ export class CityOverlay {
   private structTrussMat: THREE.MeshStandardMaterial;
   private structMassMat: THREE.MeshStandardMaterial;
   private waterMaterial: THREE.MeshStandardMaterial;
+  private bankMaterial = new THREE.MeshStandardMaterial({ color: 0x9c958a, roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 });
   private parkMaterial: THREE.MeshStandardMaterial;
   private waterMesh: THREE.Mesh | null = null;
   private parkMesh: THREE.Mesh | null = null;
@@ -104,14 +70,16 @@ export class CityOverlay {
     this.bridges = new BridgeSystem(scene);
 
     this.flyoverPierMat = new THREE.MeshStandardMaterial({
-      color: 0x2a2b30,
-      roughness: 0.85,
+      color: 0xa29d92,
+      roughness: 0.9,
       flatShading: true,
+      side: THREE.DoubleSide,
     });
     this.flyoverBarrierMat = new THREE.MeshStandardMaterial({
-      color: 0x3a3c42,
-      roughness: 0.7,
+      color: 0xc9c5ba,
+      roughness: 0.8,
       emissive: 0x261d10,
+      side: THREE.DoubleSide,
     });
 
     // Track. Ballast is crushed stone — very rough, no specular. The rails are
@@ -160,25 +128,22 @@ export class CityOverlay {
       color: 0xa9a396, roughness: 0.88, flatShading: true,
     });
 
-    for (const cls of Object.keys(ROAD_COLORS_DAY) as RoadClass[]) {
-      this.roadMaterials.set(cls, new THREE.MeshStandardMaterial({
-        color: ROAD_COLORS_NIGHT[cls],
-        emissive: ROAD_EMISSIVE_NIGHT[cls],
-        // Wider roads are smoother, better-maintained asphalt.
-        roughness: cls === 'motorway' || cls === 'trunk' || cls === 'flyover' ? 0.62 : 0.86,
-        metalness: cls === 'railway' ? 0.25 : 0.0,
+    for (const cls of ['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'residential', 'service', 'footway', 'railway', 'flyover'] as RoadClass[]) {
+      const mat = createRoadMaterial(cls, {
         polygonOffset: true,
         polygonOffsetFactor: cls === 'flyover' ? -2 : 3,
         polygonOffsetUnits: cls === 'flyover' ? -4 : 6,
-      }));
+      });
+      (mat as unknown as { uniforms: unknown }).uniforms = roadUniforms;
+      this.roadMaterials.set(cls, mat);
     }
 
     // Metalness stays low. A metallic surface with no environment map has nothing
     // to reflect and renders near-black, which is what turned the Gomti into a
     // black ribbon in daylight. Low roughness alone gives the sheen.
     this.waterMaterial = new THREE.MeshStandardMaterial({
-      color: 0x0d2438,
-      roughness: 0.32,
+      color: 0x1d3036,
+      roughness: 0.62, // a silty river: soft highlight, no mirror-like sun streaks
       metalness: 0.08,
     });
     // A flat-shaded plane reads as painted cardboard no matter what colour it is.
@@ -208,15 +173,16 @@ export class CityOverlay {
           // Ripples are sub-pixel past ~1.5 km and produce heavy moire across the
           // whole river, so they fade out with distance.
           float rippleFade = 1.0 - smoothstep(600.0, 2200.0, length(vViewPosition));
-          normal = normalize(mix(normal, ripple, 0.55 * rippleFade));
+          normal = normalize(mix(normal, ripple, 0.22 * rippleFade));
         `)
         .replace('#include <fog_fragment>', /* glsl */ `
           // Fresnel: water is far more reflective at grazing angles, which is what
           // separates a river from a coloured polygon when seen from a low camera.
           vec3 vDir = normalize(vViewPosition);
           float fres = pow(1.0 - clamp(dot(normalize(normal), vDir), 0.0, 1.0), 3.2);
-          vec3 skyTint = mix(vec3(0.44, 0.58, 0.70), vec3(0.10, 0.15, 0.26), uNightW);
-          gl_FragColor.rgb = mix(gl_FragColor.rgb, skyTint, fres * mix(0.55, 0.35, uNightW));
+          // Hazy-sky reflection, low intensity: the Gomti reads as a silty green-brown river.
+          vec3 skyTint = mix(vec3(0.30, 0.36, 0.38), vec3(0.10, 0.12, 0.16), uNightW);
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, skyTint, fres * mix(0.18, 0.3, uNightW));
           // Silt gradient — shallower, warmer water toward the banks.
           float siltFade = 1.0 - smoothstep(1500.0, 6000.0, length(vViewPosition));
           float silt = 0.5 + 0.5 * sin(vWPos.x * 0.004 + vWPos.z * 0.0031);
@@ -225,7 +191,7 @@ export class CityOverlay {
           float glint = smoothstep(0.72, 0.99, h * 0.5 + 0.5) * fres
                       * (1.0 - smoothstep(600.0, 2200.0, length(vViewPosition)));
           gl_FragColor.rgb += mix(vec3(1.0, 0.97, 0.88), vec3(0.55, 0.68, 0.92), uNightW)
-                            * glint * mix(0.45, 0.28, uNightW);
+                            * glint * mix(0.18, 0.2, uNightW);
           #include <fog_fragment>
         `);
     };
@@ -306,11 +272,18 @@ export class CityOverlay {
         if (sec.name.startsWith('road:')) {
           const cls = sec.name.slice(5) as RoadClass;
           const mesh = this.makeMesh(pos, this.roadMaterials.get(cls)!, 'roads');
+          // Zero UVs until the matching roaduv section arrives (older bakes have none).
+          mesh.geometry.setAttribute('aRoadUV', new THREE.BufferAttribute(new Float32Array((sec.floats / 3) * 2), 2));
           this.roadMeshes.set(cls, mesh);
           this.stats.roadVerts += sec.floats / 3;
+        } else if (sec.name.startsWith('roaduv:')) {
+          const mesh = this.roadMeshes.get(sec.name.slice(7) as RoadClass);
+          if (mesh) mesh.geometry.setAttribute('aRoadUV', new THREE.BufferAttribute(pos, 2));
         } else if (sec.name === 'water') {
           this.waterMesh = this.makeMesh(pos, this.waterMaterial, 'water');
           this.stats.waterVerts = sec.floats / 3;
+        } else if (sec.name === 'riverBank') {
+          this.makeMesh(pos, this.bankMaterial, 'water');
         } else if (sec.name === 'parks') {
           this.parkMesh = this.makeMesh(pos, this.parkMaterial, 'parks');
           this.stats.parkVerts = sec.floats / 3;
@@ -322,6 +295,14 @@ export class CityOverlay {
           this.bridges.addSection(pos, 'rail');
         } else if (sec.name === 'flyoverPiers') {
           this.flyoverPierMesh = this.makeMesh(pos, this.flyoverPierMat, 'flyoverPiers');
+        } else if (sec.name === 'promenade') {
+          this.makeMesh(pos, this.promenadeMat, 'water');
+        } else if (sec.name === 'medianKerb') {
+          this.medianMeshes.push(this.makeMesh(pos, this.medianKerbMat, 'roads'));
+        } else if (sec.name === 'medianGrass') {
+          this.medianMeshes.push(this.makeMesh(pos, this.medianGrassMat, 'roads'));
+        } else if (sec.name === 'markings') {
+          this.markingMesh = this.makeMesh(pos, this.markingMat, 'roads');
         } else if (sec.name === 'flyoverBarriers') {
           this.flyoverBarrierMesh = this.makeMesh(pos, this.flyoverBarrierMat, 'flyoverBarriers');
         } else if (sec.name === 'railBed') {
@@ -391,6 +372,9 @@ export class CityOverlay {
 
     if (this.flyoverPierMesh) this.flyoverPierMesh.visible = this.roadsEnabled && altitude <= 6000;
     if (this.flyoverBarrierMesh) this.flyoverBarrierMesh.visible = this.roadsEnabled && altitude <= 6000;
+    for (const m of this.medianMeshes) m.visible = this.roadsEnabled && altitude <= 6000;
+    if (this.markingMesh) this.markingMesh.visible = this.roadsEnabled && altitude <= 700;
+    this.markingMat.color.setHex(this.isNight ? 0x6e6b64 : 0xe6e3da);
 
     // The bed carries the line at every altitude; rails and sleepers are detail
     // that stops resolving well before it stops costing anything.
@@ -428,6 +412,8 @@ export class CityOverlay {
       for (const mesh of this.roadMeshes.values()) mesh.visible = false;
       if (this.flyoverPierMesh) this.flyoverPierMesh.visible = false;
       if (this.flyoverBarrierMesh) this.flyoverBarrierMesh.visible = false;
+      for (const m of this.medianMeshes) m.visible = false;
+      if (this.markingMesh) this.markingMesh.visible = false;
       if (this.railBedMesh) this.railBedMesh.visible = false;
       if (this.railSleeperMesh) this.railSleeperMesh.visible = false;
       if (this.railRailsMesh) this.railRailsMesh.visible = false;
@@ -445,19 +431,16 @@ export class CityOverlay {
     this.isNight = night;
 
     this.bridges.setNightMode(night);
-    for (const [cls, mat] of this.roadMaterials) {
-      mat.color.setHex(night ? ROAD_COLORS_NIGHT[cls] : ROAD_COLORS_DAY[cls]);
-      mat.emissive.setHex(night ? ROAD_EMISSIVE_NIGHT[cls] : 0x000000);
-      mat.emissiveIntensity = night ? 1 : 0;
-    }
+    for (const [cls, mat] of this.roadMaterials) applyRoadPalette(mat, cls, night);
+    roadUniforms.uRoadNight.value = night ? 1 : 0;
 
     if (night) {
       this.waterMaterial.color.setHex(0x14293d);
       this.waterMaterial.roughness = 0.22;
       this.waterNight.value = 1;
       this.parkMaterial.color.setHex(0x16241a);
-      this.flyoverPierMat.color.setHex(0x1e2025);
-      this.flyoverBarrierMat.color.setHex(0x2d2f36);
+      this.flyoverPierMat.color.setHex(0x4a4842);
+      this.flyoverBarrierMat.color.setHex(0x5e5b54);
       this.flyoverBarrierMat.emissive.setHex(0x382a14);
       this.railBedMat.color.setHex(0x24221f);
       this.railSleeperMat.color.setHex(0x2b2824);
@@ -467,12 +450,12 @@ export class CityOverlay {
       this.metroCanopyMat.color.setHex(0x3d4149);
       this.metroCanopyMat.emissive.setHex(0x2a2213);
     } else {
-      this.waterMaterial.color.setHex(0x4e7a80);
-      this.waterMaterial.roughness = 0.34;
+      this.waterMaterial.color.setHex(0x3a4c46);
+      this.waterMaterial.roughness = 0.62;
       this.waterNight.value = 0;
-      this.parkMaterial.color.setHex(0x5f7a4c);
-      this.flyoverPierMat.color.setHex(0x606268);
-      this.flyoverBarrierMat.color.setHex(0x7a7d84);
+      this.parkMaterial.color.setHex(0x637548);
+      this.flyoverPierMat.color.setHex(0xa29d92);
+      this.flyoverBarrierMat.color.setHex(0xc9c5ba);
       this.flyoverBarrierMat.emissive.setHex(0x000000);
       this.railBedMat.color.setHex(0x6b645a);
       this.railSleeperMat.color.setHex(0x8a8478);

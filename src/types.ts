@@ -25,6 +25,12 @@ export interface RoadSegmentOSM {
   width: number;
   type: string;
   isMajor: boolean;
+  level?: number;
+  isElevated?: boolean;
+  isLink?: boolean;
+  isTunnel?: boolean;
+  oneway?: boolean | string | number;
+  roundabout?: boolean;
 }
 
 export interface WaterwayOSM {
@@ -89,8 +95,10 @@ export interface RenderStats {
 export type CameraPreset =
   | 'fullcity' | 'overview' | 'neighborhood' | 'street' | 'top' | 'frame'
   /** Cinematic framings over the same real city — see CINEMATIC_PRESETS. */
-  | 'hero' | 'gomti' | 'hazratganj' | 'ekana' | 'oldlucknow' | 'charbagh'
-  | 'rumi' | 'clocktower' | 'vidhansabha' | 'ambedkar' | 'airport';
+  | 'hero' | 'window' | 'gomti' | 'hazratganj' | 'ekana' | 'oldlucknow' | 'charbagh'
+  | 'rumi' | 'clocktower' | 'vidhansabha' | 'ambedkar'
+  /** Registry destinations from city/destinations.ts, e.g. 'dest:charbagh'. */
+  | `dest:${string}`;
 
 export type LODLevel = 0 | 1 | 2 | 3;
 
@@ -184,18 +192,11 @@ export interface SearchResult {
   x: number;
   z: number;
   importance: number;
+  /** Registry destination: selecting it flies to this cinematic preset instead of a generic zoom. */
+  presetId?: string;
 }
 
-export type SelectedEntityType =
-  | 'building'
-  | 'poi'
-  | 'aircraft'
-  | 'emergency'
-  | 'transport-hub'
-  | 'hazard'
-  | 'incident'
-  | 'news'
-  | 'route';
+export type SelectedEntityType = 'building' | 'poi' | 'aircraft' | 'emergency';
 
 export interface SelectedEntity {
   type: SelectedEntityType;
@@ -236,11 +237,10 @@ export interface SimulatedFlight {
 }
 
 export interface AIAction {
-  type: 'FLY_TO' | 'ENABLE_LAYER' | 'DISABLE_LAYER' | 'CALCULATE_ROUTE' | 'NONE';
+  type: 'FLY_TO' | 'ENABLE_LAYER' | 'DISABLE_LAYER' | 'NONE';
   latitude?: number;
   longitude?: number;
   layer?: string;
-  destination?: { name: string; lat: number; lon: number };
 }
 
 export interface AIResponse {

@@ -43,7 +43,10 @@ import path from 'path';
 import { classifyRoad, ROAD_HALF_WIDTH, type RoadClass } from '../src/city/ribbon';
 import { isInUndergroundCorridor } from '../src/city/metroStations';
 
-const DATA_FILE = path.join(process.cwd(), 'data/lucknow_transportation_extracted.json');
+// Round 2: prefer the exact extract from Overture segments (scripts/py/build_transport_extract.py),
+// which keeps bridge / tunnel / level ranges. Falls back to the legacy flattened extract.
+const DATA_V2 = path.join(process.cwd(), 'data/derived/transport_v2.json');
+const DATA_FILE = fs.existsSync(DATA_V2) ? DATA_V2 : path.join(process.cwd(), 'data/lucknow_transportation_extracted.json');
 const TILES_DIR = path.join(process.cwd(), 'public/overture_tiles_full');
 
 const TILE_SIZE = 500;
@@ -64,6 +67,12 @@ interface RawFeature {
   name?: string;
   level?: number;
   isElevated?: boolean;
+  /** Exact per-range flags from build_transport_extract.py. */
+  exact?: boolean;
+  isTunnel?: boolean;
+  isLink?: boolean;
+  construction?: boolean;
+  width?: number;
   coords: [number, number][];
 }
 
@@ -79,6 +88,9 @@ interface RoadOut {
   level: number;
   isElevated: boolean;
   isMajor: boolean;
+  isTunnel?: boolean;
+  isLink?: boolean;
+  construction?: boolean;
 }
 
 /**
@@ -185,6 +197,16 @@ function elevationFromName(name: string | undefined, lengthM: number): boolean {
 }
 
 function resolveElevation(f: RawFeature, lengthM: number): { elevated: boolean; level: number } {
+  if (f.exact) {
+    // Mapped grade separation, split at its real ranges: trusted as-is. The curated
+    // underground corridor still wins for the metro (the bored section under the centre).
+    if (f.class === 'subway' && f.isElevated) {
+      const mid = f.coords[Math.floor(f.coords.length / 2)];
+      const p = project(mid[0], mid[1]);
+      if (isInUndergroundCorridor(p.x, p.z)) return { elevated: false, level: 0 };
+    }
+    return { elevated: Boolean(f.isElevated), level: f.isElevated ? Math.max(1, f.level ?? 1) : 0 };
+  }
   const rawLevel = f.level ?? 0;
   const rawElevated = Boolean(f.isElevated) || rawLevel > 0;
 
@@ -402,8 +424,11 @@ function main(): void {
     const { elevated: isElevated, level } = resolveElevation(f, polylineLength(projected));
     if ((f.isElevated || (f.level ?? 0) > 0) && !isElevated) stats.elevationRejected++;
 
+    // Road tunnels are not drawn on the surface at all. Metro tunnels are kept (flagged)
+    // so the metro system can draw its subtle underground alignment.
+    if (f.isTunnel && f.class !== 'subway') continue;
     const cls = classifyRoad(f.class, f.subtype, level, isElevated);
-    const width = widthFor(cls, f.subtype);
+    const width = f.width && f.width > 2 && f.width < 60 ? f.width : widthFor(cls, f.subtype);
     const major = isMajorFeature(f, isElevated);
 
     const runs = clipPolyline(projected, extent);
@@ -431,6 +456,9 @@ function main(): void {
         level,
         isElevated,
         isMajor: major,
+        ...(f.isTunnel ? { isTunnel: true } : {}),
+        ...(f.isLink ? { isLink: true } : {}),
+        ...(f.construction ? { construction: true } : {}),
       };
 
       if (major) overviewRoads.push({ ...base, points: run });

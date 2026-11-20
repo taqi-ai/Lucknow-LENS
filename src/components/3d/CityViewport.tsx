@@ -1,9 +1,10 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { CameraPreset, OSMMapData, RenderStats, CityStreamingStats, SimulatedFlight, SelectedEntity } from '../../types';
 import { CityRenderer } from '../../city/renderer';
 import { TileStreamer } from '../../city/tileStreamer';
-import { LabelManager } from '../../city/labelManager';
+import { LabelManager, type LabelSettings } from '../../city/labelManager';
+import { SceneTween, DAY_NIGHT_SECONDS } from '../../city/sceneTween';
 import { CameraController } from '../../city/cameraController';
 import { AtmosphericSky } from '../../city/atmosphericSky';
 import { BuildingMaterialSystem, type SkylineStyle } from '../../city/buildingMaterial';
@@ -17,10 +18,8 @@ import { NavigationRoute, RouteWaypoint, GPSTheme } from '../../navigation/types
 import { EmergencyVisualManager } from '../../city/emergencyVisuals';
 import { loadEmergencyFacilities, EmergencyFacility } from '../../city/emergencyServices';
 import { CampusAmbienceManager } from '../../city/campusAmbience';
-import { TransportHubManager, TRANSPORT_HUBS_REGISTRY, TransportHubData } from '../../city/transportHubs';
-import { HazardVisualManager } from '../../spatial/hazardVisuals';
-import { IncidentVisualManager } from '../../spatial/incidentVisuals';
-import { SpatialHazardZone, SpatialIncident } from '../../spatial/types';
+import { getDeviceProfile } from '../../city/deviceProfile';
+import { performanceConfig } from '../../city/performanceConfig';
 
 /**
  * Aircraft geometry and materials are created once at module scope and shared by
@@ -61,6 +60,7 @@ interface CityViewportProps {
   nightMode: boolean;
   skylineStyle: SkylineStyle;
   showLabels: boolean;
+  labelSettings: LabelSettings;
   layers: LayerState;
   flights: SimulatedFlight[];
   selectedEntity: SelectedEntity | null;
@@ -81,6 +81,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
   nightMode,
   skylineStyle,
   showLabels,
+  labelSettings,
   layers,
   flights,
   selectedEntity,
@@ -94,11 +95,16 @@ export const CityViewport: React.FC<CityViewportProps> = ({
   onSetDestinationWaypoint,
   onRouteDriverReady,
 }) => {
+  const [webglError, setWebglError] = useState(false);
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<CityRenderer | null>(null);
   const streamerRef = useRef<TileStreamer | null>(null);
   const controlsRef = useRef<CameraController | null>(null);
   const labelManagerRef = useRef<LabelManager | null>(null);
+  const labelSettingsRef = useRef(labelSettings);
+  const tweenRef = useRef<SceneTween | null>(null);
+  const nightAppliedRef = useRef<boolean | null>(null);
+  labelSettingsRef.current = labelSettings;
   const skyRef = useRef<AtmosphericSky | null>(null);
   const materialsRef = useRef<BuildingMaterialSystem | null>(null);
 
@@ -106,9 +112,6 @@ export const CityViewport: React.FC<CityViewportProps> = ({
   const waypointVisualsRef = useRef<WaypointVisuals | null>(null);
   const routeDriverRef = useRef<RouteDriver | null>(null);
   const campusAmbienceRef = useRef<CampusAmbienceManager | null>(null);
-  const transportHubsRef = useRef<TransportHubManager | null>(null);
-  const hazardVisualsRef = useRef<HazardVisualManager | null>(null);
-  const incidentVisualsRef = useRef<IncidentVisualManager | null>(null);
   
   const flightsGroupRef = useRef<THREE.Group | null>(null);
   const highlightRingRef = useRef<THREE.Mesh | null>(null);
@@ -136,7 +139,18 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     if (!mountRef.current) return;
 
     const container = mountRef.current;
-    const cityRenderer = new CityRenderer(container, mapDataRef.current);
+    // Fresh scene objects start in their default (night) state. Under StrictMode this
+    // effect runs twice and the ref kept the first mount's value, so the second mount's
+    // objects never received the user's day/night choice. Force the next pass to snap.
+    nightAppliedRef.current = null;
+    let cityRenderer: CityRenderer;
+    try {
+      cityRenderer = new CityRenderer(container, mapDataRef.current);
+    } catch (err) {
+      console.error('[CityViewport] WebGL initialization failed:', err);
+      setWebglError(true);
+      return;
+    }
     rendererRef.current = cityRenderer;
 
     // One shared material system drives every building
@@ -145,16 +159,37 @@ export const CityViewport: React.FC<CityViewportProps> = ({
 
     const streamer = new TileStreamer(cityRenderer.scene, materials);
     streamerRef.current = streamer;
+    (window as unknown as { __lensTrainHead?: () => unknown }).__lensTrainHead = () => streamer.metroTrainHead();
+    // Local-only pin tool hooks (src/components/features/PinTool.tsx): screen <-> ground.
+    {
+      const ray = new THREE.Raycaster();
+      const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      const hit = new THREE.Vector3();
+      const w = window as unknown as Record<string, unknown>;
+      w.__lensPick = (clientX: number, clientY: number) => {
+        const r = container.getBoundingClientRect();
+        ray.setFromCamera(new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1), cityRenderer.camera);
+        return ray.ray.intersectPlane(plane, hit) ? { x: hit.x, z: hit.z } : null;
+      };
+      w.__lensProject = (x: number, y: number, z: number) => {
+        const r = container.getBoundingClientRect();
+        const v = new THREE.Vector3(x, y, z).project(cityRenderer.camera);
+        return { sx: (v.x * 0.5 + 0.5) * r.width + r.left, sy: (-v.y * 0.5 + 0.5) * r.height + r.top, visible: v.z > -1 && v.z < 1 };
+      };
+    }
 
     // Initialize label manager and load label data
     const labelManager = new LabelManager(cityRenderer.scene);
     labelManagerRef.current = labelManager;
     labelManager.setCamera(cityRenderer.camera);
     labelManager.setViewport(container.clientWidth, container.clientHeight);
+    labelManager.setSettings(labelSettingsRef.current);
     labelManager.loadData();
 
     const sky = new AtmosphericSky();
     skyRef.current = sky;
+    if (import.meta.env.DEV) (window as unknown as { __tween?: () => SceneTween | null }).__tween = () => tweenRef.current;
+    tweenRef.current = new SceneTween(cityRenderer.scene, cityRenderer.renderer, new Set([sky.material].filter(Boolean) as THREE.Material[]));
 
     // Custom Target-Orbit Navigation
     const controls = new CameraController(cityRenderer.camera, cityRenderer.renderer.domElement);
@@ -208,19 +243,6 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     campusAmbienceRef.current = campusAmbience;
     cityRenderer.scene.add(campusAmbience.group);
 
-    // Transport Gateways & Signature Infrastructure (Airport & Charbagh Grand Terminal)
-    const transportHubs = new TransportHubManager(cityRenderer.scene);
-    transportHubsRef.current = transportHubs;
-    transportHubs.setNightMode(nightMode);
-
-    // Natural Hazards 3D Layer
-    const hazardVisuals = new HazardVisualManager(cityRenderer.scene);
-    hazardVisualsRef.current = hazardVisuals;
-
-    // Live Incidents 3D Layer
-    const incidentVisuals = new IncidentVisualManager(cityRenderer.scene);
-    incidentVisualsRef.current = incidentVisuals;
-
     // TileStreamer init
     streamer.init().then(() => {
       const extent = streamer.getSpatialExtent();
@@ -233,6 +255,93 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       );
     });
 
+    // DEV INSTRUMENTATION HOOK (window.__LENS) for scripts/visual_harness.mjs:
+    // drive the camera, wait for streaming to settle, sample real render stats.
+    if (import.meta.env.DEV || (typeof window !== 'undefined' && (new URLSearchParams(window.location.search).has('benchmark') || new URLSearchParams(window.location.search).has('harness')))) {
+      (window as unknown as { __LENS?: unknown }).__LENS = {
+        setShot(s: { t: [number, number]; az: number; pi: number; d: number; night: boolean; hour?: number }) {
+          // Through React state, so the night effect does not revert it; the
+          // harness waits longer than DAY_NIGHT_SECONDS before shooting.
+          (window as unknown as { __LENS_setNight?: (n: boolean) => void }).__LENS_setNight?.(s.night);
+          controls.transitionTo(new THREE.Vector3(s.t[0], 0, s.t[1]), s.az, s.pi, s.d, 10);
+        },
+        debug(v: number, hideHlod = false) {
+          const u = (materials.solid as unknown as { uniforms: Record<string, { value: number }> }).uniforms;
+          u.uDebug.value = v;
+          cityRenderer.scene.traverse((o) => { if (o.name === 'HLODLayer') o.visible = !hideHlod; });
+        },
+        state() {
+          const u = (materials.solid as unknown as { uniforms: Record<string, { value: unknown }> }).uniforms;
+          const lights: Record<string, unknown> = {};
+          cityRenderer.scene.traverse((o) => {
+            const l = o as THREE.Light;
+            if (l.isLight) lights[l.type + ':' + o.id] = { i: +l.intensity.toFixed(2), c: l.color.getHexString() };
+          });
+          const fog = cityRenderer.scene.fog as THREE.FogExp2 | null;
+          return {
+            uNight: u.uNight.value, uDetail: u.uDetail.value, skyBlend: sky.blend,
+            exposure: cityRenderer.renderer.toneMappingExposure, lights,
+            fog: fog ? { c: fog.color.getHexString(), d: fog.density } : null,
+            tween: tweenRef.current?.debug(),
+            quality: getDeviceProfile().quality,
+            gpu: getDeviceProfile().gpu,
+          };
+        },
+        waitSettled(timeoutMs = 20000) {
+          return new Promise<void>((resolve) => {
+            const start = performance.now();
+            let quiet = 0;
+            const poll = () => {
+              const st = streamer.getStats();
+              quiet = st.pendingLoads === 0 ? quiet + 1 : 0;
+              if (quiet >= 4 || performance.now() - start > timeoutMs) resolve();
+              else setTimeout(poll, 250);
+            };
+            setTimeout(poll, 500);
+          });
+        },
+        measure(durationMs = 2000) {
+          return new Promise<Record<string, unknown>>((resolve) => {
+            const frames: number[] = [];
+            let last = performance.now();
+            const start = last;
+            const tick = () => {
+              const now = performance.now();
+              frames.push(now - last);
+              last = now;
+              if (now - start < durationMs) requestAnimationFrame(tick);
+              else {
+                frames.sort((a, b) => a - b);
+                const r = cityRenderer.getRenderStats();
+                const st = streamer.getStats();
+                const mem = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory;
+                const slowFrames = frames.filter((f) => f > 33.3).length;
+                const p99 = frames[Math.floor(frames.length * 0.99)] || frames[frames.length - 1];
+                resolve({
+                  fps: Math.round(1000 / (frames.reduce((a, b) => a + b, 0) / frames.length)),
+                  fps1PercentLow: Math.round(1000 / p99),
+                  frameMsP50: +frames[Math.floor(frames.length * 0.5)].toFixed(2),
+                  frameMsP95: +frames[Math.floor(frames.length * 0.95)].toFixed(2),
+                  framesOver33ms: slowFrames,
+                  drawCalls: r.drawCalls,
+                  triangles: r.triangles,
+                  geometries: r.geometries,
+                  textures: r.textures,
+                  programs: cityRenderer.renderer.info.programs?.length ?? 0,
+                  tiles: st.loadedTiles,
+                  buildings: st.totalBuildings,
+                  lod: st.currentLOD,
+                  scale: st.zoomScaleName,
+                  jsHeapMB: mem ? Math.round(mem.usedJSHeapSize / 1048576) : null,
+                });
+              }
+            };
+            requestAnimationFrame(tick);
+          });
+        },
+      };
+    }
+
     // Render Loop
     let animId: number;
     let lastStatsTime = 0;
@@ -240,9 +349,15 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     let lastLayerKey = '';
     let lastFrameTime = performance.now();
     const aircraftPool: THREE.Group[] = [];
+    let isPageVisible = !document.hidden;
 
     const animate = (time: number) => {
       animId = requestAnimationFrame(animate);
+
+      // Pause rendering when the browser tab is backgrounded to save GPU/battery.
+      // The RAF itself continues (so it can be re-queued on visibility restore) but
+      // we skip all GPU and state work when the page is hidden.
+      if (!isPageVisible) return;
 
       const deltaSec = Math.min(0.1, (time - lastFrameTime) * 0.001 || 0.016);
       lastFrameTime = time;
@@ -256,14 +371,16 @@ export const CityViewport: React.FC<CityViewportProps> = ({
 
       materials.updateCamera(cityRenderer.camera.position);
 
-      // Adaptive shadows
-      cityRenderer.setAdaptiveShadows(altitude);
+      // Adaptive shadows (deferred during active user interaction to eliminate GPU stalls)
+      if (!performanceConfig.isInteracting) {
+        cityRenderer.setAdaptiveShadows(altitude);
 
-      if (time - lastShadowUpdateTime > 500) {
-        cityRenderer.updateSunShadowTarget(controls.target, altitude);
-        const atmos = cityRenderer.getAtmosphere();
-        materials.setHorizon(atmos.horizon, atmos.strength);
-        lastShadowUpdateTime = time;
+        if (time - lastShadowUpdateTime > 600) {
+          cityRenderer.updateSunShadowTarget(controls.target, altitude);
+          const atmos = cityRenderer.getAtmosphere();
+          materials.setHorizon(atmos.horizon, atmos.strength);
+          lastShadowUpdateTime = time;
+        }
       }
 
       // Update TileStreamer
@@ -344,19 +461,6 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       campusAmbience.setVisible(Boolean(currentLayers.base.parks));
       campusAmbience.update(time * 0.001, cityRenderer.camera.position);
 
-      // Transport Gateways (Airport & Charbagh Station)
-      transportHubs.update(time * 0.001, cityRenderer.camera.position);
-
-      // Natural Hazards 3D Layer Update
-      if (currentLayers.hazards) {
-        hazardVisuals.update(time * 0.001);
-      }
-
-      // Live Incidents 3D Layer Update
-      if (currentLayers.incidents) {
-        incidentVisuals.update(time * 0.001, cityRenderer.camera.position);
-      }
-
       // Layer Visibility Check
       const layerKey = `${currentLayers.base.buildings}|${currentLayers.base.roads}|${currentLayers.base.parks}|${currentLayers.base.gomti}`;
       if (layerKey !== lastLayerKey) {
@@ -369,9 +473,11 @@ export const CityViewport: React.FC<CityViewportProps> = ({
         });
       }
 
+      tweenRef.current?.tick();
       cityRenderer.update();
 
-      if (time - lastStatsTime > 400) {
+      // Throttle React stats updates during active finger drag / interaction to avoid triggering React component tree re-renders
+      if (time - lastStatsTime > 400 && !performanceConfig.isInteracting) {
         onUpdateStatsRef.current(cityRenderer.getRenderStats(), streamingStats);
         lastStatsTime = time;
       }
@@ -477,117 +583,6 @@ export const CityViewport: React.FC<CityViewportProps> = ({
         }
       }
 
-      // Transport Hubs click check (Airport, Charbagh Station, 3D runways, terminals, badges, monuments)
-      const hubIntersects = raycaster.intersectObjects(
-        transportHubs.getInteractiveObjects(),
-        true
-      );
-      if (hubIntersects.length > 0) {
-        let curr: THREE.Object3D | null = hubIntersects[0].object;
-        let hitData: any = null;
-        while (curr) {
-          if (curr.userData?.hub || curr.userData?.type === 'transport-hub' || curr.userData?.name) {
-            hitData = curr.userData;
-            break;
-          }
-          curr = curr.parent;
-        }
-
-        if (hitData) {
-          const hub: TransportHubData | undefined = hitData.hub || (hitData.type === 'transport-hub' ? hitData.hub : TRANSPORT_HUBS_REGISTRY.find(h => hitData.name?.includes(h.name) || h.name.includes(hitData.name)));
-          if (hub) {
-            const latLon = unproject(hub.x, hub.z);
-            onSelectEntityRef.current({
-              type: 'transport-hub',
-              id: hub.id,
-              name: hub.name,
-              details: {
-                category: hub.category,
-                metadata: hub.metadata,
-                badgeLabel: hub.badgeLabel,
-                badgeSub: hub.badgeSub,
-              },
-              latitude: latLon.lat,
-              longitude: latLon.lon,
-              x: hub.x,
-              z: hub.z,
-            });
-            controls.flyTo(latLon.lat, latLon.lon, hub.category === 'airport' ? 1400 : 750);
-            return;
-          } else if (hitData.name) {
-            const hitPoint = hubIntersects[0].point;
-            const latLon = unproject(hitPoint.x, hitPoint.z);
-            onSelectEntityRef.current({
-              type: 'poi',
-              id: `monument-${Math.round(hitPoint.x)}-${Math.round(hitPoint.z)}`,
-              name: hitData.name,
-              details: hitData.details || { category: 'Heritage Rail & Transport Monument' },
-              latitude: latLon.lat,
-              longitude: latLon.lon,
-              x: hitPoint.x,
-              z: hitPoint.z,
-            });
-            controls.flyTo(latLon.lat, latLon.lon, 600);
-            return;
-          }
-        }
-      }
-
-      // Live Incidents click check
-      const incidentIntersects = raycaster.intersectObjects(
-        incidentVisuals.getInteractiveObjects(),
-        true
-      );
-      if (incidentIntersects.length > 0) {
-        let curr: THREE.Object3D | null = incidentIntersects[0].object;
-        let inc: SpatialIncident | null = null;
-        while (curr) {
-          if (curr.userData?.incident) {
-            inc = curr.userData.incident as SpatialIncident;
-            break;
-          }
-          curr = curr.parent;
-        }
-        if (inc) {
-          onSelectEntityRef.current({
-            type: 'incident',
-            id: inc.id,
-            name: inc.title,
-            details: inc,
-            latitude: inc.latitude,
-            longitude: inc.longitude,
-            x: inc.x,
-            z: inc.z,
-          });
-          controls.flyTo(inc.latitude, inc.longitude, 450);
-          return;
-        }
-      }
-
-      // Natural Hazard Zones click check
-      const hazardIntersects = raycaster.intersectObjects(
-        hazardVisuals.getInteractiveObjects(),
-        false
-      );
-      if (hazardIntersects.length > 0) {
-        const hitObj = hazardIntersects[0].object;
-        const hazard = hitObj.userData?.hazard as SpatialHazardZone;
-        if (hazard) {
-          onSelectEntityRef.current({
-            type: 'hazard',
-            id: hazard.id,
-            name: hazard.name,
-            details: hazard,
-            latitude: hazard.centroid.lat,
-            longitude: hazard.centroid.lon,
-            x: hitObj.position.x || 0,
-            z: hitObj.position.z || 0,
-          });
-          controls.flyTo(hazard.centroid.lat, hazard.centroid.lon, 650);
-          return;
-        }
-      }
-
       // Ground plane click check
       const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
       const groundIntersect = new THREE.Vector3();
@@ -685,21 +680,73 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     container.addEventListener('click', handleViewportClick);
     container.addEventListener('contextmenu', handleContextMenu);
 
+    // Pause/resume the render loop when the tab is hidden/visible.
+    // On Android Chrome, a backgrounded tab can still spin RAF at ~1 fps and drain battery.
+    const handleVisibilityChange = () => {
+      isPageVisible = !document.hidden;
+      if (isPageVisible) {
+        // Reset lastFrameTime so the first visible frame doesn't see a huge delta.
+        lastFrameTime = performance.now();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    let resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let pendingW = 0;
+    let pendingH = 0;
+
+    const commitResize = (w: number, h: number) => {
+      if (!rendererRef.current) return;
+      rendererRef.current.handleResize(w, h);
+      labelManager.setViewport(w, h);
+    };
+
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         if (!rendererRef.current) continue;
         const { width, height } = entry.contentRect;
-        rendererRef.current.handleResize(width, height);
-        labelManager.setViewport(width, height);
+        if (width <= 0 || height <= 0) continue;
+
+        const rw = Math.round(width);
+        const rh = Math.round(height);
+
+        // Instantly update camera projection aspect ratio so 3D content never stretches
+        // during continuous transitions (e.g. mobile address bar show/hide)
+        rendererRef.current.camera.aspect = rw / rh;
+        rendererRef.current.camera.updateProjectionMatrix();
+
+        // Debounce WebGL drawing-buffer reallocation to avoid expensive GPU pipeline resets
+        // on every sub-pixel frame of mobile address bar animations
+        pendingW = rw;
+        pendingH = rh;
+        if (resizeDebounceTimer) clearTimeout(resizeDebounceTimer);
+        resizeDebounceTimer = setTimeout(() => {
+          commitResize(pendingW, pendingH);
+          resizeDebounceTimer = null;
+        }, 60);
       }
     });
 
     resizeObserver.observe(container);
 
+    // Immediate orientation-change handler for seamless mobile rotation (portrait <-> landscape)
+    const handleOrientation = () => {
+      setTimeout(() => {
+        if (!container || !rendererRef.current) return;
+        const w = container.clientWidth || window.innerWidth;
+        const h = container.clientHeight || window.innerHeight;
+        commitResize(w, h);
+      }, 80);
+    };
+    window.addEventListener('orientationchange', handleOrientation);
+
     return () => {
+      if (resizeDebounceTimer) clearTimeout(resizeDebounceTimer);
+      window.removeEventListener('orientationchange', handleOrientation);
       resizeObserver.disconnect();
       container.removeEventListener('click', handleViewportClick);
       container.removeEventListener('contextmenu', handleContextMenu);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       cancelAnimationFrame(animId);
       controls.dispose();
       labelManager.dispose();
@@ -709,9 +756,8 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       waypointVisuals.dispose();
       emergencyVisuals.dispose();
       campusAmbience.dispose();
-      transportHubs.dispose();
-      hazardVisuals.dispose();
-      incidentVisuals.dispose();
+      highlightGeo.dispose();
+      highlightMat.dispose();
       cityRenderer.dispose();
       if (container.contains(cityRenderer.renderer.domElement)) {
         container.removeChild(cityRenderer.renderer.domElement);
@@ -742,30 +788,45 @@ export const CityViewport: React.FC<CityViewportProps> = ({
   }, [followCamera]);
 
   // Update Night Mode & Labels
+  // Day and night on one clock: lights, sky, buildings, roads, lamps and lawns
+  // all move together over DAY_NIGHT_SECONDS; labels swap palette at the midpoint.
   useEffect(() => {
-    if (rendererRef.current) rendererRef.current.setNightMode(nightMode);
-    if (streamerRef.current) streamerRef.current.setNightMode(nightMode);
-    if (labelManagerRef.current) {
-      labelManagerRef.current.setNightMode(nightMode);
-      labelManagerRef.current.enabled = showLabels;
+    const renderer = rendererRef.current;
+    if (!renderer) return;
+    const night = nightMode;
+    const snapAll = () => {
+      renderer.setNightMode(night);
+      streamerRef.current?.setNightMode(night);
+      campusAmbienceRef.current?.setNightMode(night);
+    };
+    const first = nightAppliedRef.current === null;
+    if (nightAppliedRef.current === night) return;
+    nightAppliedRef.current = night;
+    // During the site's circle reveal the change must land at once, so the reveal has the new look to show.
+    const revealing = document.documentElement.classList.contains('dn-running');
+    if (first || revealing || !tweenRef.current || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      snapAll();
+      skyRef.current?.setBlend(night ? 1 : 0);
+      labelManagerRef.current?.setNightMode(night);
+      return;
     }
-    if (skyRef.current) skyRef.current.setNightMode(nightMode);
-    campusAmbienceRef.current?.setNightMode(nightMode);
-    transportHubsRef.current?.setNightMode(nightMode);
-  }, [nightMode, showLabels]);
+    let swapped = false;
+    // start the sky from wherever it is, so toggling mid-transition does not jump
+    const skyFrom = skyRef.current?.blend ?? (night ? 0 : 1);
+    const skyTo = night ? 1 : 0;
+    tweenRef.current.transition(snapAll, DAY_NIGHT_SECONDS, (t) => {
+      skyRef.current?.setBlend(skyFrom + (skyTo - skyFrom) * t);
+      if (!swapped && t >= 0.5) { swapped = true; labelManagerRef.current?.setNightMode(night); }
+    });
+  });
 
-  // Sync hazard & incident layers
   useEffect(() => {
-    if (layers.hazards && hazardVisualsRef.current) {
-      hazardVisualsRef.current.updateFilters(layers.hazards);
-    }
-  }, [layers.hazards]);
+    if (labelManagerRef.current) labelManagerRef.current.enabled = showLabels;
+  }, [showLabels]);
 
   useEffect(() => {
-    if (layers.incidents && incidentVisualsRef.current) {
-      incidentVisualsRef.current.updateFilters(layers.incidents);
-    }
-  }, [layers.incidents]);
+    labelManagerRef.current?.setSettings(labelSettings);
+  }, [labelSettings]);
 
   // Skyline look
   useEffect(() => {
@@ -831,6 +892,25 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     const isCinematic = Boolean(CINEMATIC_PRESETS[cameraSignal as keyof typeof CINEMATIC_PRESETS]);
     controls.transitionTo(pTarget, pAzimuth, pPitch, pDistance, isCinematic ? 2600 : 1400);
   }, [cameraSignal, mapData]);
+
+  if (webglError) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center bg-[#0e1220] text-paper p-6 text-center select-none">
+        <div className="glass-panel p-8 rounded-3xl max-w-md border border-sand/30 shadow-2xl">
+          <h2 className="font-display text-2xl text-sand mb-3">3D Graphics Unavailable</h2>
+          <p className="text-sm text-paper/70 leading-relaxed mb-5">
+            WebGL hardware acceleration is required to render Lucknow Lens. Please ensure WebGL is enabled in your mobile browser settings.
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="rounded-full bg-sand px-6 py-2.5 text-xs font-semibold text-terrain shadow-lg hover:scale-105 active:scale-95 transition-transform"
+          >
+            Reload Map
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing select-none" />;
 };

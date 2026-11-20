@@ -7,7 +7,6 @@ import {
   TransportMode,
   RoutePreference,
 } from './types';
-import { SpatialIntelligenceLayer } from '../spatial/spatialIntelligenceLayer';
 
 class MinPriorityQueue {
   private heap: Array<{ id: number; priority: number }> = [];
@@ -119,8 +118,8 @@ export class Pathfinder {
       }
     }
 
-    const startMatch = this.graph.findNearestNode(start.x, start.z);
-    const destMatch = this.graph.findNearestNode(destination.x, destination.z);
+    const startMatch = this.graph.findNearestNode(start.x, start.z, 800, start.y);
+    const destMatch = this.graph.findNearestNode(destination.x, destination.z, 800, destination.y);
 
     if (!startMatch || !destMatch) {
       console.warn('[Pathfinder] Could not snap start or destination to road network');
@@ -137,18 +136,7 @@ export class Pathfinder {
     // Determine nodes to avoid from active road closures
     const avoidedNodes = new Set<number>();
     let closuresAvoidedCount = 0;
-    if (preference === 'avoid-closures') {
-      const sil = SpatialIntelligenceLayer.getInstance();
-      const blocking = sil.getBlockingIncidents();
-      for (const inc of blocking) {
-        const match = this.graph.findNearestNode(inc.x, inc.z);
-        if (match && match.distance < 120) {
-          avoidedNodes.add(match.nodeId);
-          closuresAvoidedCount++;
-        }
-      }
-    }
-
+    // No live road-closure feed exists, so 'avoid-closures' only honours caller-supplied avoid nodes.
     if (extraAvoidIds && extraAvoidIds.length > 0) {
       for (const id of extraAvoidIds) {
         avoidedNodes.add(id);
@@ -363,10 +351,6 @@ export class Pathfinder {
 
     points.push({ x: destination.x, y: (destination.y ?? 0) + 0.5, z: destination.z });
 
-    // Evaluate route against live incidents in SpatialIntelligenceLayer
-    const sil = SpatialIntelligenceLayer.getInstance();
-    const impact = sil.evaluateRouteIncidentImpact(points);
-
     // Build maneuvers (turn-by-turn instructions)
     const maneuvers = this.generateManeuvers(routeEdges, points, destination);
 
@@ -376,13 +360,11 @@ export class Pathfinder {
       destination,
       points: this.smoothPolyline(points),
       totalDistanceMeters: Math.round(totalDist),
-      estimatedDurationSeconds: Math.round(totalSeconds + impact.totalEstimatedDelayMinutes * 60),
+      estimatedDurationSeconds: Math.round(totalSeconds),
       maneuvers,
       transportMode: mode,
       preference,
       majorRoads: Array.from(majorRoadsSet).slice(0, 4),
-      trafficConditions: impact.totalEstimatedDelayMinutes > 15 ? 'congested' : impact.totalEstimatedDelayMinutes > 5 ? 'moderate' : 'clear',
-      trafficDelayMinutes: impact.totalEstimatedDelayMinutes,
       closuresAvoidedCount,
       isAlternative,
     };
@@ -429,8 +411,6 @@ export class Pathfinder {
       transportMode: mode,
       preference,
       majorRoads: ['Direct Geometric Path'],
-      trafficConditions: 'clear',
-      trafficDelayMinutes: 0,
       closuresAvoidedCount: 0,
     };
   }

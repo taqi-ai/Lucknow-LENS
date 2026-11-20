@@ -22,6 +22,13 @@ export interface RibbonOptions {
   minSegment?: number;
   /** Optional vertical offset for elevation */
   elevationOffset?: number;
+  /**
+   * Optional per-vertex (u, v) sink: u = -1 right edge .. +1 left edge, v = metres along
+   * the polyline. Lets the road shader draw lane markings, kerbs and asphalt wear.
+   */
+  uvOut?: number[];
+  /** Starting v, so a feature split across calls keeps continuous dashes. */
+  vStart?: number;
 }
 
 /** Drop duplicate / near-duplicate points — they produce NaN normals. */
@@ -107,8 +114,16 @@ export function appendRibbon(out: number[], points: Pt[], opts: RibbonOptions): 
   const { offX, offZ } = mitredOffsets(pts, half);
 
   let added = 0;
+  const uv = opts.uvOut;
+  let vAcc = opts.vStart ?? 0;
   for (let i = 0; i < n - 1; i++) {
     const p1 = pts[i], p2 = pts[i + 1];
+    if (uv) {
+      const segLen = Math.hypot(p2.x - p1.x, p2.z - p1.z);
+      const v1 = vAcc, v2 = vAcc + segLen;
+      vAcc = v2;
+      uv.push(-1, v1, 1, v1, 1, v2, -1, v1, 1, v2, -1, v2);
+    }
     const y1 = (p1.y ?? baseY) + elevOff;
     const y2 = (p2.y ?? baseY) + elevOff;
 
@@ -160,6 +175,28 @@ export const ROAD_HALF_WIDTH: Record<RoadClass, number> = {
   flyover: 7.5,
 };
 
+/**
+ * Per-feature carriageway half-width. Overture carries no width, and the tile `width`
+ * field was itself written from the class table (6 m for 133k segments), so it is not
+ * evidence. This keeps the class hierarchy but breaks the uniformity: link roads are
+ * narrower, unclassified/track/living streets are lanes rather than streets, and each
+ * feature gets a deterministic +/-9% variation from its id.
+ */
+export function roadHalfWidth(cls: RoadClass, type?: string, id?: string): number {
+  let h = ROAD_HALF_WIDTH[cls];
+  if (type && type.endsWith('_link')) h *= 0.62;
+  else if (type === 'living_street') h = 2.0;
+  else if (type === 'unclassified' || type === 'unknown' || type === undefined) h = cls === 'residential' ? 2.4 : h;
+  else if (type === 'track') h = 1.7;
+  else if (type === 'path' || type === 'steps') h = 0.8;
+  if (id) {
+    let x = 0;
+    for (let i = 0; i < id.length; i++) x = ((x << 5) - x + id.charCodeAt(i)) | 0;
+    h *= 0.91 + ((Math.abs(x) % 1000) / 1000) * 0.18;
+  }
+  return h;
+}
+
 /** Draw order / elevation, so bigger roads sit visually on top at crossings. */
 export const ROAD_LAYER_Y: Record<RoadClass, number> = {
   motorway: 0.32,
@@ -178,6 +215,8 @@ export function classifyRoad(type?: string, subtype?: string, level?: number, is
   if (subtype === 'rail' || type === 'rail' || type === 'standard_gauge' || type === 'subway') {
     return 'railway';
   }
+  // Footbridges and subways are walkways: a narrow footway ribbon, never a lane-marked flyover.
+  if (type === 'footway' || type === 'path' || type === 'steps' || type === 'pedestrian' || type === 'cycleway') return 'footway';
   if ((level !== undefined && level > 0) || isBridge) {
     return 'flyover';
   }
@@ -219,7 +258,7 @@ export function deckHeightFor(level: number): number {
 /** Approach gradient, 1:25 (4%) — the steepest normally used on urban flyovers. */
 const RAMP_GRADIENT = 25;
 /** Two elevated features whose endpoints are this close are one continuous structure. */
-const JOIN_TOL = 18;
+const JOIN_TOL = 6.0;
 const JOIN_CELL = 40;
 
 function smoothstep(t: number): number {
@@ -259,36 +298,94 @@ export function buildElevationProfiles(
 
   // Endpoint hash, so "does another elevated feature continue here" is O(1).
   const cellKey = (p: Pt) => `${Math.floor(p.x / JOIN_CELL)},${Math.floor(p.z / JOIN_CELL)}`;
-  const index = new Map<string, Array<{ p: Pt; owner: ElevatableRoad }>>();
-  const addEnd = (p: Pt, owner: ElevatableRoad) => {
+  // Ends are indexed with their OUTWARD tangent. Another feature only "continues" this end
+  // if it heads onward, away from it (tangents roughly opposed). Parallel carriageways that
+  // merely finish side by side (tangents the same way) do not continue each other: that
+  // false "continuation" held both decks at full height and left them ending in open air.
+  type End = { p: Pt; owner: ElevatableRoad; tx: number; tz: number };
+  const index = new Map<string, End[]>();
+  const tangent = (a: Pt, b: Pt): [number, number] => {
+    const dx = a.x - b.x, dz = a.z - b.z, L = Math.hypot(dx, dz) || 1;
+    return [dx / L, dz / L];
+  };
+  const addEnd = (p: Pt, prev: Pt, owner: ElevatableRoad) => {
     const k = cellKey(p);
     let bucket = index.get(k);
     if (!bucket) { bucket = []; index.set(k, bucket); }
-    bucket.push({ p, owner });
+    const [tx, tz] = tangent(p, prev);
+    bucket.push({ p, owner, tx, tz });
   };
   for (const e of elevated) {
-    addEnd(e.pts[0], e.road);
-    addEnd(e.pts[e.pts.length - 1], e.road);
+    addEnd(e.pts[0], e.pts[1], e.road);
+    addEnd(e.pts[e.pts.length - 1], e.pts[e.pts.length - 2], e.road);
   }
-
-  const continuesAt = (p: Pt, self: ElevatableRoad): boolean => {
-    const gx = Math.floor(p.x / JOIN_CELL);
-    const gz = Math.floor(p.z / JOIN_CELL);
-    for (let dx = -1; dx <= 1; dx++) {
-      for (let dz = -1; dz <= 1; dz++) {
-        const bucket = index.get(`${gx + dx},${gz + dz}`);
-        if (!bucket) continue;
-        for (const e of bucket) {
-          if (e.owner === self) continue;
-          if (Math.hypot(e.p.x - p.x, e.p.z - p.z) <= JOIN_TOL) return true;
-        }
+  const joins = (p: Pt, prev: Pt, self: ElevatableRoad, visit: (o: End) => void) => {
+    const [tx, tz] = tangent(p, prev);
+    const nx = -tz, nz = tx;
+    const gx = Math.floor(p.x / JOIN_CELL), gz = Math.floor(p.z / JOIN_CELL);
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+      for (const e of index.get(`${gx + dx},${gz + dz}`) ?? []) {
+        if (e.owner === self) continue;
+        if (Math.hypot(e.p.x - p.x, e.p.z - p.z) > JOIN_TOL) continue;
+        if (tx * e.tx + tz * e.tz > -0.2) continue; // same-way or sideways: not a continuation
+        // Reject side-by-side parallel carriageways: ends must align along the road corridor (lateral offset <= 4.5m)
+        const latOffset = Math.abs((e.p.x - p.x) * nx + (e.p.z - p.z) * nz);
+        if (latOffset > 4.5) continue;
+        visit(e);
       }
     }
-    return false;
+  };
+  const continuesAt = (p: Pt, prev: Pt, self: ElevatableRoad): boolean => {
+    let hit = false;
+    joins(p, prev, self, () => { hit = true; });
+    return hit;
+  };
+
+  // Connected structures (pieces joined end to end) share one span length, so a long
+  // flyover split into short features does not sawtooth between culvert and deck heights.
+  const parent = new Map<ElevatableRoad, ElevatableRoad>();
+  const find = (r: ElevatableRoad): ElevatableRoad => {
+    let x = r; while (parent.get(x) !== x) x = parent.get(x)!;
+    parent.set(r, x); return x;
+  };
+  const lenOf = new Map<ElevatableRoad, number>();
+  for (const e of elevated) {
+    parent.set(e.road, e.road);
+    let L = 0;
+    for (let i = 1; i < e.pts.length; i++) L += Math.hypot(e.pts[i].x - e.pts[i - 1].x, e.pts[i].z - e.pts[i - 1].z);
+    lenOf.set(e.road, L);
+  }
+  for (const e of elevated) {
+    const n = e.pts.length;
+    for (const [p, prev] of [[e.pts[0], e.pts[1]], [e.pts[n - 1], e.pts[n - 2]]] as Array<[Pt, Pt]>) {
+      joins(p, prev, e.road, (o) => { parent.set(find(e.road), find(o.owner)); });
+    }
+  }
+  const compLen = new Map<ElevatableRoad, number>();
+  for (const e of elevated) { const r = find(e.road); compLen.set(r, (compLen.get(r) ?? 0) + lenOf.get(e.road)!); }
+
+  const effDeckMap = new Map<ElevatableRoad, number>();
+  for (const { road } of elevated) {
+    const deck = deckHeightFor(road.level ?? 1);
+    const span = compLen.get(find(road)) ?? 0;
+    // River bridges always clear the water by a full deck height, however short the mapped piece.
+    const eff = (road as { riverBridge?: boolean }).riverBridge ? Math.max(deck, 8.5) : span < 45 ? 0.6 : span < 140 ? Math.min(deck, 1.0 + (span - 45) * 0.07) : deck;
+    effDeckMap.set(road, eff);
+  }
+
+  // Multi-level joint resolution: where features of different levels meet end-to-end,
+  // harmonize the joint height so the deck profile is continuous with no vertical step.
+  const jointHeight = (p: Pt, prev: Pt, road: ElevatableRoad, defaultDeck: number): number => {
+    let maxD = defaultDeck;
+    joins(p, prev, road, (o) => {
+      const oDeck = effDeckMap.get(o.owner) ?? defaultDeck;
+      if (oDeck > maxD) maxD = oDeck;
+    });
+    return maxD;
   };
 
   for (const { road, pts } of elevated) {
-    const deck = deckHeightFor(road.level ?? 1);
+    const effDeck = effDeckMap.get(road) ?? 7.5;
     const n = pts.length;
 
     // Cumulative arc length.
@@ -301,21 +398,31 @@ export function buildElevationProfiles(
 
     const head = pts[0];
     const tail = pts[n - 1];
-    const rampHead = !continuesAt(head, road) && (isFreeEnd ? isFreeEnd(head) : true);
-    const rampTail = !continuesAt(tail, road) && (isFreeEnd ? isFreeEnd(tail) : true);
+    const rampHead = !continuesAt(head, pts[1], road) && (isFreeEnd ? isFreeEnd(head) : true);
+    const rampTail = !continuesAt(tail, pts[n - 2], road) && (isFreeEnd ? isFreeEnd(tail) : true);
 
-    // A short feature cannot fit two full ramps; sharing the length keeps the
-    // gradient sane and simply means it never reaches full deck height.
-    const ideal = deck * RAMP_GRADIENT;
-    const budget = rampHead && rampTail ? total * 0.45 : total * 0.9;
-    const ramp = Math.max(1, Math.min(ideal, budget));
+    const targetHead = rampHead ? 0 : jointHeight(head, pts[1], road, effDeck);
+    const targetTail = rampTail ? 0 : jointHeight(tail, pts[n - 2], road, effDeck);
+
+    const idealRampHead = Math.abs(effDeck - targetHead) * RAMP_GRADIENT;
+    const idealRampTail = Math.abs(effDeck - targetTail) * RAMP_GRADIENT;
+    const budget = (targetHead !== effDeck && targetTail !== effDeck) ? total * 0.45 : total * 0.9;
+    const rHead = Math.max(1, Math.min(idealRampHead || total * 0.5, budget));
+    const rTail = Math.max(1, Math.min(idealRampTail || total * 0.5, budget));
 
     const profile: Pt[] = new Array(n);
     for (let i = 0; i < n; i++) {
-      let f = 1;
-      if (rampHead) f = Math.min(f, smoothstep(s[i] / ramp));
-      if (rampTail) f = Math.min(f, smoothstep((total - s[i]) / ramp));
-      profile[i] = { x: pts[i].x, z: pts[i].z, y: deck * f };
+      const dHead = s[i];
+      const dTail = total - s[i];
+      let y = effDeck;
+      if (targetHead !== effDeck && dHead < rHead && (rHead + rTail <= total || dHead <= total * 0.5)) {
+        const t = smoothstep(dHead / rHead);
+        y = targetHead + (effDeck - targetHead) * t;
+      } else if (targetTail !== effDeck && dTail < rTail) {
+        const t = smoothstep(dTail / rTail);
+        y = targetTail + (effDeck - targetTail) * t;
+      }
+      profile[i] = { x: pts[i].x, z: pts[i].z, y };
     }
     out.set(road, profile);
   }
@@ -551,3 +658,15 @@ export function appendRailway(
     }
   }
 }
+
+/**
+ * RENDER OWNERSHIP (round 3). CityOverlay owns every major, elevated or
+ * grade-separated carriageway: it has one continuous elevation profile per
+ * feature and the matching piers. Tiles only draw the local network. Drawing a
+ * feature in both layers produced two decks (the tile copy sat 6.8 m higher
+ * and had per-tile ramps), so this predicate is the single source of truth.
+ */
+export function overlayOwnsRoad(r: { isMajor?: boolean; isElevated?: boolean; level?: number }): boolean {
+  return Boolean(r.isMajor || r.isElevated || (r.level ?? 0) > 0);
+}
+

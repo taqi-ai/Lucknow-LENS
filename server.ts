@@ -1,15 +1,17 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import compression from "compression";
 import { CachedFeed } from "./server/providers/cache";
 import { OpenSkyProvider } from "./server/providers/opensky";
+import { AdsbLolProvider } from "./server/providers/adsblol";
+import { ChainProvider } from "./server/providers/chain";
 import { OpenMeteoWeatherProvider, OpenMeteoAirQualityProvider } from "./server/providers/openmeteo";
 import { RailRadarProvider } from "./server/providers/railradar";
 import { TomTomTrafficProvider } from "./server/providers/tomtomTraffic";
 import { GdeltNewsProvider } from "./server/providers/gdeltNews";
+import { RssNewsProvider } from "./server/providers/rssNews";
 
 dotenv.config();
 
@@ -92,11 +94,11 @@ app.use((req, res, next) => {
 // Poll cadences are deliberately conservative: OpenSky's anonymous tier has a low
 // daily quota, and aircraft positions are interpolated client-side between polls.
 // ---------------------------------------------------------------------------
-const flightFeed = new CachedFeed(new OpenSkyProvider(), {
+const flightFeed = new CachedFeed(new ChainProvider([new OpenSkyProvider(), new AdsbLolProvider()]), {
   ttlMs: 12_000,
   timeoutMs: 9_000,
   maxStaleMs: 120_000,
-  attribution: "Data from the OpenSky Network (opensky-network.org)",
+  attribution: "Aircraft positions from the OpenSky Network, or adsb.lol when OpenSky is unavailable",
 });
 
 const trainFeed = new CachedFeed(new RailRadarProvider(), {
@@ -127,11 +129,11 @@ const trafficFeed = new CachedFeed(new TomTomTrafficProvider(), {
   attribution: "Traffic incidents by TomTom",
 });
 
-const newsFeed = new CachedFeed(new GdeltNewsProvider(), {
+const newsFeed = new CachedFeed(new ChainProvider([new RssNewsProvider(), new GdeltNewsProvider()]), {
   ttlMs: 900_000,        // GDELT's own index updates roughly every 15 min
-  timeoutMs: 10_000,
-  maxStaleMs: 3_600_000,
-  attribution: "News via the GDELT Project (gdeltproject.org)",
+  timeoutMs: 16_000,
+  maxStaleMs: 21_600_000, // GDELT rate-limits hard (1 request / 5 s); keep serving the last good list, labelled stale
+  attribution: "Headlines from the Hindustan Times and Times of India Lucknow feeds (GDELT as backup); links go to the publisher",
 });
 
 // ---------------------------------------------------------------------------
@@ -234,153 +236,82 @@ app.get("/api/health", async (_req, res) => {
   });
 });
 
-// Deterministic response generator fallback with Spatial Intelligence awareness
-function getDeterministicResponse(question: string, context?: any) {
+// ---------------------------------------------------------------------------
+// ANALYST FALLBACK — grounded in the live feeds, never invented.
+//
+// Used when no GEMINI_API_KEY is set or the model call fails. Every number in an
+// answer comes from a feed envelope, and a feed that is down is reported as down.
+// ---------------------------------------------------------------------------
+type AnalystAction = { type: "FLY_TO" | "NONE"; latitude?: number; longitude?: number; layer?: string };
+type AnalystReply = { answer: string; sources: string[]; action: AnalystAction };
+
+const ageText = (s: number | null) => (s === null ? "age unknown" : s < 90 ? `${s}s ago` : `${Math.round(s / 60)} min ago`);
+
+async function liveSnapshot() {
+  const [weather, air, flights, trains, traffic, news] = await Promise.all([
+    weatherFeed.get(), airFeed.get(), flightFeed.get(), trainFeed.get(), trafficFeed.get(), newsFeed.get(),
+  ]);
+  return { weather, air, flights, trains, traffic, news };
+}
+
+async function groundedResponse(question: string): Promise<AnalystReply> {
   const q = question.toLowerCase();
-  
-  // 1. Waterlogging Queries
-  if (q.includes("waterlog") || q.includes("water stagnation") || q.includes("drainage")) {
-    return {
-      answer: "Waterlogging report: Polytechnic Chauraha underpass on Faizabad Road currently has localized 25cm water stagnation due to drainage silt accumulation. Traffic movement is slow; two-wheelers are advised to take the flyover. In Gomti Nagar Phase-1, the storm basin is operating normally with all 4 municipal pumps active.",
-      sources: ["LMC Urban Drainage Telemetry", "Lucknow Municipal Control Room Incident Feed"],
-      action: {
-        type: "FLY_TO",
-        latitude: 26.8624,
-        longitude: 80.9984,
-        layer: "waterlogging"
-      }
-    };
-  }
+  const snap = await liveSnapshot();
+  const none: AnalystAction = { type: "NONE" };
 
-  // 2. Flood Susceptibility Queries
-  if (q.includes("flood") || q.includes("inundat") || (q.includes("gomti") && q.includes("risk"))) {
-    return {
-      answer: "According to the UP State Disaster Management Authority (UPSDMA) Flood Atlas, the Gomti River 100-Year Inundation Corridor (from Kudia Ghat past Daliganj to Gomti Barrage) has high historical flood susceptibility when river discharge exceeds 45,000 cusecs. Current water level is safe at 108.4m MSL (Warning level: 109.5m).",
-      sources: ["UPSDMA Flood Mapping Atlas", "Central Water Commission (CWC) Gauge Feed"],
-      action: {
-        type: "FLY_TO",
-        latitude: 26.8580,
-        longitude: 80.9490,
-        layer: "flood"
-      }
-    };
+  if (/aqi|pollut|air|smog|breath/.test(q)) {
+    const e = snap.air; const a = e.items[0];
+    if (e.status === "unavailable" || !a) return { answer: `I cannot see air-quality data right now (${e.reason ?? "feed unavailable"}), so I will not guess.`, sources: [e.provider], action: none };
+    const pm = a.pm25 !== null ? ` PM2.5 is ${a.pm25.toFixed(0)} µg/m³.` : "";
+    return { answer: `The US AQI for Lucknow is ${Math.round(a.usAqi)} (${a.category.toLowerCase()}), led by ${a.dominantPollutant}.${pm} This is a city-wide reading, not a street-level one.`, sources: [`${e.provider}, updated ${ageText(e.ageSeconds)}`], action: { type: "FLY_TO", latitude: 26.857, longitude: 80.999, layer: "aqi" } };
   }
-
-  // 3. Navigation / Route to Airport Queries
-  if (q.includes("route") && (q.includes("airport") || q.includes("amausi") || q.includes("avoid"))) {
-    return {
-      answer: "Route to CCS International Airport (T3): Kanpur Road between Alambagh and Singar Nagar has an active road closure due to Metro viaduct girder construction. The navigation system has calculated a detour via VIP Road and Amar Shaheed Path, saving approximately 18 minutes compared to the congested arterial corridor.",
-      sources: ["UPMRC Traffic Cell", "Lucknow ITMS Road Network Graph"],
-      action: {
-        type: "CALCULATE_ROUTE",
-        latitude: 26.7606,
-        longitude: 80.8893,
-        destination: { name: "Chaudhary Charan Singh Int'l Airport (T3)", lat: 26.7606, lon: 80.8893 }
-      }
-    };
+  if (/weather|temperature|hot|cold|rain|humid|wind/.test(q)) {
+    const e = snap.weather; const w = e.items[0];
+    if (e.status === "unavailable" || !w) return { answer: `Weather data is unavailable right now (${e.reason ?? "feed unavailable"}).`, sources: [e.provider], action: none };
+    const hum = w.humidityPct !== null ? `, humidity ${Math.round(w.humidityPct)}%` : "";
+    const wind = w.windSpeedKph !== null ? `, wind ${Math.round(w.windSpeedKph)} km/h` : "";
+    return { answer: `It is ${Math.round(w.temperatureC)}°C in Lucknow with ${w.description.toLowerCase()}${hum}${wind}.`, sources: [`${e.provider}, updated ${ageText(e.ageSeconds)}`], action: { type: "NONE", layer: "weather" } };
   }
-
-  // 4. City Updates Summary
-  if (q.includes("summar") || (q.includes("update") && (q.includes("city") || q.includes("today") || q.includes("verified")))) {
-    return {
-      answer: "Lucknow City Pulse Summary: 1) Charbagh Terminal Platform 1 electrification underway for the second Vande Bharat service; 2) CCS Airport T3 surpassed 35,000 daily passengers; 3) Smart AI traffic signal phasing activated along Mahatma Gandhi Marg; 4) Metro girder launch closure on Kanpur Road with detour in effect.",
-      sources: ["Lucknow City Pulse Multi-Agency Telemetry", "LMC & UPMRC Official Bulletins"],
-      action: {
-        type: "FLY_TO",
-        latitude: 26.8488,
-        longitude: 80.9442,
-        layer: "news"
-      }
-    };
+  if (/flight|plane|aircraft|airport|amausi|fly over|overhead/.test(q)) {
+    const e = snap.flights;
+    if (e.status === "unavailable") return { answer: `Aircraft data is unavailable right now (${e.reason ?? "feed unavailable"}).`, sources: [e.provider], action: none };
+    const air = e.items.filter((x) => !x.onGround);
+    const names = air.map((x) => x.callsign).filter(Boolean).slice(0, 4).join(", ");
+    return { answer: `${air.length} aircraft are airborne in the wider Lucknow region right now${names ? `, including ${names}` : ""}. The region is about 150 km around the city, so not all are overhead.`, sources: [`${e.provider}, updated ${ageText(e.ageSeconds)}`], action: { type: "FLY_TO", latitude: 26.7606, longitude: 80.8893, layer: "flights" } };
   }
-
-  // 5. Charbagh Station Queries
-  if (q.includes("charbagh") || q.includes("station") || (q.includes("railway") && !q.includes("flight"))) {
-    return {
-      answer: "Charbagh Railway Grand Terminal is operating smoothly. Platform 1 has a docked Vande Bharat Express rake; the historic Ravindralaya amphitheater campus to the east and the central forecourt Black Beauty steam engine memorial are open. Pedestrian flow is normal, and train movements are on schedule.",
-      sources: ["Northern Railway Station Master Log", "Charbagh Digital Twin Sensors"],
-      action: {
-        type: "FLY_TO",
-        latitude: 26.8322,
-        longitude: 80.9221,
-        layer: "railways"
-      }
-    };
+  if (/train|rail|station|charbagh/.test(q)) {
+    const e = snap.trains;
+    if (e.status === "unavailable") return { answer: `Live train positions are not available: ${e.reason ?? "no provider configured"}. Charbagh is on the map, but I cannot report train times.`, sources: [e.provider], action: { type: "FLY_TO", latitude: 26.8322, longitude: 80.9221, layer: "railways" } };
+    return { answer: `${e.items.length} trains are reporting positions near Lucknow.`, sources: [`${e.provider}, updated ${ageText(e.ageSeconds)}`], action: { type: "FLY_TO", latitude: 26.8322, longitude: 80.9221, layer: "railways" } };
   }
-
-  // 6. Traffic & Congestion Queries
-  if (q.includes("traffic") || q.includes("congest") || q.includes("jam") || q.includes("hazratganj")) {
-    return {
-      answer: "Hazratganj is experiencing heavy traffic congestion around Hazratganj Chauraha. Local ITMS sensors indicate average vehicle speeds have slowed to 12 km/h due to peak accumulation and a minor collision on MG Marg. Adaptive AI signal phasing is working to clear the backlog.",
-      sources: ["Lucknow Traffic Control Division", "MG Road Induction Loops Feed"],
-      action: {
-        type: "FLY_TO",
-        latitude: 26.8467,
-        longitude: 80.9461,
-        layer: "traffic"
-      }
-    };
+  if (/traffic|congest|jam|road|hazratganj/.test(q)) {
+    const e = snap.traffic;
+    if (e.status === "unavailable") return { answer: `Live traffic is unavailable: ${e.reason ?? "no provider configured"}. I will not estimate congestion without data.`, sources: [e.provider], action: { type: "FLY_TO", latitude: 26.8467, longitude: 80.9461, layer: "traffic" } };
+    return { answer: `${e.items.length} traffic incidents are reported around Lucknow.`, sources: [`${e.provider}, updated ${ageText(e.ageSeconds)}`], action: { type: "FLY_TO", latitude: 26.8467, longitude: 80.9461, layer: "traffic" } };
   }
-  
-  // 7. AQI & Air Quality Queries
-  if (q.includes("aqi") || q.includes("pollution") || q.includes("air") || q.includes("smog") || q.includes("gomti nagar")) {
-    return {
-      answer: "The Air Quality Index (AQI) around Gomti Nagar and Janeshwar Mishra Park is currently at 145 (Moderate). PM2.5 is the primary active pollutant. Ambient weather conditions indicate high relative humidity, which is trapping particulate matter close to the surface.",
-      sources: ["Central Pollution Control Board (CPCB) India", "Gomti Nagar Clean Air Telemetry Station"],
-      action: {
-        type: "FLY_TO",
-        latitude: 26.8315,
-        longitude: 80.9812,
-        layer: "aqi"
-      }
-    };
+  if (/news|happening|event|today|headline/.test(q)) {
+    const e = snap.news;
+    if (e.status === "unavailable" || e.items.length === 0) return { answer: `The news feed is unavailable right now (${e.reason ?? "no articles"}).`, sources: [e.provider], action: none };
+    const top = e.items.slice(0, 3).map((n) => `"${n.title}"${n.source ? ` (${n.source})` : ""}`).join("; ");
+    return { answer: `Latest Lucknow headlines: ${top}.`, sources: [`${e.provider}, updated ${ageText(e.ageSeconds)}`], action: { type: "NONE", layer: "news" } };
   }
-
-  // 8. Flight Queries
-  if (q.includes("flight") || q.includes("plane") || q.includes("aircraft") || q.includes("airport") || q.includes("amausi") || q.includes("adsb")) {
-    return {
-      answer: "Chaudhary Charan Singh International Airport (Amausi, T3) is operating with CAT-II ILS. Real-time OpenSky ADS-B telemetry tracks active inbound flights including Indigo Flight 6E-2432 descending to Runway 09. The 2,740m runway and 5 aerobridges are in active service.",
-      sources: ["OpenSky Network Live ADS-B Ground Receiver", "Amausi Airport ATC Radar Output"],
-      action: {
-        type: "FLY_TO",
-        latitude: 26.7606,
-        longitude: 80.8893,
-        layer: "flights"
-      }
-    };
-  }
-
-  // 9. Gomti River Queries
-  if (q.includes("gomti") || q.includes("river") || q.includes("barrage")) {
-    return {
-      answer: "Water levels of the Gomti River at the Gomti Barrage are within normal limits (108.4 meters above MSL). Flow velocity is stable. Localized riverbank cleaning activities are being monitored near the central barrage area.",
-      sources: ["UP Irrigation & Hydrology Department Data", "Gomti River Water Quality Monitors"],
-      action: {
-        type: "FLY_TO",
-        latitude: 26.8525,
-        longitude: 80.9545,
-        layer: "news"
-      }
-    };
-  }
-
-  return {
-    answer: "Welcome to Lucknow Lens AI City Analyst. I provide spatial intelligence across Lucknow's 3D twin: live traffic, waterlogging hotspots, flood risks, road closures, and route optimization. Try asking: 'Is there any reported waterlogging around Gomti Nagar?' or 'Find a route to Lucknow Airport avoiding reported road closures.'",
-    sources: ["Lucknow Lens Spatial Intelligence Layer (SIL)"],
-    action: {
-      type: "NONE"
-    }
-  };
+  const live = [snap.weather, snap.air, snap.flights, snap.trains, snap.traffic, snap.news].filter((f) => f.status !== "unavailable").length;
+  return { answer: `I answer from the live layers only. ${live} of 6 feeds are reporting right now. Try asking about air quality, weather, aircraft, trains, traffic or the news.`, sources: ["Lucknow Lens live feeds"], action: none };
 }
 
 // POST endpoint for AI City Analyst
 app.post("/api/analyst", async (req, res) => {
-  const { question, context } = req.body;
+  const { question } = req.body;
   if (!question || typeof question !== "string") {
     return res.status(400).json({ error: "Invalid question body" });
   }
 
-  const fallback = getDeterministicResponse(question, context);
+  const cleanQuestion = question.trim().slice(0, 500);
+  if (!cleanQuestion) {
+    return res.status(400).json({ error: "Question cannot be empty" });
+  }
+
+  const fallback = await groundedResponse(cleanQuestion);
 
   if (!process.env.GEMINI_API_KEY) {
     return res.json(fallback);
@@ -391,11 +322,12 @@ app.post("/api/analyst", async (req, res) => {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     
     const promptText = `
-      You are the AI City Analyst for LUCKNOW LENS, a 3D digital twin system. 
+      You are the AI City Analyst for LUCKNOW LENS, an urban spatial intelligence platform. 
       Analyze the user's question and provide a realistic, factual response using the local Lucknow database context.
       
       CRITICAL INSTRUCTION:
-      - Do NOT hallucinate live city information. If the data is unavailable, clearly state that.
+      - Do NOT hallucinate live city information. Use ONLY the LIVE SNAPSHOT below for any number or claim about current conditions. If the data is unavailable, clearly state that.
+      - LIVE SNAPSHOT: ${JSON.stringify({ answerFromFeeds: fallback.answer, feeds: fallback.sources })}
       - Map the response to one of the following key locations in Lucknow:
         * Hazratganj: lat 26.8467, lon 80.9461 (Traffic)
         * Gomti Nagar / Janeshwar Mishra Park: lat 26.8315, lon 80.9812 (AQI)
@@ -415,7 +347,7 @@ app.post("/api/analyst", async (req, res) => {
         }
       }
       
-      User's Question: "${question}"
+      User's Question: "${cleanQuestion.replace(/"/g, '\\"')}"
     `;
 
     const response = await ai.models.generateContent({
@@ -446,7 +378,14 @@ app.post("/api/analyst", async (req, res) => {
 
     if (response.text) {
       const result = JSON.parse(response.text);
-      return res.json(result);
+      if (result && typeof result.answer === "string" && result.answer.trim().length > 0) {
+        return res.json({
+          answer: result.answer.trim(),
+          sources: Array.isArray(result.sources) ? result.sources : fallback.sources,
+          action: result.action && typeof result.action === "object" ? result.action : fallback.action,
+        });
+      }
+      return res.json(fallback);
     } else {
       return res.json(fallback);
     }
@@ -465,9 +404,10 @@ async function startServer() {
   // path; `npm run dev` still gets HMR when dist/ is absent.
   const distPath = path.join(process.cwd(), "dist");
   const hasBuild = fs.existsSync(path.join(distPath, "index.html"));
-  const useVite = process.env.NODE_ENV !== "production" && !hasBuild;
+  const useVite = process.env.NODE_ENV !== "production" && (!hasBuild || process.argv.includes("--dev"));
 
   if (useVite) {
+    const { createServer: createViteServer } = await import("vite"); // dev only, so serverless bundles stay small
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -476,6 +416,7 @@ async function startServer() {
   } else {
     // Hashed asset filenames, so the bundle can be cached hard.
     app.use(express.static(distPath, {
+      index: false,
       setHeaders: (res, filePath) => {
         if (filePath.includes(`${path.sep}assets${path.sep}`)) {
           res.set("Cache-Control", "public, max-age=31536000, immutable");
@@ -498,9 +439,16 @@ async function startServer() {
         }
       },
     }));
-    app.get("*", (_req, res) => {
+    // index.html carries absolute og:/twitter: URLs (LinkedIn and other link
+    // unfurlers reject relative ones). The public origin is PUBLIC_URL if set,
+    // otherwise derived from the forwarded request host, so any domain works.
+    const indexHtml = fs.readFileSync(path.join(distPath, "index.html"), "utf8");
+    app.get("*", (req, res) => {
+      const proto = String(req.headers["x-forwarded-proto"] ?? req.protocol).split(",")[0].trim();
+      const host = String(req.headers["x-forwarded-host"] ?? req.headers.host ?? "localhost").split(",")[0].trim();
+      const origin = (process.env.PUBLIC_URL || `${proto}://${host}`).replace(/\/+$/, "");
       res.set("Cache-Control", "no-cache");
-      res.sendFile(path.join(distPath, "index.html"));
+      res.type("html").send(indexHtml.split("%ORIGIN%").join(origin));
     });
     console.log("Serving prebuilt bundle from dist/");
   }
@@ -520,4 +468,6 @@ async function startServer() {
   process.on("SIGINT", () => shutdown("SIGINT"));
 }
 
-startServer();
+// On Vercel the app is exported and run per request; locally it listens on a port.
+if (!process.env.VERCEL) startServer();
+export default app;

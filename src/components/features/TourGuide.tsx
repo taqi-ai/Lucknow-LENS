@@ -1,0 +1,254 @@
+/**
+ * TourGuide (round 3): "Lucknow, guided". A narrated cinematic flight through the city's
+ * monuments with a short description for each stop, a stop on the elevated metro while a train
+ * runs, a switch to night mode, and a closing pull-back to the whole city. Camera moves reuse
+ * CameraController.transitionTo, so nothing here touches the renderer.
+ *
+ * Descriptions are short and limited to well-established facts. Framings use the destination
+ * registry (src/city/destinations.ts).
+ */
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import * as THREE from 'three';
+import type { CameraController } from '../../city/cameraController';
+import { destinationById } from '../../city/destinations';
+import { TourAudio } from './tourAudio';
+
+interface Stop {
+  id: string;
+  title: string;
+  kicker: string;
+  text: string;
+  /** Registry id for x/z, or 'metro' to resolve a point on the elevated line at run time. */
+  dest: string;
+  /** Explicit target overriding the registry point (world metres). */
+  at?: [number, number];
+  az: number; pitch: number; dist: number;
+  /** Azimuth swing across the dwell, and the closing-in factor on distance. */
+  orbit: number; closeIn: number;
+  night?: boolean;
+  dwell?: number;
+}
+
+const STOPS: Stop[] = [
+  { id: 'rumi', title: 'Rumi Darwaza', kicker: 'Husainabad · 1784', dest: 'rumi_darwaza', az: 1.3, pitch: 0.3, dist: 330, orbit: 0.7, closeIn: 0.8,
+    text: 'A monumental gateway about sixty feet high, built under Nawab Asaf-ud-Daula. Often called the Turkish Gate, it is the entrance to old Lucknow.' },
+  { id: 'bara', title: 'Bara Imambara', kicker: 'Husainabad · 1784', dest: 'bara_imambara', at: [-3683, -2153], az: 2.5, pitch: 0.5, dist: 520, orbit: 0.6, closeIn: 0.75,
+    text: 'Raised by Asaf-ud-Daula during a famine to give people work. Its central hall is one of the largest arched halls built without beams; the complex also holds the Asafi Masjid and the Shahi Baoli.' },
+  { id: 'chhota', title: 'Chhota Imambara', kicker: 'Husainabad · 1838', dest: 'chhota_imambara', az: 0.8, pitch: 0.4, dist: 380, orbit: 0.8, closeIn: 0.8,
+    text: 'Built by Muhammad Ali Shah and known as the Palace of Lights for the way it is illuminated during Muharram. Long water channels run through its garden.' },
+  { id: 'clock', title: 'Husainabad Clock Tower', kicker: 'Husainabad · 1880s', dest: 'clock_tower', az: 0.8, pitch: 0.28, dist: 330, orbit: 0.8, closeIn: 0.8,
+    text: 'One of the tallest clock towers in India, rising about 67 metres beside the Picture Gallery and the old Husainabad tank.' },
+  { id: 'residency', title: 'The Residency', kicker: 'Siege of 1857', dest: 'residency', az: 0.9, pitch: 0.5, dist: 230, orbit: 0.6, closeIn: 0.8,
+    text: 'The ruins of the British Residency, scarred by the siege of 1857. The broken walls and lawns are kept as a memorial.' },
+  { id: 'hazratganj', title: 'Hazratganj', kicker: 'The heart of the city', dest: 'hazratganj', az: 0.6, pitch: 0.26, dist: 320, orbit: 0.5, closeIn: 0.7,
+    text: 'The colonial-era promenade of arcaded shopfronts, cafes and old cinemas: Lucknow’s favourite evening walk for generations.' },
+  { id: 'charbagh', title: 'Charbagh Railway Station', kicker: 'Early 20th century', dest: 'charbagh', az: 0.35, pitch: 0.4, dist: 700, orbit: 0.7, closeIn: 0.8,
+    text: 'A red-brick station of arches, chhatris and domes. From above, its roofline is known for a chessboard pattern of domes and turrets.' },
+  { id: 'metro', title: 'Lucknow Metro', kicker: 'Elevated line · opened 2017', dest: 'metro', az: 0.4, pitch: 0.28, dist: 160, orbit: 0.9, closeIn: 0.9, dwell: 14000,
+    text: 'The metro runs on an elevated viaduct across the city and goes underground beneath the old centre. Watch a train glide along the line.' },
+  { id: 'ambedkar', title: 'Dr. Ambedkar Memorial Park', kicker: 'Gomti Nagar', dest: 'ambedkar_park', az: 1.75, pitch: 0.42, dist: 1100, orbit: 0.7, closeIn: 0.7,
+    text: 'A vast sandstone memorial with a stupa, an avenue of 62 elephants and a great amphitheatre.' },
+  { id: 'janeshwar', title: 'Janeshwar Mishra Park', kicker: 'Gomti Nagar · 376 acres', dest: 'janeshwar_park', at: [4002, 1521], az: 0.3, pitch: 0.75, dist: 1500, orbit: 0.8, closeIn: 0.8,
+    text: 'One of the largest urban parks in the country, with two lakes, wide lawns and long walking and cycling tracks.' },
+  { id: 'ekana', title: 'Ekana Cricket Stadium', kicker: 'Shaheed Path', dest: 'ekana', az: 1.15, pitch: 0.5, dist: 800, orbit: 0.9, closeIn: 0.8,
+    text: 'Lucknow’s international cricket ground, a bowl for roughly fifty thousand spectators.' },
+  { id: 'night-old', title: 'Husainabad by night', kicker: 'After dark', dest: 'bara_imambara', at: [-3683, -2153], az: 2.5, pitch: 0.42, dist: 560, orbit: 0.7, closeIn: 0.8, night: true,
+    text: 'After dark the old city’s monuments are floodlit in warm amber while the lanes around them fall quiet.' },
+  { id: 'night-gomti', title: 'The Gomti at night', kicker: 'After dark', dest: 'taj_gomti', az: 1.9, pitch: 0.34, dist: 1000, orbit: 0.7, closeIn: 0.8, night: true,
+    text: 'Bridges and riverfront lamps trace the curve of the Gomti through the modern city.' },
+];
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+interface Props {
+  controller: CameraController | null;
+  night: boolean;
+  onNight: (n: boolean) => void;
+  hidden?: boolean;
+}
+
+export const TourGuide: React.FC<Props> = ({ controller, night, onNight, hidden }) => {
+  const [running, setRunning] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [idx, setIdx] = useState(-1);
+  const [card, setCard] = useState<{ kicker: string; title: string; text: string } | null>(null);
+  const token = useRef(0);
+  const pausedRef = useRef(false);
+  const audio = useRef(new TourAudio());
+  const [music, setMusic] = useState(true);
+  /** Full-screen title card (opening and finale) and the cloud sweep between scenes. */
+  const [title, setTitle] = useState<{ big: string; small: string } | null>(null);
+  const [clouds, setClouds] = useState(0);
+  /** Pending jump: stop index to go to (Back / Next). */
+  const jumpRef = useRef<number | null>(null);
+  const nightRef = useRef(night);
+  const startNight = useRef(night);
+  const metroPoint = useRef<{ x: number; z: number; az: number } | null>(null);
+  nightRef.current = night;
+  pausedRef.current = paused;
+
+  const stop = useCallback(() => {
+    token.current++;
+    setRunning(false); setPaused(false); setCard(null); setIdx(-1); setTitle(null);
+    audio.current.stop();
+    if (nightRef.current !== startNight.current) onNight(startNight.current);
+  }, [onNight]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && running) stop(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [running, stop]);
+
+  useEffect(() => () => { token.current++; }, []);
+
+
+  const findMetro = async (): Promise<{ x: number; z: number; az: number } | null> => {
+    if (metroPoint.current) return metroPoint.current;
+    try {
+      const d = await (await fetch('/landmarks/metro.json')).json() as { lines: Array<{ kind: string; pts: number[][] }> };
+      const v = d.lines.filter((l) => l.kind === 'viaduct').sort((a, b) => b.pts.length - a.pts.length)[0];
+      const k = Math.floor(v.pts.length * 0.45);
+      const m = v.pts[k], n = v.pts[k + 1] ?? m;
+      // Look across the viaduct: camera azimuth perpendicular to the line.
+      metroPoint.current = { x: m[0], z: m[2], az: Math.atan2(n[0] - m[0], n[2] - m[2]) + Math.PI / 2 };
+    } catch { metroPoint.current = null; }
+    return metroPoint.current;
+  };
+
+  const run = useCallback(async () => {
+    if (!controller) return;
+    const my = ++token.current;
+    const alive = () => token.current === my;
+    const wait = async (ms: number) => {
+      let left = ms;
+      while (left > 0 && alive() && jumpRef.current === null) { await sleep(100); if (!pausedRef.current) left -= 100; }
+    };
+    startNight.current = nightRef.current;
+    setRunning(true); setPaused(false); setIdx(-1);
+    if (nightRef.current) onNight(false);
+
+    // Opening, teaser-style: black title card over the score, then a slow push-in through cloud
+    // from very high up down to the city.
+    audio.current.musicOn = music; audio.current.voiceOn = false; audio.current.start();
+    setTitle({ big: 'LUCKNOW', small: 'The City of Nawabs' });
+    controller.transitionTo(new THREE.Vector3(-1500, 0, 300), 0.4, 1.2, 42000, 100);
+    await wait(3600);
+    audio.current.hit(); setClouds((c) => c + 1); setTitle(null);
+    controller.transitionTo(new THREE.Vector3(-1500, 0, 300), 0.7, 0.75, 14000, 6500);
+    await wait(6800);
+
+    for (let i = 0; i < STOPS.length && alive(); i++) {
+      if (jumpRef.current !== null) { i = Math.max(0, Math.min(STOPS.length - 1, jumpRef.current)); jumpRef.current = null; }
+      const s = STOPS[i];
+      let x: number | undefined, z: number | undefined, az = s.az;
+      if (s.dest === 'metro') {
+        const head = (window as unknown as { __lensTrainHead?: () => { x: number; z: number; ang: number } | null }).__lensTrainHead?.();
+        if (head) { x = head.x; z = head.z; az = head.ang + Math.PI / 2; }
+        else {
+          const m = await findMetro();
+          if (!m) continue;
+          x = m.x; z = m.z; az = m.az;
+        }
+      } else {
+        const d = destinationById(s.dest);
+        x = s.at ? s.at[0] : d?.x; z = s.at ? s.at[1] : d?.z;
+      }
+      if (x === undefined || z === undefined) continue;
+      setIdx(i);
+      if (s.night && !nightRef.current) { onNight(true); await wait(1400); }
+      setCard({ kicker: s.kicker, title: s.title, text: s.text });
+      audio.current.hit(); setClouds((c) => c + 1);
+      const tgt = new THREE.Vector3(x, 0, z);
+      // Approach: swing in and settle on the framing.
+      controller.transitionTo(tgt, az - s.orbit * 0.5, s.pitch, s.dist, 4200);
+      await wait(4400);
+      if (!alive()) break;
+      // Dwell: a slow orbit while easing closer.
+      const dwell = s.dwell ?? 7500;
+      if (s.dest === 'metro') {
+        // Ride along: re-aim at the live train head every second so the camera follows it
+        // while the cars glide past (the trains run on a real-time timetable).
+        const getHead = (window as unknown as { __lensTrainHead?: () => { x: number; y: number; z: number; ang: number } | null }).__lensTrainHead;
+        let t = 0;
+        while (t < dwell && alive()) {
+          const h = getHead?.();
+          if (h) controller.transitionTo(new THREE.Vector3(h.x, h.y, h.z), h.ang + Math.PI / 2 + 0.5 + t / dwell * 0.9, 0.28, 110, 1200);
+          await wait(1000); t += 1000;
+        }
+      } else {
+        controller.transitionTo(tgt, az + s.orbit * 0.5, Math.max(0.2, s.pitch - 0.04), s.dist * s.closeIn, dwell);
+        await wait(dwell);
+      }
+    }
+
+    if (alive()) {
+      // Finale: pull back to the whole city.
+      setIdx(STOPS.length);
+      setCard(null); audio.current.hit(); setClouds((c) => c + 1);
+      setTitle({ big: 'LUCKNOW LENS', small: 'Muskuraiye, aap Lucknow mein hain' });
+      controller.transitionTo(new THREE.Vector3(-600, 0, 400), 0.9, 0.62, 24000, 7000);
+      await wait(8500);
+    }
+    if (alive()) stop();
+  }, [controller, onNight, stop, music]);
+
+  // The launcher lives beside the search bar (CityUI) and talks to the tour through this event.
+  useEffect(() => {
+    const start = () => { if (!hidden && controller) void run(); };
+    window.addEventListener('lens:start-tour', start);
+    return () => window.removeEventListener('lens:start-tour', start);
+  }, [run, hidden, controller]);
+
+  if (hidden) return null;
+  const total = STOPS.length;
+
+  return (
+    <>
+      {running && (
+        <>
+          {title && (
+            <div className="pointer-events-none absolute inset-0 z-[23] grid place-items-center bg-black/55 animate-[fadeIn_1.2s_ease-out]">
+              <div className="text-center">
+                <h1 className="text-[clamp(2rem,7.5vw,5.5rem)] leading-none tracking-[0.12em] px-4 text-[#f3e3c3] [text-shadow:0_6px_40px_rgba(0,0,0,.6)]" style={{ fontFamily: '"Rozha One", Georgia, serif' }}>{title.big}</h1>
+                <p className="mt-3 text-[clamp(0.9rem,2.2vw,1.3rem)] uppercase tracking-[0.4em] text-[#d8b66a]">{title.small}</p>
+              </div>
+            </div>
+          )}
+          {clouds > 0 && (
+            <div key={clouds} aria-hidden="true" className="tour-clouds pointer-events-none absolute inset-0 z-[22] overflow-hidden">
+              <div className="tour-cloud" style={{ top: '8%', left: '-60%', animationDelay: '0s' }} />
+              <div className="tour-cloud" style={{ top: '38%', left: '-70%', animationDelay: '.15s', transform: 'scale(1.4)' }} />
+              <div className="tour-cloud" style={{ top: '62%', left: '-65%', animationDelay: '.3s' }} />
+            </div>
+          )}
+          <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 z-[21] h-[7vh] bg-black/80" />
+          <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 z-[21] h-[7vh] bg-black/80" />
+          <div
+            role="status"
+            aria-live="polite"
+            className="absolute bottom-[9vh] left-1/2 z-[22] w-[min(560px,calc(100vw-32px))] -translate-x-1/2 rounded-2xl bg-[#1d1411]/80 p-4 text-[#f6ead2] shadow-[0_18px_50px_-16px_rgba(0,0,0,.7)] backdrop-blur-md"
+          >
+            {card && (
+              <div key={card.title} className="animate-[fadeIn_.6s_ease-out]">
+                <p className="text-[10.5px] font-semibold uppercase tracking-[0.16em] text-[#d8b66a]">{card.kicker}</p>
+                <h2 className="mt-0.5 text-[20px] leading-tight" style={{ fontFamily: '"Rozha One", Georgia, serif' }}>{card.title}</h2>
+                <p className="mt-1.5 text-[13px] leading-[1.55] text-[#f6ead2]/85">{card.text}</p>
+              </div>
+            )}
+            <div className="mt-3 flex items-center gap-3">
+              <div className="flex flex-1 gap-1" aria-label={`Stop ${Math.max(0, Math.min(idx + 1, total))} of ${total}`}>
+                {STOPS.map((s, i) => <span key={s.id} className={`h-1 flex-1 rounded-full ${i < idx ? 'bg-[#d8b66a]' : i === idx ? 'bg-[#f6ead2]' : 'bg-white/20'}`} />)}
+              </div>
+              <button onClick={() => { jumpRef.current = Math.max(0, idx - 1); }} aria-label="Previous stop" className="rounded-lg bg-white/10 px-2.5 py-1 text-[12px] font-semibold hover:bg-white/20">Back</button>
+              <button onClick={() => { jumpRef.current = idx + 1; }} aria-label="Next stop" className="rounded-lg bg-white/10 px-2.5 py-1 text-[12px] font-semibold hover:bg-white/20">Next</button>
+              <button onClick={() => setPaused((p) => !p)} className="rounded-lg bg-white/10 px-2.5 py-1 text-[12px] font-semibold hover:bg-white/20">{paused ? 'Resume' : 'Pause'}</button>
+              <button onClick={() => { const v = !music; setMusic(v); audio.current.setMusic(v); }} aria-pressed={music} className="rounded-lg bg-white/10 px-2.5 py-1 text-[12px] font-semibold hover:bg-white/20">{music ? 'Music on' : 'Music off'}</button>
+              <button onClick={stop} className="rounded-lg bg-white/10 px-2.5 py-1 text-[12px] font-semibold hover:bg-white/20">End</button>
+            </div>
+          </div>
+        </>
+      )}
+    </>
+  );
+};

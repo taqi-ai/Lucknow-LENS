@@ -42,6 +42,7 @@ try {
   console.log('Smoke test passed:', JSON.stringify(health));
   clearTimeout(timeout);
   child.kill();
+  await new Promise((r) => setTimeout(r, 200));
   process.exit(0);
 } catch (err) {
   console.error('Smoke test failed:', err);

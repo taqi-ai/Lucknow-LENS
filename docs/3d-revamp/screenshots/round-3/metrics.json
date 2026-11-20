@@ -1,0 +1,43 @@
+{
+  "glInfo": {
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Laptop GPU (0x00002860) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "ver": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+  },
+  "quality": "high",
+  "appGpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Laptop GPU (0x00002860) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "results": [
+    {
+      "shot": "y_train",
+      "fps": 240,
+      "frameMsP50": 4.2,
+      "frameMsP95": 5.3,
+      "drawCalls": 149,
+      "triangles": 5012853,
+      "geometries": 141,
+      "textures": 31,
+      "programs": 68,
+      "tiles": 189,
+      "buildings": 90991,
+      "lod": 3,
+      "scale": "STREET",
+      "jsHeapMB": 315
+    },
+    {
+      "shot": "y_train_night",
+      "fps": 240,
+      "frameMsP50": 4.2,
+      "frameMsP95": 5,
+      "drawCalls": 99,
+      "triangles": 3338332,
+      "geometries": 145,
+      "textures": 13,
+      "programs": 68,
+      "tiles": 189,
+      "buildings": 90991,
+      "lod": 3,
+      "scale": "STREET",
+      "jsHeapMB": 315
+    }
+  ],
+  "errors": []
+}

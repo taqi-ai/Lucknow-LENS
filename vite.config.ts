@@ -6,7 +6,13 @@ import {defineConfig} from 'vite';
 export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
+    // Pre-bundle the animation libraries up front. Discovering them mid-session made Vite
+    // re-optimise and serve two copies of React (hooks crashed with 'reading useRef').
+    optimizeDeps: {
+      include: ['react', 'react-dom', 'react-dom/client', 'motion/react', 'gsap', 'gsap/ScrollTrigger', 'gsap/SplitText', '@gsap/react', '@hugeicons/react', '@hugeicons/core-free-icons', 'lenis'],
+    },
     resolve: {
+      dedupe: ['react', 'react-dom'],
       alias: {
         '@': path.resolve(__dirname, '.'),
       },

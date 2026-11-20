@@ -46,7 +46,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, mapDa
           </div>
           <div>
             <div className="text-[10px] text-slate-400 uppercase font-semibold">Water & Parks</div>
-            <div className="text-lg font-bold text-emerald-400">{mapData.stats.waterwaysCount + mapData.stats.greenAreasCount}</div>
+            <div className="text-lg font-bold text-amber-300">{mapData.stats.waterwaysCount + mapData.stats.greenAreasCount}</div>
           </div>
           <div>
             <div className="text-[10px] text-slate-400 uppercase font-semibold">Frame Rate</div>
@@ -101,7 +101,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, mapDa
           {/* Section 3 */}
           <div>
             <h3 className="text-base font-bold text-white flex items-center gap-2 mb-2">
-              <Zap className="w-4 h-4 text-emerald-400" /> 3. Performance & Framing
+              <Zap className="w-4 h-4 text-amber-300" /> 3. Performance & Framing
             </h3>
             <p className="text-xs text-slate-300 mb-2">
               The camera automatically calculates bounding dimensions to fit the full dataset seamlessly. Press <strong className="text-amber-300">[FRAME CITY]</strong> at any time to reset focus.

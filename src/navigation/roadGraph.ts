@@ -1,5 +1,6 @@
 import { loadJSON } from '../data/resourceCache';
 import { RoadSegmentOSM, OverviewData } from '../types';
+import { buildElevationProfiles } from '../city/ribbon';
 
 export interface GraphEdge {
   toNodeId: number;
@@ -52,7 +53,8 @@ const WEIGHT_MULTIPLIERS: Record<string, number> = {
   service: 1.40,
 };
 
-const SNAP_RESOLUTION = 20; // 20-meter snapping for road endpoint junctions
+const SNAP_RESOLUTION = 20; // 20-meter horizontal snapping for road endpoint junctions
+const VERTICAL_SNAP_RESOLUTION = 4.0; // 4-meter vertical snapping bucket for separating flyover decks
 const BUCKET_SIZE = 250;     // 250-meter spatial buckets for fast neighbor lookup
 
 export class RoadGraph {
@@ -94,14 +96,17 @@ export class RoadGraph {
     }
   }
 
-  private getSnapKey(x: number, z: number): string {
+  private getSnapKey(x: number, y: number, z: number): string {
     const sx = Math.round(x / SNAP_RESOLUTION) * SNAP_RESOLUTION;
     const sz = Math.round(z / SNAP_RESOLUTION) * SNAP_RESOLUTION;
-    return `${sx},${sz}`;
+    // Ground and near-ground junctions (y < 2.0m) snap to 0 so all ground connections join cleanly.
+    // Elevated decks (y >= 2.0m) are bucketed by vertical resolution, separating flyover decks from surface roads.
+    const sy = y < 2.0 ? 0 : Math.round(y / VERTICAL_SNAP_RESOLUTION) * VERTICAL_SNAP_RESOLUTION;
+    return `${sx},${sy},${sz}`;
   }
 
   private getOrCreateNode(x: number, y: number, z: number): number {
-    const key = this.getSnapKey(x, z);
+    const key = this.getSnapKey(x, y, z);
     const existing = this.nodeLookup.get(key);
     if (existing !== undefined) return existing;
 
@@ -129,6 +134,9 @@ export class RoadGraph {
     this.nodeLookup.clear();
     this.spatialBuckets.clear();
 
+    // 1. Compute 3D elevation profiles for all elevated roads, ramps, and bridges
+    const profiles = buildElevationProfiles(roads as never);
+
     for (const road of roads) {
       if (!DRIVABLE_TYPES.has(road.type) || !road.points || road.points.length < 2) {
         continue;
@@ -139,49 +147,84 @@ export class RoadGraph {
       const speed = SPEED_LIMITS[roadType] || 35;
       const weightMult = WEIGHT_MULTIPLIERS[roadType] || 1.0;
       
-      // Determine base elevation if elevated flyover
-      const isElevated = (road as any).isElevated ?? false;
-      const baseElevation = isElevated ? 8.5 : 0.0;
+      // Determine points with accurate 3D elevations
+      const profilePts = profiles.get(road as never) as Array<{ x: number; y?: number; z: number }> | undefined;
+      const pts: Array<{ x: number; y?: number; z: number }> = (profilePts && profilePts.length === road.points.length) ? profilePts : road.points;
 
-      for (let i = 0; i < road.points.length - 1; i++) {
-        const p1 = road.points[i];
-        const p2 = road.points[i + 1];
+      // Determine one-way road restrictions:
+      // 1. Explicit oneway property
+      const explicitOneway = (road as any).oneway;
+      let isForwardOnly = false;
+      let isReverseOnly = false;
 
-        const n1 = this.getOrCreateNode(p1.x, baseElevation, p1.z);
-        const n2 = this.getOrCreateNode(p2.x, baseElevation, p2.z);
+      if (explicitOneway === true || explicitOneway === 'yes' || explicitOneway === 1 || explicitOneway === '1') {
+        isForwardOnly = true;
+      } else if (explicitOneway === -1 || explicitOneway === '-1' || explicitOneway === 'reverse') {
+        isReverseOnly = true;
+      } else if (explicitOneway === false || explicitOneway === 'no' || explicitOneway === 0 || explicitOneway === '0') {
+        isForwardOnly = false;
+        isReverseOnly = false;
+      } else {
+        // 2. Structural GIS classification where data designates unidirectional flow:
+        // - Motorways: in OSM/Overture, motorways are dual carriageways mapped as individual directed ways
+        // - Link/Ramp connectors: motorway_link, trunk_link, primary_link, or isLink=true
+        // - Roundabouts: circular one-way ways
+        const isMotorway = roadType === 'motorway';
+        const isLink = Boolean((road as any).isLink || roadType.endsWith('_link'));
+        const isRoundabout = Boolean((road as any).roundabout || (road as any).junction === 'roundabout');
+
+        if (isMotorway || isLink || isRoundabout) {
+          isForwardOnly = true;
+        }
+      }
+
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p1 = pts[i];
+        const p2 = pts[i + 1];
+        const y1 = p1.y ?? 0;
+        const y2 = p2.y ?? 0;
+
+        const n1 = this.getOrCreateNode(p1.x, y1, p1.z);
+        const n2 = this.getOrCreateNode(p2.x, y2, p2.z);
 
         if (n1 === n2) continue;
 
         const dx = p2.x - p1.x;
+        const dy = y2 - y1;
         const dz = p2.z - p1.z;
-        const dist = Math.hypot(dx, dz);
+        const dist = Math.hypot(dx, dy, dz);
         const cost = dist * weightMult;
 
         const segmentPoints = [
-          { x: p1.x, y: baseElevation, z: p1.z },
-          { x: p2.x, y: baseElevation, z: p2.z },
+          { x: p1.x, y: y1, z: p1.z },
+          { x: p2.x, y: y2, z: p2.z },
         ];
 
-        // Bi-directional edge for two-way streets
-        this.nodes[n1].edges.push({
-          toNodeId: n2,
-          distance: dist,
-          cost,
-          speedLimitKmH: speed,
-          roadName,
-          roadType,
-          points: segmentPoints,
-        });
+        // Add forward edge (permitted for bidirectional, forward-only, or non-reverse roads)
+        if (!isReverseOnly) {
+          this.nodes[n1].edges.push({
+            toNodeId: n2,
+            distance: dist,
+            cost,
+            speedLimitKmH: speed,
+            roadName,
+            roadType,
+            points: segmentPoints,
+          });
+        }
 
-        this.nodes[n2].edges.push({
-          toNodeId: n1,
-          distance: dist,
-          cost,
-          speedLimitKmH: speed,
-          roadName,
-          roadType,
-          points: [segmentPoints[1], segmentPoints[0]],
-        });
+        // Add reverse edge (permitted for bidirectional roads or explicit reverse one-way roads)
+        if (!isForwardOnly || isReverseOnly) {
+          this.nodes[n2].edges.push({
+            toNodeId: n1,
+            distance: dist,
+            cost,
+            speedLimitKmH: speed,
+            roadName,
+            roadType,
+            points: [segmentPoints[1], segmentPoints[0]],
+          });
+        }
       }
     }
   }
@@ -189,7 +232,12 @@ export class RoadGraph {
   /**
    * Find closest node in the graph to an arbitrary 3D position
    */
-  public findNearestNode(x: number, z: number, maxRadius = 800): { nodeId: number; distance: number } | null {
+  public findNearestNode(
+    x: number,
+    z: number,
+    maxRadius = 800,
+    targetY?: number
+  ): { nodeId: number; distance: number } | null {
     if (this.nodes.length === 0) return null;
 
     const bx = Math.floor(x / BUCKET_SIZE);
@@ -208,7 +256,8 @@ export class RoadGraph {
 
         for (const id of bucket) {
           const n = this.nodes[id];
-          const distSq = (n.x - x) * (n.x - x) + (n.z - z) * (n.z - z);
+          const dy = targetY !== undefined ? (n.y - targetY) * 2.0 : 0;
+          const distSq = (n.x - x) * (n.x - x) + dy * dy + (n.z - z) * (n.z - z);
           if (distSq < bestDistSq) {
             bestDistSq = distSq;
             bestId = id;
@@ -226,7 +275,8 @@ export class RoadGraph {
     let fallbackDistSq = Infinity;
     for (let i = 0; i < this.nodes.length; i++) {
       const n = this.nodes[i];
-      const distSq = (n.x - x) * (n.x - x) + (n.z - z) * (n.z - z);
+      const dy = targetY !== undefined ? (n.y - targetY) * 2.0 : 0;
+      const distSq = (n.x - x) * (n.x - x) + dy * dy + (n.z - z) * (n.z - z);
       if (distSq < fallbackDistSq) {
         fallbackDistSq = distSq;
         fallbackId = i;

@@ -182,18 +182,22 @@ interface SkyPalette {
   fogDensity: number;
 }
 
+// North Indian daylight is hazy: a paler, slightly milky zenith and a warm dust-grey
+// horizon. The haze is real aerial perspective (FogExp2, owned here), restored after
+// it had been switched off; it is what gives the skyline depth at district scale.
 const DAY_PALETTE: SkyPalette = {
-  zenith:   0x3b82f6,  // Stronger blue sky for cinematic day
-  horizon:  0xd6e5f0,  // Match new fog
-  fog:      0xd6e5f0,  // Match horizon for seamless blending
-  fogDensity: 0.000000, // Haze removed completely
+  zenith:   0x5d8fc6,
+  horizon:  0xe4dfd1,
+  fog:      0xe4dfd1,
+  fogDensity: 0.000019,
 };
 
+// Night: deep zenith, and a warm light-polluted band at the horizon from the city.
 const NIGHT_PALETTE: SkyPalette = {
-  zenith:   0x050c1a,  // Deep starfield navy
-  horizon:  0x0c1628,  // Dark blue atmospheric band (matched to fog)
-  fog:      0x0c1628,  // Match horizon
-  fogDensity: 0.000000, // Haze removed completely
+  zenith:   0x0a1428,
+  horizon:  0x3b2f27,
+  fog:      0x2a2420,
+  fogDensity: 0.000016,
 };
 
 // ─── AtmosphericSky Class ──────────────────────────────────────────────────────
@@ -292,6 +296,16 @@ export class AtmosphericSky {
   public setNightMode(night: boolean): void {
     this.targetNightBlend = night ? 1.0 : 0.0;
   }
+
+  /** Drive the day/night blend directly (0 = day, 1 = night), for a scene-wide synced transition. */
+  public setBlend(v: number): void {
+    this.currentNightBlend = this.targetNightBlend = v;
+    if (this.skyMaterial) this.skyMaterial.uniforms.uNightBlend.value = v;
+    this.updateFog(v);
+  }
+
+  public get material(): THREE.Material | null { return this.skyMaterial ?? null; }
+  public get blend(): number { return this.currentNightBlend; }
 
   /**
    * Interpolate fog color and density smoothly.

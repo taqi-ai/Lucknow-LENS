@@ -1,554 +1,209 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { CameraPreset, OSMMapData, RenderStats, CityStreamingStats, SelectedEntity, SimulatedFlight, AIAction } from './types';
-import { CityViewport } from './components/3d/CityViewport';
-import { CityUI } from './components/ui/CityUI';
-import { RefreshCw, AlertCircle } from 'lucide-react';
-import { parseOvertureGeoJSON } from './osm/overtureParser';
-import { CameraController } from './city/cameraController';
-import { LayerState, DEFAULT_LAYERS } from './components/features/LayerControl';
-import { useLiveFlights } from './interactions/flights';
-import {
-  useLiveFeed, useLiveList,
-  type LiveWeatherDTO, type LiveAirQualityDTO,
-  type LiveTrainDTO, type LiveTrafficDTO, type LiveNewsDTO,
-} from './interactions/liveFeed';
-import type { SkylineStyle } from './city/buildingMaterial';
-import { Pathfinder } from './navigation/pathfinder';
-import { RouteDriver } from './navigation/routeDriver';
-import type { NavigationRoute, NavigatorState, RouteWaypoint, GPSTheme, TransportMode, RoutePreference } from './navigation/types';
-import { GPSService } from './navigation/gpsService';
-import { SIL } from './spatial/spatialIntelligenceLayer';
-import { SpatialIncident } from './spatial/types';
-import { project, unproject } from './search/SearchIndex';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { AnimatePresence, animate, motion, useMotionValue } from 'motion/react';
+import type { CameraPreset } from './types';
+import type { LoadProgress } from './MapApp';
+import { Landing } from './landing/Landing';
+import { LucknowLensMark } from './components/brand/LucknowLensLogo';
+import { AircraftWindow, PANE } from './landing/AircraftWindow';
 
-const INITIAL_MAP_DATA: OSMMapData = {
-  bounds: {
-    minLat: 26.840,
-    maxLat: 26.855,
-    minLon: 80.935,
-    maxLon: 80.955,
-    centerLat: 26.8475,
-    centerLon: 80.945,
-    widthMeters: 2000,
-    heightMeters: 1600,
-  },
-  buildings: [],
-  roads: [],
-  waterways: [],
-  greenAreas: [],
-  landmarks: [],
-  stats: {
-    buildingsCount: 0,
-    roadsCount: 0,
-    waterwaysCount: 0,
-    greenAreasCount: 0,
-    landmarksCount: 0,
-    widthMeters: 2000,
-    heightMeters: 1600,
-  }
-};
+const loadMap = () => import('./MapApp');
+const MapApp = lazy(loadMap);
+
+/**
+ * landing → boarding (map loads behind a closed cabin window; the shade lifts as it loads)
+ *         → ready (shade up, the real map is visible through the glass; nothing moves until you choose)
+ *         → diving (the camera pushes through the window) → map
+ */
+type Stage = 'landing' | 'boarding' | 'ready' | 'diving' | 'map' | 'leaving';
+
+const reduced = () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+/** Called only when someone shows intent to enter (hover, focus, touch on an Enter control). */
+const DATA_FILES = ['/overture/lucknow_buildings.geojson', '/overture/lucknow_roads.geojson', '/overture/lucknow_places.geojson', '/hlod/hlod_manifest.json'];
+let warmed = false;
+function warmMap() {
+  if (warmed) return;
+  warmed = true;
+  loadMap().catch(() => { warmed = false; });
+  DATA_FILES.forEach((u) => fetch(u, { priority: 'low' } as RequestInit).catch(() => undefined));
+}
 
 export default function App() {
-  const [mapData, setMapData] = useState<OSMMapData>(INITIAL_MAP_DATA);
-  const [error, setError] = useState<string | null>(null);
+  const [stage, setStage] = useState<Stage>('landing');
+  const [preset, setPreset] = useState<CameraPreset>('hero');
+  const [progress, setProgress] = useState<LoadProgress>({ value: 0, stage: 'Boarding', ready: false, error: null });
+  const [attempt, setAttempt] = useState(0);
+  const [shown, setShown] = useState(0); // eased progress that drives the shade
+  const savedScroll = useRef(0);
+  const scale = useMotionValue(1);
+  const fade = useMotionValue(1);
 
-  const [cameraController, setCameraController] = useState<CameraController | null>(null);
+  const enter = useCallback((p?: CameraPreset) => {
+    savedScroll.current = window.scrollY;
+    setPreset(p ?? 'hero');
+    setProgress({ value: 0.02, stage: 'Boarding', ready: false, error: null });
+    setShown(0);
+    scale.set(1); fade.set(0);
+    animate(fade, 1, { duration: 0.6 });
+    setStage('boarding');
+    window.scrollTo(0, 0);
+  }, [scale, fade]);
 
-  const [cameraSignal, setCameraSignal] = useState<CameraPreset | 'reset' | null>(null);
-  const [nightMode, setNightMode] = useState<boolean>(true); // Default to Night Mode
-  const [skylineStyle, setSkylineStyle] = useState<SkylineStyle>('warm');
-  const [showLabels, setShowLabels] = useState<boolean>(true); // Default: labels ON
-  const [presentationMode, setPresentationMode] = useState<boolean>(false);
-  const [mapOnly, setMapOnly] = useState<boolean>(false);
-
-  // GTA GPS Navigation State
-  const pathfinderRef = useRef<Pathfinder>(new Pathfinder());
-  const routeDriverRef = useRef<RouteDriver | null>(null);
-  const gpsServiceRef = useRef<GPSService | null>(null);
-
-  const [navigationRoute, setNavigationRoute] = useState<NavigationRoute | null>(null);
-  const [navigatorState, setNavigatorState] = useState<NavigatorState | null>(null);
-  const [destinationWaypoint, setDestinationWaypoint] = useState<RouteWaypoint | null>(null);
-  const [gpsTheme, setGpsTheme] = useState<GPSTheme>('purple');
-  const [followCamera, setFollowCamera] = useState<boolean>(true);
-
-  // Navigation Panel & Live GPS Tracking
-  const [isNavigationMode, setIsNavigationMode] = useState<boolean>(false);
-  const [isGPSActive, setIsGPSActive] = useState<boolean>(false);
-  const [rerouteNotification, setRerouteNotification] = useState<string | null>(null);
-
-  // Initialize GPSService and listen for off-route deviation triggers
+  // Auto-enter map when `?harness` or `?benchmark` is present so benchmarks and visual tests can run
   useEffect(() => {
-    const graph = pathfinderRef.current.getRoadGraph();
-    const gps = new GPSService(graph);
-    gpsServiceRef.current = gps;
-
-    gps.onRerouteNeeded(async (evt) => {
-      setRerouteNotification(`Dynamic Reroute: Off track (${Math.round(evt.deviationDistance)}m). Recalculating route...`);
-      if (destinationWaypoint) {
-        const newStart: RouteWaypoint = {
-          x: evt.snappedPosition.x,
-          z: evt.snappedPosition.z,
-          name: 'Current Vehicle Position',
-        };
-        const newRoute = await pathfinderRef.current.calculateRoute(newStart, destinationWaypoint);
-        if (newRoute) {
-          setNavigationRoute(newRoute);
-          gps.setActiveRoute(newRoute);
-        }
-      }
-      setTimeout(() => setRerouteNotification(null), 4500);
-    });
-
-    return () => {
-      gps.stopTracking();
-    };
-  }, [destinationWaypoint]);
-
+    const q = new URLSearchParams(window.location.search);
+    if (!q.has('harness') && !q.has('benchmark')) return;
+    enter();
+  }, [enter]);
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Never steal a key from a text field
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (stage !== 'ready') return;
+    const q = new URLSearchParams(window.location.search);
+    if (q.has('harness') || q.has('benchmark')) setStage('map');
+  }, [stage]);
 
-      if (e.key === 'Escape') {
-        if (mapOnly) setMapOnly(false);
-        else if (presentationMode) setPresentationMode(false);
-        else if (isNavigationMode) setIsNavigationMode(false);
-        else if (navigationRoute) {
-          setNavigationRoute(null);
-          setDestinationWaypoint(null);
-          setNavigatorState(null);
-          routeDriverRef.current?.stopDriving();
-        }
-        return;
-      }
-      if ((e.key === 'm' || e.key === 'M') && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        setMapOnly((v) => !v);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [presentationMode, mapOnly, navigationRoute, isNavigationMode]);
-
-  // Layer toggler state initialized with 5-pillar DEFAULT_LAYERS
-  const [layers, setLayers] = useState<LayerState>(DEFAULT_LAYERS);
-
-  // Selection states
-  const [selectedEntity, setSelectedEntity] = useState<SelectedEntity | null>(null);
-
-  // Live feeds
-  const flightFeed = useLiveFlights(layers.live.flights);
-  const flights = flightFeed.flights;
-
-  const weatherFeed = useLiveFeed<LiveWeatherDTO>('/api/live/weather', layers.live.weather, 300_000);
-  const airFeed = useLiveFeed<LiveAirQualityDTO>('/api/live/air', layers.live.aqi, 600_000);
-  const trainFeed = useLiveList<LiveTrainDTO>('/api/live/trains', layers.live.railways, 20_000);
-  const trafficFeed = useLiveList<LiveTrafficDTO>('/api/live/traffic', layers.live.traffic, 60_000);
-  const newsFeed = useLiveList<LiveNewsDTO>('/api/live/news', layers.live.news, 900_000);
-
-  const [renderStats, setRenderStats] = useState<RenderStats>({
-    fps: 60,
-    drawCalls: 0,
-    triangles: 0,
-    geometries: 0,
-    textures: 0,
-  });
-
-  const [streamingStats, setStreamingStats] = useState<CityStreamingStats | undefined>(undefined);
-
-  const loadCityData = useCallback(async () => {
-    setError(null);
-    try {
-      const data = await parseOvertureGeoJSON();
-      setMapData(data);
-      setCameraSignal('frame');
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      setError(`Failed to load Overture city data: ${message}`);
+  /** Back to the site: pull out through the cabin window (the dive in reverse), then the window fades into the page. */
+  const [exiting, setExiting] = useState(false);
+  const leave = useCallback(async () => {
+    const fromMap = stage === 'map' && !reduced();
+    if (fromMap) {
+      const h = Math.min(window.innerHeight * 0.78, 720);
+      const target = Math.max(window.innerWidth / (h * (PANE.w / 560)), window.innerHeight / (h * (PANE.h / 560))) * 1.25;
+      scale.set(target); fade.set(0);
+      setStage('leaving');
+      animate(fade, 1, { duration: 0.35 });
+      await animate(scale, 1, { duration: 1.25, ease: [0.3, 0, 0.2, 1] });
+      setExiting(true);
     }
+    setStage('landing');
+    requestAnimationFrame(() => window.scrollTo(0, savedScroll.current));
+    if (fromMap) { await animate(fade, 0, { duration: 0.7, delay: 0.15 }); setExiting(false); }
+  }, [stage, scale, fade]);
+
+  const onProgress = useCallback((p: LoadProgress) => {
+    setProgress(p);
+    if (p.ready) setStage((s) => (s === 'boarding' ? 'ready' : s));
   }, []);
+
+  // Real progress jumps in steps (and sits still while the first tiles load), so
+  // the shade follows an eased value that keeps creeping, but never claims "done".
+  useEffect(() => {
+    if (stage !== 'boarding') return;
+    const t0 = performance.now();
+    let raf = 0;
+    const tick = () => {
+      const creep = Math.min(0.88, ((performance.now() - t0) / 45000) * 0.88);
+      const target = Math.max(progress.value, creep);
+      setShown((v) => v + (Math.min(target, 0.92) - v) * 0.04);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [stage, progress.value]);
+
+  const dive = useCallback(async () => {
+    if (stage !== 'ready') return;
+    setStage('diving');
+    if (reduced()) {
+      await animate(fade, 0, { duration: 0.4 });
+    } else {
+      // scale so the pane (228 of 560 units tall window) overflows the screen
+      const h = Math.min(window.innerHeight * 0.78, 720);
+      const paneW = h * (PANE.w / 560), paneH = h * (PANE.h / 560);
+      const target = Math.max(window.innerWidth / paneW, window.innerHeight / paneH) * 1.25;
+      animate(fade, 0, { duration: 0.5, delay: 0.95 });
+      await animate(scale, target, { duration: 1.45, ease: [0.7, 0, 0.2, 1] });
+    }
+    setStage('map');
+  }, [stage, fade, scale]);
+
+  // keyboard: Enter or Space dives once the map is ready
+  useEffect(() => {
+    if (stage !== 'ready') return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); dive(); } if (e.key === 'Escape') leave(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [stage, dive, leave]);
 
   useEffect(() => {
-    const idle = (window as any).requestIdleCallback as
-      | ((cb: () => void, opts?: { timeout: number }) => number)
-      | undefined;
-    if (idle) {
-      const handle = idle(() => loadCityData(), { timeout: 3000 });
-      return () => (window as any).cancelIdleCallback?.(handle);
-    }
-    const t = window.setTimeout(loadCityData, 400);
-    return () => window.clearTimeout(t);
-  }, [loadCityData]);
+    document.documentElement.style.overflow = stage === 'landing' ? '' : 'hidden';
+    document.body.style.overflow = stage === 'landing' ? '' : 'hidden';
+    document.documentElement.style.background = stage === 'landing' ? '' : '#07201b';
+  }, [stage]);
 
-  const handleCameraSignal = (signal: CameraPreset) => {
-    setCameraSignal(signal);
-    setTimeout(() => setCameraSignal(null), 300);
-  };
-
-  const handleUpdateStats = useCallback((stats: RenderStats, sStats?: CityStreamingStats) => {
-    setRenderStats(stats);
-    if (sStats) setStreamingStats(sStats);
-  }, []);
-
-  const handleToggleLayer = (category: 'base' | 'live' | 'hazards' | 'incidents' | 'navigation' | 'pulse', layer: string) => {
-    setLayers(prev => {
-      const nextCategory = { ...prev[category] } as any;
-      nextCategory[layer] = !nextCategory[layer];
-      
-      if (layer === 'labels' && category === 'base') {
-        setShowLabels(nextCategory[layer]);
-      }
-      
-      return {
-        ...prev,
-        [category]: nextCategory
-      };
-    });
-  };
-
-  const handleToggleLabels = () => {
-    setShowLabels(prev => {
-      const newVal = !prev;
-      setLayers(l => ({
-        ...l,
-        base: { ...l.base, labels: newVal }
-      }));
-      return newVal;
-    });
-  };
-
-  // GTA GPS Waypoint & Navigation Handlers
-  const handleFindRoute = useCallback(async (
-    start: RouteWaypoint,
-    dest: RouteWaypoint,
-    mode: TransportMode = 'car',
-    preference: RoutePreference = 'fastest'
-  ) => {
-    setDestinationWaypoint(dest);
-    const calculated = await pathfinderRef.current.calculateRoute(start, dest, mode, preference);
-    if (calculated) {
-      setNavigationRoute(calculated);
-      gpsServiceRef.current?.setActiveRoute(calculated);
-      setIsNavigationMode(true);
-    }
-  }, []);
-
-  const handleSetDestinationWaypoint = useCallback(async (dest: RouteWaypoint) => {
-    setDestinationWaypoint(dest);
-
-    let startX = -382;
-    let startZ = 372;
-    if (cameraController) {
-      startX = cameraController.target.x;
-      startZ = cameraController.target.z;
-    }
-
-    const startPoint: RouteWaypoint = {
-      x: startX,
-      z: startZ,
-      name: 'Current Camera View',
-    };
-
-    const calculated = await pathfinderRef.current.calculateRoute(startPoint, dest, 'car', 'fastest');
-    if (calculated) {
-      setNavigationRoute(calculated);
-      gpsServiceRef.current?.setActiveRoute(calculated);
-    }
-  }, [cameraController]);
-
-  const handleClearRoute = useCallback(() => {
-    setNavigationRoute(null);
-    setDestinationWaypoint(null);
-    setNavigatorState(null);
-    routeDriverRef.current?.stopDriving();
-  }, []);
-
-  const handleToggleDrive = useCallback(() => {
-    if (!routeDriverRef.current) return;
-    if (navigatorState?.isDriving) {
-      routeDriverRef.current.pauseDriving();
-    } else {
-      routeDriverRef.current.startDriving();
-    }
-  }, [navigatorState]);
-
-  const handleToggleFollowCamera = useCallback(() => {
-    setFollowCamera((prev) => !prev);
-  }, []);
-
-  const handleChangeSpeed = useCallback((kmH: number) => {
-    routeDriverRef.current?.setSpeed(kmH);
-  }, []);
-
-  const handleChangeTheme = useCallback((theme: GPSTheme) => {
-    setGpsTheme(theme);
-  }, []);
-
-  const handleRouteDriverReady = useCallback((driver: RouteDriver) => {
-    routeDriverRef.current = driver;
-    driver.onUpdate((state) => {
-      setNavigatorState(state);
-    });
-  }, []);
-
-  const handleToggleGPS = useCallback(async () => {
-    if (!gpsServiceRef.current) return;
-    if (isGPSActive) {
-      gpsServiceRef.current.stopTracking();
-      setIsGPSActive(false);
-      setRerouteNotification('GPS tracking paused. Switched to offline view.');
-      setTimeout(() => setRerouteNotification(null), 3000);
-    } else {
-      const granted = await gpsServiceRef.current.startTracking();
-      setIsGPSActive(granted);
-      if (granted) {
-        setRerouteNotification('GPS Live Tracking active. Snapped to Lucknow road network.');
-      } else {
-        setRerouteNotification('Simulation Mode: Real GPS unavailable. Interactive testing enabled.');
-      }
-      setTimeout(() => setRerouteNotification(null), 3500);
-    }
-  }, [isGPSActive]);
-
-  const handleSimulateReroute = useCallback(() => {
-    if (!gpsServiceRef.current) return;
-    setRerouteNotification('Simulating vehicle off-route deviation (>65m)...');
-    gpsServiceRef.current.simulateDeviation();
-  }, []);
-
-  const handleCheckRouteImpact = useCallback((incident: SpatialIncident) => {
-    if (!navigationRoute) {
-      setRerouteNotification(`No active navigation route. Incident is at ${incident.locationName}.`);
-      setTimeout(() => setRerouteNotification(null), 3500);
-      return;
-    }
-    const impacts = SIL.checkRouteIncidents(navigationRoute.coordinates);
-    const isImpacting = impacts.some(i => i.id === incident.id);
-    if (isImpacting) {
-      setRerouteNotification(`CRITICAL: Active route directly intersects ${incident.title}! Detour recommended.`);
-    } else {
-      setRerouteNotification(`Route Clear: Current route path bypasses ${incident.title}.`);
-    }
-    setTimeout(() => setRerouteNotification(null), 4500);
-  }, [navigationRoute]);
-
-  const handleFindAlternativeRoute = useCallback(async (incident: SpatialIncident) => {
-    if (!destinationWaypoint) {
-      setRerouteNotification(`Please set a destination to calculate an incident detour.`);
-      setTimeout(() => setRerouteNotification(null), 3000);
-      return;
-    }
-    setRerouteNotification(`Calculating emergency detour avoiding ${incident.title}...`);
-    let startX = -382;
-    let startZ = 372;
-    if (cameraController) {
-      startX = cameraController.target.x;
-      startZ = cameraController.target.z;
-    }
-    const startPoint: RouteWaypoint = {
-      x: startX,
-      z: startZ,
-      name: 'Current Location',
-    };
-    const nearestNode = pathfinderRef.current.getRoadGraph().findNearestNode(incident.x, incident.z);
-    const avoidIds = nearestNode ? [nearestNode.nodeId] : [];
-    const detour = await pathfinderRef.current.calculateRoute(
-      startPoint,
-      destinationWaypoint,
-      'car',
-      'avoid-closures',
-      avoidIds
-    );
-    if (detour) {
-      setNavigationRoute(detour);
-      gpsServiceRef.current?.setActiveRoute(detour);
-      setRerouteNotification(`Detour confirmed: Avoided ${incident.title} (New distance: ${(detour.totalDistanceMeters / 1000).toFixed(2)} km)`);
-      setTimeout(() => setRerouteNotification(null), 4500);
-    }
-  }, [destinationWaypoint, cameraController]);
-
-  const handleFlyToLocation = useCallback((lat: number, lon: number, distance: number = 400) => {
-    if (cameraController) {
-      cameraController.flyTo(lat, lon, distance);
-    }
-  }, [cameraController]);
-
-  const handleExecuteAIAction = (action: AIAction) => {
-    if (!cameraController) return;
-
-    if (action.type === 'FLY_TO' && action.latitude && action.longitude) {
-      cameraController.flyTo(action.latitude, action.longitude, 350);
-      
-      if (action.layer) {
-        setLayers(prev => ({
-          ...prev,
-          live: {
-            ...prev.live,
-            [action.layer!]: true
-          }
-        }));
-      }
-
-      const nameMap: Record<string, string> = {
-        'traffic': 'Hazratganj Traffic Area',
-        'aqi': 'Gomti Nagar AQI Zone',
-        'flights': 'Amausi Flight Tracking Hub',
-        'railways': 'Charbagh Railways Area',
-        'news': 'Gomti News Zone'
-      };
-
-      const customRegistry = {
-        'traffic': { id: 'ai-traffic', name: 'Hazratganj Traffic Area', x: -382, z: 372, lat: 26.8467, lon: 80.9461 },
-        'aqi': { id: 'ai-aqi', name: 'Gomti Nagar AQI Zone', x: 3837, z: 1677, lat: 26.8315, lon: 80.9812 },
-        'flights': { id: 'ai-flights', name: 'Amausi Flight Area', x: -9987, z: 9769, lat: 26.7606, lon: 80.8893 },
-        'railways': { id: 'ai-railways', name: 'Charbagh Railways Area', x: -1499, z: 1573, lat: 26.8322, lon: 80.9221 },
-        'news': { id: 'ai-news', name: 'Gomti News Zone', x: 0, z: 0, lat: 26.8525, lon: 80.9545 }
-      };
-
-      const selectedLayer = action.layer || 'news';
-      const highlightPOI = customRegistry[selectedLayer as keyof typeof customRegistry];
-      
-      setSelectedEntity({
-        type: 'poi',
-        id: highlightPOI.id,
-        name: nameMap[selectedLayer] || 'AI Analyzed Zone',
-        details: {
-          category: 'AI Highlighted Area',
-          description: `This zone is currently highlighted on the map as part of your query analysis.`
-        },
-        latitude: highlightPOI.lat,
-        longitude: highlightPOI.lon,
-        x: highlightPOI.x,
-        z: highlightPOI.z
-      });
-    } else if (action.type === 'ENABLE_LAYER' && action.layer) {
-      setLayers(prev => ({
-        ...prev,
-        live: {
-          ...prev.live,
-          [action.layer!]: true
-        }
-      }));
-    } else if (action.type === 'CALCULATE_ROUTE') {
-      const destName = (typeof action.destination === 'string' ? action.destination : action.destination?.name) || 'Target Location';
-      let destX = 3837, destZ = 1677;
-      if (action.latitude && action.longitude) {
-        const p = project(action.latitude, action.longitude);
-        destX = p.x;
-        destZ = p.z;
-      }
-      const dest: RouteWaypoint = { x: destX, z: destZ, name: destName };
-      let startX = -382, startZ = 372;
-      if (cameraController) {
-        startX = cameraController.target.x;
-        startZ = cameraController.target.z;
-      }
-      const start: RouteWaypoint = { x: startX, z: startZ, name: 'Current View' };
-      handleFindRoute(start, dest, 'car', 'avoid-closures');
-      setIsNavigationMode(true);
-      if (action.latitude && action.longitude) {
-        cameraController.flyTo(action.latitude, action.longitude, 700);
-      }
-    }
-  };
-
-  if (error || !mapData) {
-    return (
-      <div className="w-screen h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-100 font-sans p-6 relative">
-        <div className="glass-panel rounded-3xl p-10 flex flex-col items-center max-w-lg w-full border-rose-500/20">
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-rose-500/20 to-red-600/20 border border-rose-500/30 flex items-center justify-center mb-6 text-rose-400 shadow-lg shadow-rose-500/10">
-            <AlertCircle className="w-10 h-10" />
-          </div>
-          <h2 className="text-2xl font-display font-bold mb-2 text-rose-100 tracking-tight">System Initialization Failed</h2>
-          <p className="text-sm text-slate-400 mb-8 text-center leading-relaxed">{error}</p>
-          
-          <button
-            onClick={loadCityData}
-            className="px-6 py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-bold text-sm rounded-xl shadow-xl shadow-amber-500/20 flex items-center gap-2 transition-all hover:scale-105 active:scale-95"
-          >
-            <RefreshCw className="w-4 h-4" /> Reboot Engine
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const shadeValue = stage === 'boarding' ? 1 - shown : 0;
+  const inCabin = stage === 'boarding' || stage === 'ready' || stage === 'diving' || stage === 'leaving' || exiting;
 
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-slate-950 font-sans select-none">
-      {/* Main 3D Canvas Viewport */}
-      <CityViewport
-        mapData={mapData}
-        cameraSignal={cameraSignal}
-        nightMode={nightMode}
-        skylineStyle={skylineStyle}
-        showLabels={showLabels}
-        layers={layers}
-        flights={flights}
-        selectedEntity={selectedEntity}
-        navigationRoute={navigationRoute}
-        destinationWaypoint={destinationWaypoint}
-        gpsTheme={gpsTheme}
-        followCamera={followCamera}
-        onUpdateStats={handleUpdateStats}
-        onCameraControllerReady={setCameraController}
-        onSelectEntity={setSelectedEntity}
-        onSetDestinationWaypoint={handleSetDestinationWaypoint}
-        onRouteDriverReady={handleRouteDriverReady}
-      />
+    <>
+      {stage === 'landing' && <Landing onEnter={enter} onPrefetch={warmMap} />}
 
-      {/* UI Overlay */}
-      <CityUI
-        mapData={mapData}
-        cameraController={cameraController}
-        renderStats={renderStats}
-        streamingStats={streamingStats}
-        nightMode={nightMode}
-        showLabels={showLabels}
-        presentationMode={presentationMode}
-        mapOnly={mapOnly}
-        onToggleMapOnly={() => setMapOnly((v) => !v)}
-        layers={layers}
-        selectedEntity={selectedEntity}
-        flights={flights}
-        flightFeed={{ status: flightFeed.status, provider: flightFeed.provider, ageSeconds: flightFeed.ageSeconds, reason: flightFeed.reason }}
-        weatherFeed={weatherFeed}
-        airFeed={airFeed}
-        trainFeed={trainFeed}
-        trafficFeed={trafficFeed}
-        newsFeed={newsFeed}
-        onToggleNightMode={() => setNightMode(prev => !prev)}
-        skylineStyle={skylineStyle}
-        onCycleSkyline={() => setSkylineStyle(p => p === 'warm' ? 'clear' : p === 'clear' ? 'cyberpunk' : 'warm')}
-        onToggleLabels={handleToggleLabels}
-        onTogglePresentationMode={() => setPresentationMode(prev => !prev)}
-        onCameraSignal={handleCameraSignal}
-        onReloadOSM={loadCityData}
-        onToggleLayer={handleToggleLayer}
-        onSelectEntity={setSelectedEntity}
-        onExecuteAction={handleExecuteAIAction}
-        navigationRoute={navigationRoute}
-        navigatorState={navigatorState}
-        gpsTheme={gpsTheme}
-        followCamera={followCamera}
-        onToggleDrive={handleToggleDrive}
-        onToggleFollowCamera={handleToggleFollowCamera}
-        onChangeSpeed={handleChangeSpeed}
-        onChangeTheme={handleChangeTheme}
-        onClearRoute={handleClearRoute}
-        onSetDestinationWaypoint={handleSetDestinationWaypoint}
-        isNavigationMode={isNavigationMode}
-        onToggleNavigationMode={setIsNavigationMode}
-        onFindRoute={handleFindRoute}
-        onSimulateReroute={handleSimulateReroute}
-        isGPSActive={isGPSActive}
-        onToggleGPS={handleToggleGPS}
-        rerouteNotification={rerouteNotification}
-        onCheckRouteImpact={handleCheckRouteImpact}
-        onFindAlternativeRoute={handleFindAlternativeRoute}
-        onFlyToLocation={handleFlyToLocation}
-        cameraCoordinates={cameraController ? unproject(cameraController.target.x, cameraController.target.z) : undefined}
-      />
-    </div>
+      {stage !== 'landing' && (
+        <div className="map-scope fixed inset-0 bg-cabin">
+          <Suspense fallback={null}>
+            <MapApp key={attempt} entryPreset={preset} onProgress={onProgress} released={stage === 'map'} onRetry={() => setAttempt((n) => n + 1)} />
+          </Suspense>
+          {stage === 'map' && (
+            <button
+              onClick={leave}
+              className="fixed left-1/2 top-3 z-[60] flex -translate-x-1/2 items-center gap-2 rounded-full border border-sand/25 bg-cabin/80 px-4 py-2 text-[12.5px] font-semibold text-paper/85 backdrop-blur-xl transition-colors hover:bg-cabin hover:text-paper max-sm:left-auto max-sm:right-3 max-sm:h-11 max-sm:w-11 max-sm:translate-x-0 max-sm:justify-center max-sm:px-0"
+              aria-label="Back to the Lucknow Lens overview"
+            >
+              <LucknowLensMark className="h-5 w-5" /> <span className="max-sm:hidden">Overview</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      <AnimatePresence>
+        {inCabin && (
+          <motion.div
+            key="cabin"
+            className="fixed inset-0 z-[100] overflow-hidden"
+            style={{ opacity: fade }}
+          >
+            <motion.div className="absolute inset-0 grid place-items-center will-change-transform" style={{ scale, transformOrigin: `50% ${50 + ((PANE.y + PANE.h / 2) / 560 - 0.5) * 78}%` }}>
+              <button
+                onClick={dive}
+                disabled={stage !== 'ready'}
+                aria-label={stage === 'ready' ? 'Dive into the map' : 'The map is loading behind the window'}
+                className="relative cursor-default disabled:cursor-progress [&:not(:disabled)]:cursor-zoom-in"
+              >
+                <AircraftWindow view="hole" fullWall shade={shadeValue} className="block h-[min(78vh,720px)] w-auto" label="Cabin window. The live map of Lucknow is outside." />
+              </button>
+            </motion.div>
+
+            {/* status, on the cabin wall under the window */}
+            <AnimatePresence mode="wait">
+              {(stage === 'boarding' || stage === 'ready') && (
+                <motion.div key={stage} className="pointer-events-none absolute inset-x-0 bottom-[3vh] flex flex-col items-center px-6 text-center text-[#f6ead6]"
+                  initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.4 }} role="status" aria-live="polite">
+                  {stage === 'boarding' ? (
+                    <>
+                      <p className="font-display text-[clamp(1.3rem,2.6vw,1.8rem)] leading-tight">{progress.error ? 'The city did not load' : 'Raising the shade over Lucknow'}</p>
+                      <p className="mt-1 text-[13px] text-[#f6ead6]/60">{progress.error ?? progress.stage}</p>
+                      <div className="pointer-events-auto mt-3 flex gap-4">
+                        {progress.error && <button onClick={() => setAttempt((n) => n + 1)} className="rounded-full bg-[#e0a55a] px-5 py-2 text-[13px] font-semibold text-[#2a1a10]">Try again</button>}
+                        <button onClick={leave} className="text-[13px] font-medium text-[#f6ead6]/55 underline-offset-4 hover:text-[#f6ead6] hover:underline">Back to the overview</button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-display text-[clamp(1.5rem,3vw,2.2rem)] leading-tight">The map is ready.</p>
+                      <div className="pointer-events-auto mt-3 flex items-center gap-4">
+                        <button onClick={dive} className="group relative overflow-hidden rounded-full bg-[#e0a55a] px-7 py-3 text-[15px] font-semibold text-[#2a1a10] shadow-[0_14px_36px_-12px_rgba(224,165,90,.7)] transition-transform active:scale-95">
+                          <span className="relative z-10">Dive in</span>
+                          <span aria-hidden className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
+                        </button>
+                        <span className="text-[12.5px] text-[#f6ead6]/55">or press Enter</span>
+                      </div>
+                    </>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 }

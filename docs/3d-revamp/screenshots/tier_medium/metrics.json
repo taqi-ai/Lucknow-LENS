@@ -1,0 +1,59 @@
+{
+  "glInfo": {
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Laptop GPU (0x00002860) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "ver": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+  },
+  "quality": "medium",
+  "appGpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Laptop GPU (0x00002860) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "results": [
+    {
+      "shot": "03_oldcity_day",
+      "fps": 158,
+      "frameMsP50": 6.3,
+      "frameMsP95": 10,
+      "drawCalls": 409,
+      "triangles": 3799494,
+      "geometries": 269,
+      "textures": 53,
+      "programs": 52,
+      "tiles": 188,
+      "buildings": 245664,
+      "lod": 3,
+      "scale": "STREET",
+      "jsHeapMB": 300
+    },
+    {
+      "shot": "06_street_day",
+      "fps": 163,
+      "frameMsP50": 6,
+      "frameMsP95": 9.9,
+      "drawCalls": 604,
+      "triangles": 4043105,
+      "geometries": 418,
+      "textures": 56,
+      "programs": 52,
+      "tiles": 172,
+      "buildings": 328179,
+      "lod": 3,
+      "scale": "STREET",
+      "jsHeapMB": 275
+    },
+    {
+      "shot": "08_district_night",
+      "fps": 167,
+      "frameMsP50": 5.9,
+      "frameMsP95": 9.9,
+      "drawCalls": 507,
+      "triangles": 2742463,
+      "geometries": 359,
+      "textures": 23,
+      "programs": 53,
+      "tiles": 170,
+      "buildings": 236966,
+      "lod": 2,
+      "scale": "NEIGHBORHOOD",
+      "jsHeapMB": 293
+    }
+  ],
+  "errors": []
+}

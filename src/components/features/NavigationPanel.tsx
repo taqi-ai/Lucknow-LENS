@@ -289,9 +289,6 @@ export const NavigationPanel: React.FC<NavigationPanelProps> = ({
             <span className="text-[10px] font-black uppercase tracking-wider text-purple-400">
               ACTIVE ROUTE SUMMARY
             </span>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400">
-              {activeRoute.trafficConditions.toUpperCase()} TRAFFIC
-            </span>
           </div>
 
           <div className="grid grid-cols-2 gap-2 text-xs">

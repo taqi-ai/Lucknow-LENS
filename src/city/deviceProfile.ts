@@ -13,7 +13,11 @@
  * responsive-design mode is not misclassified as a phone.
  */
 
+import { performanceConfig } from './performanceConfig';
+
 export type DeviceTier = 'desktop' | 'mobile' | 'low';
+/** Visual quality tier. Low: massing + ground; medium: roof detail, selective shadows; high: everything. */
+export type QualityTier = 'low' | 'medium' | 'high';
 
 export interface DeviceProfile {
   tier: DeviceTier;
@@ -33,7 +37,50 @@ export interface DeviceProfile {
   lampGlow: boolean;
   /** Adaptive shadows are off below this tier. */
   allowShadows: boolean;
+  quality: QualityTier;
+  /** Radius (m) around the camera that gets rooftop/facade detail meshes. 0 = never. */
+  detailRadius: number;
+  /** Trees use full species models within this 3D distance (m); farther tiles use one blob mesh. */
+  treeNearRadius: number;
+  /** Shadow map resolution when shadows are on. */
+  shadowMapSize: number;
+  /** Altitude (m) below which sun shadows are enabled. */
+  shadowMaxAltitude: number;
+  /** GPU renderer string, for the QA report. */
+  gpu: string;
 }
+
+function detectGpu(): string {
+  try {
+    const c = document.createElement('canvas');
+    const gl = (c.getContext('webgl2') || c.getContext('webgl')) as WebGLRenderingContext | null;
+    if (!gl) return 'unknown';
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    const s = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : String(gl.getParameter(gl.RENDERER));
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return s;
+  } catch { return 'unknown'; }
+}
+
+function detectQuality(tier: DeviceTier, gpu: string): QualityTier {
+  if (typeof window !== 'undefined') {
+    const q = new URLSearchParams(window.location.search).get('quality')
+      ?? (() => { try { return localStorage.getItem('lens.quality'); } catch { return null; } })();
+    if (q === 'low' || q === 'medium' || q === 'high') return q;
+  }
+  if (tier === 'low') return 'low';
+  if (tier === 'mobile') return 'medium';
+  // Integrated / software GPUs get the medium budget on desktop.
+  if (/swiftshader|llvmpipe|softpipe|microsoft basic/i.test(gpu)) return 'low';
+  if (/intel|uhd|iris|mali|adreno|apple m1(?! (pro|max|ultra))/i.test(gpu)) return 'medium';
+  return 'high';
+}
+
+const QUALITY: Record<QualityTier, Pick<DeviceProfile, 'detailRadius' | 'treeNearRadius' | 'shadowMapSize' | 'shadowMaxAltitude'>> = {
+  low: { detailRadius: 0, treeNearRadius: 700, shadowMapSize: 1024, shadowMaxAltitude: 0 },
+  medium: { detailRadius: 750, treeNearRadius: 1200, shadowMapSize: 2048, shadowMaxAltitude: 1600 },
+  high: { detailRadius: 1100, treeNearRadius: 1700, shadowMapSize: 4096, shadowMaxAltitude: 3200 },
+};
 
 function detectTier(): { tier: DeviceTier; isTouch: boolean } {
   if (typeof window === 'undefined') {
@@ -60,7 +107,16 @@ function detectTier(): { tier: DeviceTier; isTouch: boolean } {
 }
 
 function build(): DeviceProfile {
-  const { tier, isTouch } = detectTier();
+  const det = detectTier();
+  const gpu = typeof document !== 'undefined' ? detectGpu() : 'unknown';
+  const isTouch = det.isTouch;
+  const memGB = (typeof navigator !== 'undefined' && (navigator as { deviceMemory?: number }).deviceMemory) || 0;
+  // No real GPU (software rasteriser), or a laptop with <= 4 GB: the low budget keeps it smooth.
+  const software = /swiftshader|llvmpipe|softpipe|microsoft basic|software/i.test(gpu);
+  const forced = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('quality') : null;
+  const tier: DeviceTier = forced ? det.tier : (software || (memGB > 0 && memGB <= 4 && !det.isTouch) ? 'low' : det.tier);
+  const quality = detectQuality(tier, gpu);
+  const q = { quality, gpu, ...QUALITY[quality] };
   const cores = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4;
   const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
 
@@ -76,19 +132,26 @@ function build(): DeviceProfile {
       lampDensityScale: 0.55,
       lampGlow: false,
       allowShadows: false,
+      ...q,
     };
   }
 
   if (tier === 'mobile') {
+    const cfg = performanceConfig.config;
     return {
       tier, isTouch,
-      maxPixelRatio: Math.min(dpr, 1.5),
-      antialias: false,
-      workerCount: Math.max(2, Math.min(3, cores - 1)),
-      streamRadiusScale: 0.7,
-      lampDensityScale: 0.7,
-      lampGlow: true,
-      allowShadows: false,
+      maxPixelRatio: Math.min(dpr, cfg.maxPixelRatio),
+      antialias: cfg.antialias,
+      workerCount: cfg.workerCount,
+      streamRadiusScale: cfg.streamRadiusScale,
+      lampDensityScale: cfg.streamRadiusScale,
+      lampGlow: cfg.lampGlow,
+      allowShadows: cfg.shadowsEnabled,
+      ...q,
+      detailRadius: cfg.detailRadius,
+      treeNearRadius: cfg.treeNearRadius,
+      shadowMapSize: cfg.shadowMapSize,
+      shadowMaxAltitude: cfg.shadowMaxAltitude,
     };
   }
 
@@ -100,7 +163,8 @@ function build(): DeviceProfile {
     streamRadiusScale: 1,
     lampDensityScale: 1,
     lampGlow: true,
-    allowShadows: true,
+    allowShadows: quality !== 'low',
+    ...q,
   };
 }
 

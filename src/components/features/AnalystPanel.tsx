@@ -1,27 +1,19 @@
 import React, { useState } from 'react';
-import { AIAction, AIResponse, SelectedEntity } from '../../types';
-import { Sparkles, ArrowRight, CornerDownRight, Newspaper, Loader, Navigation, ShieldCheck } from 'lucide-react';
+import { AIAction, AIResponse } from '../../types';
+import { Sparkles, ArrowRight, CornerDownRight, Newspaper, Loader, Navigation } from 'lucide-react';
 
 interface AnalystPanelProps {
   onExecuteAction: (action: AIAction) => void;
-  selectedEntity?: SelectedEntity | null;
-  cameraCoordinates?: { lat: number; lon: number };
 }
 
 const PRESETS = [
-  "What's happening around Charbagh?",
-  "Is there any reported waterlogging around Gomti Nagar?",
-  "Find a route to Lucknow Airport avoiding reported road closures.",
-  "Which areas have higher flood susceptibility?",
-  "Summarize today's verified city updates.",
   "Why is traffic bad in Hazratganj?",
+  "What's the AQI around Gomti Nagar?",
+  "Which flights are currently over Lucknow?",
+  "What's happening around Charbagh?"
 ];
 
-export const AnalystPanel: React.FC<AnalystPanelProps> = ({
-  onExecuteAction,
-  selectedEntity,
-  cameraCoordinates,
-}) => {
+export const AnalystPanel: React.FC<AnalystPanelProps> = ({ onExecuteAction }) => {
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState<AIResponse | null>(null);
@@ -35,32 +27,22 @@ export const AnalystPanel: React.FC<AnalystPanelProps> = ({
       const res = await fetch('/api/analyst', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question: text,
-          context: {
-            selectedEntity: selectedEntity?.name,
-            selectedType: selectedEntity?.type,
-            coordinates: cameraCoordinates,
-          },
-        }),
+        body: JSON.stringify({ question: text })
       });
 
       if (res.ok) {
         const data: AIResponse = await res.json();
         setResponse(data);
-        if (data.action && data.action.type !== 'NONE') {
-          onExecuteAction(data.action);
-        }
       } else {
         setResponse({
           answer: "Sorry, I couldn't reach the city intelligence service. Please try again later.",
-          sources: ["System Network Diagnostic"],
+          sources: ["System Network Diagnostic"]
         });
       }
     } catch (e) {
       setResponse({
         answer: "Network error occurred when querying the AI City Analyst.",
-        sources: ["Connection Timeout"],
+        sources: ["Connection Timeout"]
       });
     } finally {
       setLoading(false);
@@ -73,22 +55,17 @@ export const AnalystPanel: React.FC<AnalystPanelProps> = ({
   };
 
   return (
-    <div className="glass-panel rounded-2xl p-4 w-full transition-all hover:bg-slate-900/90 shadow-2xl border border-amber-500/30">
+    <div className="glass-panel rounded-2xl p-4 w-full transition-all hover:bg-slate-900/80">
       {/* Title */}
-      <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-3">
-        <h3 className="text-xs font-black uppercase tracking-widest text-amber-400 flex items-center gap-1.5">
-          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-          <span>ASK LUCKNOW LENS (SPATIAL AI ANALYST)</span>
-        </h3>
-        <span className="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded">
-          SIL CONNECTED
-        </span>
-      </div>
+      <h3 className="text-xs font-extrabold uppercase tracking-widest text-amber-400 mb-3.5 flex items-center gap-1.5 border-b border-slate-800 pb-2">
+        <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+        <span>ASK LUCKNOW LENS (AI CITY ANALYST)</span>
+      </h3>
 
       {/* Preset Questions list */}
-      <div className="space-y-1.5 mb-3">
-        <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider block">
-          SUGGESTED GEOSPATIAL QUERIES:
+      <div className="space-y-1.5 mb-3.5">
+        <span className="text-[9px] font-extrabold text-slate-500 uppercase tracking-wider block">
+          SUGGESTED QUERIES:
         </span>
         <div className="flex flex-wrap gap-1.5">
           {PRESETS.map((q, idx) => (
@@ -99,7 +76,7 @@ export const AnalystPanel: React.FC<AnalystPanelProps> = ({
                 setQuestion(q);
                 handleAsk(q);
               }}
-              className="text-[10px] bg-slate-900/70 hover:bg-slate-800 text-slate-300 px-2.5 py-1 rounded-xl border border-slate-800 hover:border-amber-500/40 transition-colors text-left font-medium"
+              className="text-[10px] bg-slate-800/40 hover:bg-slate-800 text-slate-300 px-2.5 py-1 rounded-xl border border-slate-700/30 transition-colors text-left font-medium"
             >
               {q}
             </button>
@@ -114,46 +91,56 @@ export const AnalystPanel: React.FC<AnalystPanelProps> = ({
           value={question}
           disabled={loading}
           onChange={(e) => setQuestion(e.target.value)}
-          placeholder="Ask about traffic, floods, waterlogging, routes, news..."
-          className="flex-1 bg-slate-950/80 border border-slate-700/60 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 outline-none focus:border-amber-500/60 transition-colors"
+          placeholder="Ask about traffic, AQI, news, flights..."
+          className="flex-1 bg-slate-900/70 border border-slate-700/50 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 outline-none focus:border-amber-500/50"
         />
         <button
           type="submit"
           disabled={loading || !question.trim()}
-          className="bg-amber-500 hover:bg-amber-400 text-slate-950 px-3.5 rounded-xl transition-all disabled:opacity-50 font-black text-xs flex items-center justify-center flex-shrink-0 shadow-lg shadow-amber-500/20"
+          className="bg-amber-500 hover:bg-amber-400 text-slate-950 px-3 rounded-xl transition-all disabled:opacity-50 disabled:hover:bg-amber-500 flex items-center justify-center flex-shrink-0"
         >
-          {loading ? <Loader className="w-3.5 h-3.5 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+          {loading ? <Loader className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
         </button>
       </form>
 
-      {/* Response Display */}
+      {/* Answer & Response Box */}
       {response && (
-        <div className="mt-3 p-3 bg-slate-950/70 border border-slate-800/80 rounded-xl space-y-2 animate-in fade-in duration-200">
-          <p className="text-xs text-slate-200 leading-relaxed">
+        <div className="mt-4 bg-slate-950/40 border border-slate-800/50 rounded-xl p-3 text-xs animate-in fade-in slide-in-from-bottom-2 duration-300">
+          {/* Answer text */}
+          <p className="text-slate-200 leading-relaxed font-sans mb-3 text-[11px]">
             {response.answer}
           </p>
 
-          {response.sources && response.sources.length > 0 && (
-            <div className="pt-2 border-t border-slate-800/60 flex flex-wrap items-center gap-1.5 text-[9px] text-slate-500">
-              <span className="font-bold uppercase tracking-wider text-slate-400">Sources:</span>
-              {response.sources.map((src, i) => (
-                <span key={i} className="bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded text-slate-400">
-                  {src}
-                </span>
-              ))}
-            </div>
-          )}
+          {/* Sources and Action */}
+          <div className="flex flex-col gap-2 pt-2.5 border-t border-slate-800/50">
+            {/* Sources list */}
+            {Array.isArray(response.sources) && response.sources.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Newspaper className="w-3 h-3 text-slate-500 flex-shrink-0" />
+                <span className="text-[9px] text-slate-500 font-extrabold uppercase mr-1">Sources:</span>
+                {response.sources.map((src, i) => (
+                  <span
+                    key={i}
+                    className="text-[9px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded border border-slate-700/30 truncate max-w-[150px]"
+                    title={src}
+                  >
+                    {src}
+                  </span>
+                ))}
+              </div>
+            )}
 
-          {response.action && response.action.type !== 'NONE' && (
-            <div className="flex items-center gap-1.5 text-[10px] text-amber-400 font-bold bg-amber-500/10 p-1.5 rounded-lg border border-amber-500/20">
-              <CornerDownRight className="w-3 h-3 text-amber-400 flex-shrink-0" />
-              <span>
-                {response.action.type === 'CALCULATE_ROUTE'
-                  ? `Triggered road route to ${response.action.destination?.name || 'Destination'}`
-                  : `Navigated camera to ${response.action.layer || 'target'} layer`}
-              </span>
-            </div>
-          )}
+            {/* Map Action Button */}
+            {response.action && response.action.type !== 'NONE' && (
+              <button
+                onClick={() => response.action && onExecuteAction(response.action)}
+                className="mt-1 flex items-center justify-center gap-1.5 w-full bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold py-2 rounded-xl border border-indigo-500 text-[10px] uppercase tracking-wider transition-all shadow-md shadow-indigo-600/20"
+              >
+                <Navigation className="w-3.5 h-3.5 rotate-45" />
+                <span>VIEW ON MAP</span>
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>

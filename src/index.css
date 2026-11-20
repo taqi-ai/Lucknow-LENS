@@ -1,20 +1,328 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Rozha+One&family=Mukta:wght@300;400;500;600;700;800&family=Noto+Nastaliq+Urdu:wght@400;600&family=Tiro+Devanagari+Hindi:ital@0;1&display=swap');
 @import "tailwindcss";
 
+/*
+ * Lucknow Lens identity v3: Lucknow after sunset. The pages are night sky so the
+ * photographs (and the dark 3D map) carry the colour.
+ *   night #0E1220  page ground, the sky over the Gomti after dusk
+ *   dusk  #161B2C  raised surfaces
+ *   ivory #F3ECDF  text, the white of chikan thread
+ *   zari  #E0B46A  primary accent, zardozi gold and Rumi Darwaza's stone at sunset
+ *   rose  #D0485E  second accent, kebab-red and the Clock Tower brick
+ *   gomti #6FB3A8  quiet third accent for live and "working" states
+ *
+ * (v2, kept for reference:
+ *   haze  #DCE2E7  the pale blue-grey sky over Lucknow (the ground of every page)
+ *   cloud #F2F4F5  raised surfaces
+ *   ink   #1E2428  text
+ *   kebab #8E2C42  primary accent, from the red of Tunday's kebabs and the Clock Tower brick
+ *   zari  #9C7A2B  gold thread of zardozi, used for hairlines and small marks
+ *   chikan #8E7486 the mauve of a chikan kurta, a quiet second accent
+ *   stone #C29C67  Rumi Darwaza's lime-plastered sandstone
+ * )
+ * Type: Rozha One for display (one face for Latin and Devanagari), Mukta for text,
+ * Noto Nastaliq Urdu for Urdu names.
+ *
+ * The map is a dark surface. Its own tokens are set on .map-scope below.
+ */
 @theme {
-  --font-sans: 'Inter', sans-serif;
-  --font-display: 'Outfit', sans-serif;
+  --font-sans: 'Mukta', system-ui, sans-serif;
+  --font-display: 'Rozha One', 'Tiro Devanagari Hindi', Georgia, serif;
+  --font-ui: 'Mukta', system-ui, sans-serif;
+  --font-mono: 'Mukta', system-ui, sans-serif;
+  --font-urdu: 'Noto Nastaliq Urdu', serif;
+  --font-deva: 'Tiro Devanagari Hindi', 'Rozha One', serif;
+
+  /* Default palette: burgundy and gold (day). Other palettes and night are
+     set on :root by data-palette / data-time, further down. */
+  --color-cabin: #f7efe4;
+  --color-terrain: #fffaf2;
+  --color-paper: #3a0c17;
+  --color-sand: #7a1630;
+  --color-sage: #5b6b8c;
+  --color-amber: #b8892e;
+  --color-slate: #ecdcc6;
+  --color-dusk: #d9b26a;
+  --color-haze: #dce2e7;
+  --color-ink: #1e2428;
+  --color-kebab: #8e2c42;
+  --color-zari: #9c7a2b;
+  --color-chikan: #8e7486;
+  --color-stone: #c29c67;
 }
+
+/* The live map stays dark: same class names, night-cabin values, zari gold accent. */
+.map-scope {
+  --color-cabin: #160f0a;
+  --color-terrain: #22170f;
+  --color-paper: #f6ead6;
+  --color-sand: #e0a55a;
+  --color-sage: #8fb0d6;
+  --color-amber: #d77e7e;
+  --color-slate: #3a2a1c;
+  --color-dusk: #f0c48a;
+  color: #f6ead6;
+  font-family: var(--font-sans);
+}
+
+:root {
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+html { background: var(--color-cabin); }
+body { margin: 0; background: var(--color-cabin); color: var(--color-paper); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+.font-display { letter-spacing: -0.01em; }
+::selection { background: var(--color-sand); color: var(--color-terrain); }
 
 @layer utilities {
   .glass-panel {
-    @apply bg-slate-900/60 backdrop-blur-md border border-white/10 shadow-xl;
+    background: rgba(22, 15, 10, 0.84);
+    -webkit-backdrop-filter: blur(18px) saturate(1.25);
+    backdrop-filter: blur(18px) saturate(1.25);
+    border: 1px solid rgba(224, 165, 90, 0.18);
+    box-shadow: 0 18px 50px -18px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   }
   .glass-panel-light {
     @apply bg-white/70 backdrop-blur-md border border-slate-200/50 shadow-xl;
   }
+  .font-urdu { font-family: var(--font-urdu); }
+  .font-deva { font-family: var(--font-deva); }
+  .tabular { font-variant-numeric: tabular-nums; }
 }
 
 /* Panel columns scroll instead of overlapping on short viewports. */
 .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Lenis smooth scroll */
+html.lenis, html.lenis body { height: auto; }
+.lenis.lenis-smooth { scroll-behavior: auto !important; }
+.lenis.lenis-smooth [data-lenis-prevent] { overscroll-behavior: contain; }
+.lenis.lenis-stopped { overflow: hidden; }
+
+/* Visible keyboard focus everywhere */
+:focus-visible { outline: 2px solid var(--color-sand); outline-offset: 3px; border-radius: 6px; }
+
+/* Film grain used by the landing page and the window overlay */
+.grain::after {
+  content: '';
+  position: absolute; inset: -50%;
+  pointer-events: none;
+  opacity: 0.07;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  animation: grain 1.2s steps(6) infinite;
+}
+@keyframes grain {
+  0% { transform: translate(0, 0); } 20% { transform: translate(-3%, 2%); }
+  40% { transform: translate(2%, -3%); } 60% { transform: translate(-2%, -1%); }
+  80% { transform: translate(3%, 3%); } 100% { transform: translate(0, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
+  .grain::after { display: none; }
+}
+
+/* landing: slow drifting clouds and a gentle pan across the aerial photo */
+@keyframes cloud-drift { from { transform: translate3d(0,0,0); } to { transform: translate3d(-18%,0,0); } }
+.cloud-drift { animation: cloud-drift 90s linear infinite alternate; will-change: transform; }
+@keyframes city-pan { from { transform: scale(1.12) translate3d(2%, 0, 0); } to { transform: scale(1.12) translate3d(-3%, -1%, 0); } }
+.city-pan { animation: city-pan 36s ease-in-out infinite alternate; will-change: transform; }
+@keyframes descent-zoom { from { transform: scale(1.02); } to { transform: scale(1.22); } }
+.descent-zoom { animation: descent-zoom 18s ease-out forwards; }
+
+@keyframes marquee-x { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+.marquee-track { animation: marquee-x 22s linear infinite; padding-right: 2rem; }
+
+/* map-only: the restore pill dims after a moment but never disappears */
+@keyframes pill-settle { 0%, 70% { opacity: 1; } 100% { opacity: .55; } }
+.map-only-pill { animation: pill-settle 4s ease forwards; }
+.map-only-pill:hover, .map-only-pill:focus-visible { opacity: 1; animation: none; }
+
+.map-scope :focus-visible { outline-color: #e0a55a; }
+
+/* aircraft window: the city drifts slowly below, a cloud passes under the wing */
+@keyframes window-drift { from { transform: translate(-34px, 6px); } to { transform: translate(30px, -8px); } }
+.window-drift { animation: window-drift 38s ease-in-out infinite alternate; }
+@keyframes cloud-pass { from { transform: translateX(-320px); } to { transform: translateX(360px); } }
+.cloud-pass { animation: cloud-pass 24s linear infinite; }
+
+/* jali: the carved stone lattice of Awadhi screens, as a faint page texture */
+.jali {
+  opacity: 1;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cg fill='none' stroke='%23b8892e' stroke-opacity='.26' stroke-width='1'%3E%3Cpath d='M28 4 L34 22 L52 28 L34 34 L28 52 L22 34 L4 28 L22 22 Z'/%3E%3Ccircle cx='28' cy='28' r='6'/%3E%3Cpath d='M0 0 L8 8 M56 0 L48 8 M0 56 L8 48 M56 56 L48 48'/%3E%3C/g%3E%3C/svg%3E");
+  mask-image: radial-gradient(120% 90% at 30% 40%, #000 30%, transparent 90%);
+  -webkit-mask-image: radial-gradient(120% 90% at 30% 40%, #000 30%, transparent 90%);
+}
+.jali-dark {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cg fill='none' stroke='%23d8b66a' stroke-opacity='.12' stroke-width='1'%3E%3Cpath d='M28 4 L34 22 L52 28 L34 34 L28 52 L22 34 L4 28 L22 22 Z'/%3E%3Ccircle cx='28' cy='28' r='6'/%3E%3C/g%3E%3C/svg%3E");
+}
+/* photo cards cut to a cusped Awadhi arch */
+.arch-card {
+  border-radius: 0 0 20px 20px;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 140' preserveAspectRatio='none'%3E%3Cpath d='M0 140 V36 C0 22 8 16 18 15 C20 7 28 3 36 4 C40 1 45 0 50 0 C55 0 60 1 64 4 C72 3 80 7 82 15 C92 16 100 22 100 36 V140 Z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 140' preserveAspectRatio='none'%3E%3Cpath d='M0 140 V36 C0 22 8 16 18 15 C20 7 28 3 36 4 C40 1 45 0 50 0 C55 0 60 1 64 4 C72 3 80 7 82 15 C92 16 100 22 100 36 V140 Z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+}
+
+/* descent: soft cloud bands and the scroll cue */
+.cloud-band { background: radial-gradient(ellipse 30% 50% at 20% 50%, rgba(255,255,255,.95), transparent 70%), radial-gradient(ellipse 34% 55% at 55% 45%, rgba(255,255,255,.9), transparent 70%), radial-gradient(ellipse 28% 50% at 85% 55%, rgba(255,255,255,.92), transparent 72%); filter: blur(18px); animation: cloud-pass 30s linear infinite; }
+@keyframes scroll-cue { 0% { transform: scaleY(0); transform-origin: top; } 45% { transform: scaleY(1); transform-origin: top; } 55% { transform: scaleY(1); transform-origin: bottom; } 100% { transform: scaleY(0); transform-origin: bottom; } }
+.scroll-cue { animation: scroll-cue 2.2s cubic-bezier(.65,0,.35,1) infinite; }
+
+/* Site at night: the same monuments after dark. Umber halls, lamp-lit ochre. */
+/* Palettes. Order of each set: ground, surface, text, primary, quiet accent, second accent, soft fill, warm light. */
+/* Burgundy and gold (default) */
+:root[data-time="night"] {
+  --color-cabin: #1c0910;
+  --color-terrain: #2a0f18;
+  --color-paper: #f6e7cf;
+  --color-sand: #d9b26a;
+  --color-sage: #9fb0d6;
+  --color-amber: #e07a90;
+  --color-slate: #3d1822;
+  --color-dusk: #ecc98a;
+}
+/* Gulabi and plum */
+:root[data-palette="gulabi"] {
+  --color-cabin: #fce9e1;
+  --color-terrain: #fff5f0;
+  --color-paper: #2b1633;
+  --color-sand: #e9791c;
+  --color-sage: #6a4c9c;
+  --color-amber: #d93f79;
+  --color-slate: #f4d3c8;
+  --color-dusk: #f6b27a;
+}
+:root[data-palette="gulabi"][data-time="night"] {
+  --color-cabin: #1d1027;
+  --color-terrain: #2a1838;
+  --color-paper: #fbe7df;
+  --color-sand: #ffa24c;
+  --color-sage: #b9a6ef;
+  --color-amber: #ff6fa2;
+  --color-slate: #3a2450;
+  --color-dusk: #ffc78a;
+}
+/* Lime plaster and ochre, from Rumi Darwaza */
+:root[data-palette="plaster"] {
+  --color-cabin: #f1e3cc;
+  --color-terrain: #f8edda;
+  --color-paper: #2a1a10;
+  --color-sand: #9a6428;
+  --color-sage: #5b7ba3;
+  --color-amber: #8e4b4f;
+  --color-slate: #e6d3b3;
+  --color-dusk: #e8bb89;
+}
+:root[data-palette="plaster"][data-time="night"] {
+  --color-cabin: #1b120c;
+  --color-terrain: #26190f;
+  --color-paper: #f6ead6;
+  --color-sand: #e7ab5c;
+  --color-sage: #8fb0d6;
+  --color-amber: #e08a8a;
+  --color-slate: #3a2a1c;
+  --color-dusk: #f0c48a;
+}
+/* Indigo and saffron */
+:root[data-palette="indigo"] {
+  --color-cabin: #eceef7;
+  --color-terrain: #f8f9fd;
+  --color-paper: #161a3a;
+  --color-sand: #d9651f;
+  --color-sage: #4b5bb5;
+  --color-amber: #a33a6b;
+  --color-slate: #d9ddf0;
+  --color-dusk: #f0b37a;
+}
+:root[data-palette="indigo"][data-time="night"] {
+  --color-cabin: #0e1124;
+  --color-terrain: #171b36;
+  --color-paper: #ecebf6;
+  --color-sand: #ff9a4a;
+  --color-sage: #9aa6ef;
+  --color-amber: #f07aa8;
+  --color-slate: #262c52;
+  --color-dusk: #ffc78a;
+}
+:root[data-time="night"] .jali { filter: brightness(1.6); }
+
+/* Day/night on the site: the new look spreads from the switch in a circle. */
+::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+
+/* colour changes ease rather than snap, except while the view transition runs */
+body, header, section, footer { transition: background-color .6s ease, color .6s ease, border-color .6s ease; }
+
+/* Day/night: the new look grows out of the switch in a circle (see dayNightTransition.ts). */
+::view-transition-old(root) { animation: none; }
+::view-transition-new(root) { will-change: clip-path; animation: dn-reveal .95s cubic-bezier(.76,0,.24,1) both; }
+@keyframes dn-reveal { from { clip-path: circle(0px at var(--dn-x) var(--dn-y)); } to { clip-path: circle(var(--dn-r) at var(--dn-x) var(--dn-y)); } }
+@keyframes dn-recede { to { filter: blur(2px) brightness(.92); transform: scale(.985); } }
+.dn-ring {
+  position: fixed; z-index: 2147483647; pointer-events: none; width: var(--dn-size); height: var(--dn-size);
+  margin: calc(var(--dn-size) / -2) 0 0 calc(var(--dn-size) / -2); border-radius: 50%;
+  box-shadow: 0 0 0 1.5px rgba(232, 196, 120, .95), 0 0 34px 10px rgba(232, 196, 120, .45), inset 0 0 40px 6px rgba(232, 196, 120, .25);
+  animation: dn-ring .95s cubic-bezier(.76,0,.24,1) both;
+}
+@keyframes dn-ring { 0% { transform: scale(0); opacity: 1; } 75% { opacity: .9; } 100% { transform: scale(1); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .dn-ring { display: none; } }
+
+/* preview hero: day and night paintings, revealed through a round brush from the gate */
+.hero-paint img { -webkit-mask-image: radial-gradient(circle at 68% 58%, #000 38%, transparent 62%); mask-image: radial-gradient(circle at 68% 58%, #000 38%, transparent 62%); -webkit-mask-position: 68% 58%; mask-position: 68% 58%; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }
+.hero-paint .hero-night { opacity: 0; }
+:root[data-time="night"] .hero-paint .hero-night { opacity: 1; }
+:root[data-time="night"] .hero-paint .hero-day { opacity: 0; }
+
+/* the building hero: day and night sets, swapped by the circle transition */
+.hero-build .hero-night { visibility: hidden; }
+:root[data-time="night"] .hero-build .hero-night { visibility: visible; }
+:root[data-time="night"] .hero-build .hero-day { visibility: hidden; }
+.hero-build .hero-night .hero-sketch { filter: invert(1) sepia(.5) saturate(1.4) brightness(1.1); }
+/* the rim gets its own live layer above the reveal */
+.dn-ring { view-transition-name: dn-ring; }
+::view-transition-group(dn-ring) { animation: none; }
+::view-transition-old(dn-ring) { display: none; }
+::view-transition-new(dn-ring) { animation: none; }
+
+/* a slow drift on page-opening paintings */
+@keyframes kenburns { from { transform: scale(1.04) translate(0, 0); } to { transform: scale(1.14) translate(-2%, -2%); } }
+.kenburns { animation: kenburns 22s ease-in-out infinite alternate; }
+
+/* the finale painting follows day and night */
+.finale-night { opacity: 0; transition: opacity .6s ease; }
+:root[data-time="night"] .finale-night { opacity: 1; }
+
+/* React Bits Stepper, recoloured from the page's own tokens so it belongs to the theme */
+.stepper-themed[style*="--stepper"], .stepper-themed [style*="--stepper"] {
+  --stepper-frame: color-mix(in srgb, var(--color-terrain) 88%, transparent) !important;
+  --stepper-frame-edge: color-mix(in srgb, var(--color-paper) 12%, transparent) !important;
+  --stepper-frame-highlight: color-mix(in srgb, var(--color-paper) 8%, transparent) !important;
+  --stepper-frame-shadow: 0 22px 44px -24px rgba(0,0,0,.45) !important;
+  --stepper-tile: linear-gradient(180deg, var(--color-cabin), var(--color-slate)) !important;
+  --stepper-tile-edge: color-mix(in srgb, var(--color-paper) 12%, transparent) !important;
+  --stepper-tile-highlight: color-mix(in srgb, var(--color-paper) 10%, transparent) !important;
+  --stepper-tile-shadow: 0 4px 10px -5px rgba(0,0,0,.35) !important;
+  --stepper-well: color-mix(in srgb, var(--color-paper) 6%, transparent) !important;
+  --stepper-track: color-mix(in srgb, var(--color-paper) 12%, transparent) !important;
+  --stepper-ink: var(--color-paper) !important;
+  --stepper-muted: color-mix(in srgb, var(--color-paper) 62%, transparent) !important;
+  --stepper-faint: color-mix(in srgb, var(--color-paper) 26%, transparent) !important;
+  --stepper-ring: color-mix(in srgb, var(--color-paper) 32%, transparent) !important;
+  --stepper-solid: var(--color-sand) !important;
+  --stepper-solid-ink: var(--color-terrain) !important;
+  --stepper-hover-fill: color-mix(in srgb, var(--color-paper) 6%, transparent) !important;
+}
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* Guided tour: a soft cloud bank sweeps across the screen at each scene change. */
+.tour-cloud { position: absolute; width: 160%; height: 42%; border-radius: 50%;
+  background: radial-gradient(ellipse 30% 55% at 25% 50%, rgba(255,255,255,.92), transparent 70%), radial-gradient(ellipse 34% 60% at 58% 45%, rgba(250,246,238,.9), transparent 70%), radial-gradient(ellipse 26% 50% at 86% 55%, rgba(255,255,255,.88), transparent 72%);
+  filter: blur(22px); animation: tour-cloud-pass 2.6s cubic-bezier(.55,.05,.35,1) forwards; opacity: 0; }
+@keyframes tour-cloud-pass { 0% { transform: translateX(0); opacity: 0; } 25% { opacity: .95; } 70% { opacity: .9; } 100% { transform: translateX(120%); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .tour-cloud { display: none; } }

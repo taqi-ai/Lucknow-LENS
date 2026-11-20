@@ -30,6 +30,14 @@
 import fs from 'fs';
 import path from 'path';
 import { classifyRoad, ROAD_HALF_WIDTH, type RoadClass } from '../src/city/ribbon';
+import { isLandmarkSite, PRECINCTS, AIRPORT } from '../src/city/landmarkSites';
+import { pointInRing as pir } from './lib/spatialIndex';
+const AMB = (PRECINCTS.ambedkar ?? []).map(([x, z]) => ({ x, z }));
+const AIR = (AIRPORT.boundary ?? []).map(([x, z]) => ({ x, z }));
+/** Inside the airfield or the Ambedkar memorial (both get bespoke landscaping). */
+function inAirport(x: number, z: number): boolean {
+  return (AIR.length > 3 && pir(x, z, AIR)) || (AMB.length > 3 && pir(x, z, AMB));
+}
 import {
   AreaIndex, CELL, CorridorIndex, pointInRing, ringArea, type Pt,
 } from './lib/spatialIndex';
@@ -39,7 +47,7 @@ const TILE_SIZE = 500;
 const DRY = process.argv.includes('--dry');
 
 /** Mean spacing of trees inside a park, metres. */
-const PARK_SPACING = 13;
+const PARK_SPACING = 7;
 /** Spacing of avenue trees along a lit arterial, metres. */
 const VERGE_SPACING = 26;
 /** Clear distance a tree keeps from a building footprint centroid cluster. */
@@ -61,7 +69,7 @@ const OPEN_SPACING = 40;
 /** A candidate needs this much clear ground around it from any building. */
 const OPEN_BUILDING_CLEAR = 45;
 /** ...and this much from any road or rail corridor edge. */
-const OPEN_ROAD_CLEAR = 12;
+const OPEN_ROAD_CLEAR = 6;
 /**
  * Grove threshold. Trees on open land do not grow in a uniform lawn, so the
  * grid is masked by low-frequency noise and only the peaks are planted. Raise
@@ -74,11 +82,11 @@ const GROVE_SCALE = 190;
 /** Classes that get avenue planting. Service roads and footpaths do not. */
 const VERGE_CLASSES = new Set<RoadClass>(['motorway', 'trunk', 'primary', 'secondary', 'tertiary']);
 
-function writeFileRetry(file: string, data: string, attempts = 5): void {
+function writeFileRetry(file: string, data: string, attempts = 40): void {
   for (let i = 0; ; i++) {
     try { fs.writeFileSync(file, data); return; } catch (err) {
       if (i >= attempts - 1) throw err;
-      const until = Date.now() + 60 * (i + 1);
+      const until = Date.now() + Math.min(2000, 100 * (i + 1));
       while (Date.now() < until) { /* backoff */ }
     }
   }
@@ -108,6 +116,40 @@ function valueNoise(x: number, z: number, scale: number): number {
   return sample(x / scale, z / scale) * 0.65 + sample(x / (scale * 0.37), z / (scale * 0.37)) * 0.35;
 }
 
+// Surface classes from scripts/py/build_ground.py (ESA WorldCover + Overture land use).
+const GROUND_META = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'public/ground/ground_meta.json'), 'utf8'));
+const GROUND_CLS = fs.readFileSync(path.join(process.cwd(), 'data/derived/ground_class.u8'));
+function groundClass(x: number, z: number): number {
+  const i = Math.floor((x - GROUND_META.originX) / GROUND_META.cell);
+  const j = Math.floor((z - GROUND_META.originZ) / GROUND_META.cell);
+  if (i < 0 || j < 0 || i >= GROUND_META.size || j >= GROUND_META.size) return 255;
+  return GROUND_CLS[j * GROUND_META.size + i];
+}
+
+// Field-edge hedge mask written by scripts/py/build_ground.py (1 = hedge line between parcels).
+const BORDER_FILE = path.join(process.cwd(), 'data/derived/parcel_border.u8');
+const PARCEL_BORDER = fs.existsSync(BORDER_FILE) ? fs.readFileSync(BORDER_FILE) : null;
+function onHedge(x: number, z: number): boolean {
+  if (!PARCEL_BORDER) return false;
+  const i = Math.floor((x - GROUND_META.originX) / GROUND_META.cell);
+  const j = Math.floor((z - GROUND_META.originZ) / GROUND_META.cell);
+  if (i < 0 || j < 0 || i >= GROUND_META.size || j >= GROUND_META.size) return false;
+  return PARCEL_BORDER[j * GROUND_META.size + i] === 1;
+}
+
+// Open clearings (data/overrides/tree_clearings.json): inside a circle only `keep` of the tree
+// candidates survive, so wooded land can show dusty open ground in patches.
+interface Clearing { x: number; z: number; r: number; keep: number; bare?: number }
+const CLEAR_FILE = path.join(process.cwd(), 'data/overrides/tree_clearings.json');
+const CLEAR_JSON = fs.existsSync(CLEAR_FILE) ? JSON.parse(fs.readFileSync(CLEAR_FILE, 'utf8')) : {};
+const CLEARINGS: Clearing[] = CLEAR_JSON.circles ?? [];
+/** Woodland boosts: extra trees on a jittered grid inside a circle (masks still apply). */
+const BOOSTS: Array<{ x: number; z: number; r: number; spacing: number; p: number }> = CLEAR_JSON.boosts ?? [];
+function clearKeep(x: number, z: number): number {
+  for (const c of CLEARINGS) { const d = Math.hypot(x - c.x, z - c.z); if (d < c.r) return c.keep + (1 - c.keep) * Math.max(0, (d - c.r * 0.6) / (c.r * 0.4)); }
+  return 1;
+}
+
 function main(): void {
   const overview = JSON.parse(fs.readFileSync(path.join(TILES_DIR, 'overview.json'), 'utf8'));
 
@@ -134,7 +176,7 @@ function main(): void {
     if (!pts || pts.length < 2) continue;
     if (w.isPolygon && pts.length >= 3) waterAreas.add(pts);
     else {
-      const half = Math.min(90, Math.max(10, ((w.width as number) ?? 35) / 2));
+      const half = Math.max(1, ((w.width as number) ?? 4) / 2);
       for (let i = 0; i < pts.length - 1; i++) {
         waterLines.add({ ax: pts[i].x, az: pts[i].z, bx: pts[i + 1].x, bz: pts[i + 1].z, half });
       }
@@ -162,6 +204,28 @@ function main(): void {
     airfield.add({ ax: ax + midOx, az: az + midOz, bx: bx + midOx, bz: bz + midOz, half: 450 });
   }
 
+  // Local streets: majorRoads omits residential/service/footway classes, and the
+  // yard/orchard passes plant inside built-up land, so every tile's own road ribbons go
+  // into the mask too (carriageway + 1 m).
+  {
+    let n = 0;
+    for (const name of fs.readdirSync(TILES_DIR)) {
+      if (!name.startsWith('tile_') || !name.endsWith('.json')) continue;
+      const tile = JSON.parse(fs.readFileSync(path.join(TILES_DIR, name), 'utf8'));
+      for (const r of (tile.lod2?.roads ?? []) as Array<Record<string, unknown>>) {
+        const pts = r.points as Pt[];
+        if (!pts || pts.length < 2) continue;
+        const cls = classifyRoad(r.type as string, r.subtype as string, r.level as number, r.isElevated as boolean) as RoadClass;
+        const half = (cls === 'railway' ? ROAD_HALF_WIDTH.railway * 1.8 : ROAD_HALF_WIDTH[cls]) + 1.0;
+        for (let i = 0; i < pts.length - 1; i++) {
+          roadMask.add({ ax: pts[i].x, az: pts[i].z, bx: pts[i + 1].x, bz: pts[i + 1].z, half });
+          n++;
+        }
+      }
+    }
+    console.log(`Local street segments masked: ${n}`);
+  }
+
   const blocked = (x: number, z: number): boolean =>
     roadMask.hits(x, z, 1.0) ||
     waterLines.hits(x, z) ||
@@ -181,6 +245,44 @@ function main(): void {
   const greenIndex = new AreaIndex();
   for (const g of greens) greenIndex.add(g.points);
 
+  // Designed parks (data/overrides/park_styles.json): open lawns, groves, palm lines on lakes.
+  interface ParkStyle { id: string; anchor: [number, number]; grove: { noiseScale: number; threshold: number; density: number; lawnDensity: number }; palmLine: { spacing: number; offset: number; keep: number } }
+  const styleFile = path.join(process.cwd(), 'data/overrides/park_styles.json');
+  const styles: ParkStyle[] = fs.existsSync(styleFile) ? JSON.parse(fs.readFileSync(styleFile, 'utf8')).parks ?? [] : [];
+  const styledGreens = new Map<{ points: Pt[] }, ParkStyle>();
+  const palmPts: Array<{ x: number; z: number }> = [];
+  for (const st of styles) {
+    const park = greens.find((g) => pointInRing(st.anchor[0], st.anchor[1], g.points));
+    if (!park) { console.log(`park style ${st.id}: no park polygon contains the anchor, skipped`); continue; }
+    styledGreens.set(park, st);
+    // Lakes inside this park: a palm line just inland of the shoreline.
+    let nLake = 0;
+    for (const w of overview.waterways as Array<{ points: Pt[]; isPolygon?: boolean; cls?: string }>) {
+      if (!w.isPolygon || !w.points || w.points.length < 3 || !['pond', 'lake', 'reservoir', 'water'].includes(w.cls ?? '')) continue;
+      const c = w.points.reduce((a, q) => ({ x: a.x + q.x / w.points.length, z: a.z + q.z / w.points.length }), { x: 0, z: 0 });
+      if (!pointInRing(c.x, c.z, park.points)) continue;
+      nLake++;
+      const ring = w.points;
+      let carry = 0;
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], c2 = ring[(i + 1) % ring.length];
+        const dx = c2.x - a.x, dz = c2.z - a.z, len = Math.hypot(dx, dz);
+        if (len < 1e-3) continue;
+        const nx = -dz / len, nz = dx / len;
+        for (let d = carry; d < len; d += st.palmLine.spacing) {
+          const bx = a.x + (dx / len) * d, bz = a.z + (dz / len) * d;
+          // Offset to whichever side is land.
+          for (const sgn of [1, -1]) {
+            const px = bx + nx * st.palmLine.offset * sgn, pz = bz + nz * st.palmLine.offset * sgn;
+            if (!pointInRing(px, pz, ring) && hash2(px, pz) < st.palmLine.keep) { palmPts.push({ x: px, z: pz }); break; }
+          }
+        }
+        carry = ((carry - len) % st.palmLine.spacing + st.palmLine.spacing) % st.palmLine.spacing;
+      }
+    }
+    console.log(`park style ${st.id}: ${nLake} lakes, ${palmPts.length} palm candidates`);
+  }
+
   const files = fs.readdirSync(TILES_DIR).filter((n) => n.startsWith('tile_') && n.endsWith('.json'));
 
   // ── Building centroid index ───────────────────────────────────────────────
@@ -189,12 +291,39 @@ function main(): void {
   // 40 m of "open ground" immediately outside a neighbouring tile's warehouse.
   // One extra pass over the tiles is cheap next to getting that wrong citywide.
   const bldgGrid = new Map<string, Pt[]>();
+  // Footprint containment on a fine 20 m grid. The centroid test alone let trees stand
+  // inside (on the roof of) any building wider than ~10 m.
+  const FP = 20;
+  const fpGrid = new Map<number, Array<{ ring: Pt[]; mnx: number; mxx: number; mnz: number; mxz: number }>>();
+  const fpKey = (gx: number, gz: number) => (gx + 5000) * 10000 + (gz + 5000);
+  const addFootprint = (ring: Pt[]) => {
+    let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
+    for (const p of ring) { if (p.x < mnx) mnx = p.x; if (p.x > mxx) mxx = p.x; if (p.z < mnz) mnz = p.z; if (p.z > mxz) mxz = p.z; }
+    const e = { ring, mnx: mnx - 1.5, mxx: mxx + 1.5, mnz: mnz - 1.5, mxz: mxz + 1.5 };
+    for (let gx = Math.floor(e.mnx / FP); gx <= Math.floor(e.mxx / FP); gx++) {
+      for (let gz = Math.floor(e.mnz / FP); gz <= Math.floor(e.mxz / FP); gz++) {
+        const k = fpKey(gx, gz); let b = fpGrid.get(k); if (!b) { b = []; fpGrid.set(k, b); } b.push(e);
+      }
+    }
+  };
+  /** Inside a footprint, or within 1.5 m of its bounding box edge for small ones. */
+  const onBuilding = (x: number, z: number): boolean => {
+    const b = fpGrid.get(fpKey(Math.floor(x / FP), Math.floor(z / FP)));
+    if (!b) return false;
+    for (const e of b) {
+      if (x < e.mnx || x > e.mxx || z < e.mnz || z > e.mxz) continue;
+      if (pointInRing(x, z, e.ring)) return true;
+      if (e.mxx - e.mnx < 14 && e.mxz - e.mnz < 14) return true; // small hut: whole padded box
+    }
+    return false;
+  };
   {
     let n = 0;
     for (const name of files) {
       const tile = JSON.parse(fs.readFileSync(path.join(TILES_DIR, name), 'utf8'));
       for (const bl of (tile.lod2?.buildings ?? []) as Array<{ points: Pt[] }>) {
         if (!bl.points || bl.points.length < 3) continue;
+        addFootprint(bl.points);
         let sx = 0, sz = 0;
         for (const p of bl.points) { sx += p.x; sz += p.z; }
         const c = { x: sx / bl.points.length, z: sz / bl.points.length };
@@ -226,7 +355,7 @@ function main(): void {
     return false;
   };
 
-  const stat = { park: 0, verge: 0, open: 0, rejected: 0, tiles: 0 };
+  const stat = { park: 0, verge: 0, open: 0, yard: 0, orchard: 0, palm: 0, rejected: 0, tiles: 0 };
   let done = 0;
 
   for (const name of files) {
@@ -242,20 +371,25 @@ function main(): void {
       minZ: tz * TILE_SIZE, maxZ: (tz + 1) * TILE_SIZE,
     };
 
-    const trees: Array<{ x: number; y: number; z: number; scale: number }> = [];
-    const push = (x: number, z: number, kind: 'park' | 'verge' | 'open'): void => {
-      if (blocked(x, z) || nearBuilding(x, z, BUILDING_PAD)) { stat.rejected++; return; }
+    const trees: Array<{ x: number; y: number; z: number; scale: number; k: number }> = [];
+    const KIND = { park: 0, verge: 1, open: 2, yard: 3, orchard: 4, palm: 5 } as const;
+    const push = (x: number, z: number, kind: 'park' | 'verge' | 'open' | 'yard' | 'orchard' | 'palm'): void => {
+      // Landmark precincts get their own formal planting (src/city/landmarks.ts).
+      if (isLandmarkSite(x, z) || inAirport(x, z)) { stat.rejected++; return; }
+      if (CLEARINGS.length && hash2(x * 3.1, z * 1.7) > clearKeep(x, z)) { stat.rejected++; return; }
+      if (blocked(x, z) || onBuilding(x, z) || (kind !== 'yard' && nearBuilding(x, z, BUILDING_PAD))) { stat.rejected++; return; }
       const h = hash2(x, z);
       // Park trees run larger and more varied; street trees are pruned to a
       // narrower crown, which is what avenue planting actually looks like.
       // Open-ground trees are the wildest of the three — unmanaged scrub.
-      const scale = kind === 'park' ? 0.78 + h * 0.85
-        : kind === 'open' ? 0.7 + h * 1.05
+      const scale = kind === 'palm' ? 0.95 + h * 0.5
+        : kind === 'park' ? 0.78 + h * 0.85
+        : kind === 'open' ? 0.95 + h * 0.9
+        : kind === 'orchard' ? 1.15 + h * 0.6
+        : kind === 'yard' ? 0.65 + h * 0.6
         : 0.68 + h * 0.45;
-      trees.push({ x, y: 0, z, scale: +scale.toFixed(3) });
-      if (kind === 'park') stat.park++;
-      else if (kind === 'open') stat.open++;
-      else stat.verge++;
+      trees.push({ x: +x.toFixed(2), y: 0, z: +z.toFixed(2), scale: +scale.toFixed(3), k: KIND[kind] });
+      stat[kind]++;
     };
 
     // Parks: jittered grid clipped to the real polygon.
@@ -278,9 +412,31 @@ function main(): void {
           const jz = z + (hash2(z, x) - 0.5) * PARK_SPACING * 0.75;
           if (jx < b.minX || jx >= b.maxX || jz < b.minZ || jz >= b.maxZ) continue;
           if (!pointInRing(jx, jz, g.points)) continue;
+          const style = styledGreens.get(g);
+          if (style) {
+            // Open lawn with groves: low-frequency noise carves clearings.
+            const n = valueNoise(jx, jz, style.grove.noiseScale);
+            const dens = n > style.grove.threshold ? style.grove.density : style.grove.lawnDensity;
+            if (hash2(jx * 1.31, jz * 0.77) > dens) continue;
+          }
           push(jx, jz, 'park');
         }
       }
+    }
+
+    for (const bo of BOOSTS) {
+      if (bo.x + bo.r < b.minX || bo.x - bo.r > b.maxX || bo.z + bo.r < b.minZ || bo.z - bo.r > b.maxZ) continue;
+      for (let x = Math.ceil(b.minX / bo.spacing) * bo.spacing; x < b.maxX; x += bo.spacing) for (let z = Math.ceil(b.minZ / bo.spacing) * bo.spacing; z < b.maxZ; z += bo.spacing) {
+        const jx = x + (hash2(x * 0.77, z) - 0.5) * bo.spacing * 0.8, jz = z + (hash2(z, x * 0.77) - 0.5) * bo.spacing * 0.8;
+        if (Math.hypot(jx - bo.x, jz - bo.z) > bo.r || hash2(jx * 1.9, jz * 2.3) > bo.p) continue;
+        if (roadMask.hits(jx, jz, 4)) continue;
+        push(jx, jz, 'park');
+      }
+    }
+
+    for (const q of palmPts) {
+      if (q.x < b.minX || q.x >= b.maxX || q.z < b.minZ || q.z >= b.maxZ) continue;
+      push(q.x, q.z, 'palm');
     }
 
     // Verges: stepped along this tile's own arterials, offset to both sides.
@@ -316,22 +472,53 @@ function main(): void {
       }
     }
 
-    // Open ground: sparse groves on land with nothing built anywhere near it.
-    // Walked on the global grid rather than from the tile origin so the noise
-    // and the lattice stay continuous across tile seams — stepping from each
-    // tile's own corner would leave a visible join every 500 m.
-    for (let x = Math.ceil(b.minX / OPEN_SPACING) * OPEN_SPACING; x < b.maxX; x += OPEN_SPACING) {
-      for (let z = Math.ceil(b.minZ / OPEN_SPACING) * OPEN_SPACING; z < b.maxZ; z += OPEN_SPACING) {
-        if (valueNoise(x, z, GROVE_SCALE) < GROVE_THRESHOLD) continue;
-        const jx = x + (hash2(x * 1.7, z) - 0.5) * OPEN_SPACING * 0.8;
-        const jz = z + (hash2(z, x * 1.7) - 0.5) * OPEN_SPACING * 0.8;
+    // Land-cover planting, driven by ESA WorldCover / Overture classes in the ground
+    // raster (scripts/py/build_ground.py) instead of noise, so trees stand where real
+    // canopy is: dense groves on WorldCover tree cover (Lucknow's mango orchards),
+    // scattered trees on scrub/grass, field-edge trees on cropland, and yard/courtyard
+    // trees (neem, peepal) between houses in built-up land. Walked on the global grid
+    // so the lattice is continuous across tile seams.
+    // Round 3: dense canopy. The user wants green land to read as continuous tree cover, so the
+    // grass, scrub, canopy, wetland and campus classes are planted at roughly 2-3x the old density.
+    const RULES: Record<number, { sp: number; p: number; kind: 'open' | 'yard' | 'orchard'; clear: number }> = {
+      2: { sp: 10, p: 0.92, kind: 'orchard', clear: 5 },    // tree canopy
+      3: { sp: 12, p: 0.75, kind: 'open', clear: 7 },       // scrub
+      4: { sp: 14, p: 0.65, kind: 'open', clear: 8 },       // grassland
+      5: { sp: 40, p: 0.12, kind: 'open', clear: 20 },      // cropland: field-edge trees
+      14: { sp: 40, p: 0.12, kind: 'open', clear: 20 },     // farmland
+      7: { sp: 18, p: 0.65, kind: 'open', clear: 12 },      // wetland
+      1: { sp: 20, p: 0.22, kind: 'yard', clear: 0 },       // built-up: yard trees
+      12: { sp: 12, p: 0.50, kind: 'yard', clear: 0 },      // residential land use
+      11: { sp: 9, p: 0.95, kind: 'yard', clear: 0 },      // campuses
+      13: { sp: 32, p: 0.14, kind: 'open', clear: 25 },     // sand banks: sparse
+    };
+    for (const sp of Array.from(new Set(Object.values(RULES).map((r) => r.sp)))) {
+      for (let x = Math.ceil(b.minX / sp) * sp; x < b.maxX; x += sp) {
+        for (let z = Math.ceil(b.minZ / sp) * sp; z < b.maxZ; z += sp) {
+          const jx = x + (hash2(x * 1.7 + sp, z) - 0.5) * sp * 0.8;
+          const jz = z + (hash2(z, x * 1.7 + sp) - 0.5) * sp * 0.8;
+          if (jx < b.minX || jx >= b.maxX || jz < b.minZ || jz >= b.maxZ) continue;
+          const rule = RULES[groundClass(jx, jz)];
+          if (!rule || rule.sp !== sp) continue;
+          // Groves clump: modulate probability with low-frequency noise.
+          const clump = 0.95 + 0.5 * (valueNoise(jx, jz, GROVE_SCALE) - 0.5);
+          if (hash2(jx * 0.37, jz * 0.71) > rule.p * clump) continue;
+          if (greenIndex.hits(jx, jz)) continue;
+          if (rule.clear > 0 && nearBuilding(jx, jz, rule.clear)) continue;
+          if (roadMask.hits(jx, jz, rule.kind === 'yard' ? 2.5 : OPEN_ROAD_CLEAR)) continue;
+          push(jx, jz, rule.kind);
+        }
+      }
+    }
+
+    // Hedgerow trees along the field-parcel borders (round 3): a tree every ~6-14 m on the
+    // hedge line of cropland and open land, so the countryside shows its parcel pattern.
+    for (let x = Math.ceil(b.minX / 7) * 7; x < b.maxX; x += 7) {
+      for (let z = Math.ceil(b.minZ / 7) * 7; z < b.maxZ; z += 7) {
+        const jx = x + (hash2(x * 2.1, z) - 0.5) * 5, jz = z + (hash2(z, x * 2.1) - 0.5) * 5;
         if (jx < b.minX || jx >= b.maxX || jz < b.minZ || jz >= b.maxZ) continue;
-        // Parks are the park pass's job; planting here too would double them up.
-        if (greenIndex.hits(jx, jz)) continue;
-        // The clearance tests are what define "open" — run them before the
-        // cheap mask so a candidate in a built-up block exits immediately.
-        if (nearBuilding(jx, jz, OPEN_BUILDING_CLEAR)) continue;
-        if (roadMask.hits(jx, jz, OPEN_ROAD_CLEAR)) continue;
+        if (!onHedge(jx, jz) || hash2(jx * 0.9, jz * 1.3) > 0.42) continue;
+        if (greenIndex.hits(jx, jz) || nearBuilding(jx, jz, 6) || roadMask.hits(jx, jz, 5)) continue;
         push(jx, jz, 'open');
       }
     }
@@ -347,8 +534,9 @@ function main(): void {
     if (done % 1500 === 0) console.log(`  ${done}/${files.length}`);
   }
 
-  console.log(`\nTrees ${stat.park + stat.verge + stat.open} across ${stat.tiles} tiles ` +
-              `(park ${stat.park}, verge ${stat.verge}, open ${stat.open}); ${stat.rejected} candidates masked out`);
+  const total = stat.park + stat.verge + stat.open + stat.yard + stat.orchard + stat.palm;
+  console.log(`\nTrees ${total} across ${stat.tiles} tiles (park ${stat.park}, verge ${stat.verge}, ` +
+              `open ${stat.open}, yard ${stat.yard}, orchard ${stat.orchard}); ${stat.rejected} candidates masked out`);
   console.log('Next: npm run bake');
 }
 

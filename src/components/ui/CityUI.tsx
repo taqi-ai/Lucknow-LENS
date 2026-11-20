@@ -183,7 +183,10 @@ export const CityUI: React.FC<CityUIProps> = ({
 
       {/* Left: where am I, and find something. Minimised: two icons. */}
       {minimal ? (
-        <div className="absolute left-3 top-3 z-20 flex flex-col gap-2">
+        <div
+          style={{ top: 'calc(0.75rem + env(safe-area-inset-top, 0px))', left: 'calc(0.75rem + env(safe-area-inset-left, 0px))' }}
+          className="absolute z-20 flex flex-col gap-2"
+        >
           <button onClick={toggleMinimal} title="Show panels" aria-label="Show panels" className="glass-panel grid h-11 w-11 place-items-center rounded-full text-paper/80 hover:text-paper">
             <PanelLeftOpen className="h-[18px] w-[18px]" strokeWidth={1.7} />
           </button>
@@ -196,25 +199,28 @@ export const CityUI: React.FC<CityUIProps> = ({
             <span>Guided tour</span>
           </button>
           {/* Quick fly-to chips: one tap flies to a highlight. */}
-          <div className="pointer-events-auto flex max-w-[300px] gap-1.5 overflow-x-auto no-scrollbar pb-0.5" role="list" aria-label="Quick fly to">
+          <div className="pointer-events-auto flex max-w-[calc(100vw-6rem)] sm:max-w-[300px] gap-1.5 overflow-x-auto no-scrollbar pb-0.5" role="list" aria-label="Quick fly to">
             {QUICK.map((q) => (
               <button key={q.id} role="listitem" onClick={() => onCameraSignal(`dest:${q.id}` as CameraPreset)}
                 className="glass-panel flex-shrink-0 rounded-full px-3 py-1.5 text-[11.5px] font-semibold text-paper/85 hover:text-paper">{q.label}</button>
             ))}
           </div>
           {searchOpen && (
-            <div className={`${compact ? 'w-[calc(100vw-5.5rem)]' : 'w-[300px]'} -mt-[52px] ml-[52px]`}>
+            <div className={`${compact ? 'w-[calc(100vw-5.5rem)] max-w-[320px]' : 'w-[300px]'} -mt-[52px] ml-[52px]`}>
               <SearchUI mapData={mapData} onSelectResult={(r) => { handleSearchResultClick(r); setSearchOpen(false); }} onSetDestinationWaypoint={onSetDestinationWaypoint} />
             </div>
           )}
           {selectedEntity && (
-            <div className={`${compact ? 'w-[calc(100vw-1.5rem)]' : 'w-[300px]'} max-h-[60vh] overflow-y-auto no-scrollbar`}>
+            <div className={`${compact ? 'w-[calc(100vw-1.5rem)] max-w-[320px]' : 'w-[300px]'} max-h-[60vh] overflow-y-auto no-scrollbar`}>
               <InfoPanel entity={selectedEntity} onClose={() => onSelectEntity(null)} onSetDestinationWaypoint={onSetDestinationWaypoint} />
             </div>
           )}
         </div>
       ) : (
-      <div className={`absolute left-3 top-3 z-20 pointer-events-none flex flex-col gap-2.5 overflow-y-auto no-scrollbar ${compact ? 'right-[68px] max-h-[55vh]' : 'w-[300px] max-h-[calc(100vh-1.5rem)]'}`}>
+      <div
+        style={{ top: 'calc(0.75rem + env(safe-area-inset-top, 0px))', left: 'calc(0.75rem + env(safe-area-inset-left, 0px))' }}
+        className={`absolute z-20 pointer-events-none flex flex-col gap-2.5 overflow-y-auto no-scrollbar ${compact ? 'right-[68px] max-h-[55vh]' : 'w-[300px] max-h-[calc(100vh-1.5rem)]'}`}
+      >
         <div className="pointer-events-auto glass-panel flex items-center gap-3 rounded-2xl px-3.5 py-2.5">
           <LucknowLensMark className="h-9 w-9 flex-shrink-0 object-contain" />
           <div className="min-w-0 flex-1">
@@ -236,7 +242,7 @@ export const CityUI: React.FC<CityUIProps> = ({
           </button>
         </div>
         {/* Quick fly-to chips: one tap flies to a highlight. */}
-          <div className="pointer-events-auto flex max-w-[300px] gap-1.5 overflow-x-auto no-scrollbar pb-0.5" role="list" aria-label="Quick fly to">
+          <div className="pointer-events-auto flex max-w-[calc(100vw-6rem)] sm:max-w-[300px] gap-1.5 overflow-x-auto no-scrollbar pb-0.5" role="list" aria-label="Quick fly to">
             {QUICK.map((q) => (
               <button key={q.id} role="listitem" onClick={() => onCameraSignal(`dest:${q.id}` as CameraPreset)}
                 className="glass-panel flex-shrink-0 rounded-full px-3 py-1.5 text-[11.5px] font-semibold text-paper/85 hover:text-paper">{q.label}</button>
@@ -251,7 +257,10 @@ export const CityUI: React.FC<CityUIProps> = ({
       )}
 
       {/* Bottom-left: only the live feeds you switched on */}
-      <div className={`absolute z-20 pointer-events-none flex flex-col gap-1.5 ${compact ? 'bottom-[88px] left-3' : 'bottom-3 left-3'}`}>
+      <div
+        style={compact ? { bottom: 'calc(78px + env(safe-area-inset-bottom, 0px))', left: 'calc(0.75rem + env(safe-area-inset-left, 0px))' } : undefined}
+        className={`absolute z-20 pointer-events-none flex flex-col gap-1.5 ${compact ? '' : 'bottom-3 left-3'}`}
+      >
         {flightFeed && layers.live.flights && (
           <Chip status={flightFeed.status}>
             {flightFeed.status === 'unavailable' ? (flightFeed.reason ?? 'Aircraft unavailable') : `${flights.length} aircraft · ${flightFeed.ageSeconds ?? '?'}s ago`}
@@ -270,7 +279,12 @@ export const CityUI: React.FC<CityUIProps> = ({
       </div>
 
       {!presentationMode && (
-        <div className={`absolute z-30 ${compact ? 'right-3 top-[64px]' : 'right-3 top-3'}`}><DayNightToggle night={night} onChange={(n, origin) => runDayNight(() => onNight(n), origin)} compact={compact} /></div>
+        <div
+          style={{ top: `calc(${compact ? '64px' : '0.75rem'} + env(safe-area-inset-top, 0px))`, right: 'calc(0.75rem + env(safe-area-inset-right, 0px))' }}
+          className="absolute z-30"
+        >
+          <DayNightToggle night={night} onChange={(n, origin) => runDayNight(() => onNight(n), origin)} compact={compact} />
+        </div>
       )}
       {!presentationMode && (
         <MapControls

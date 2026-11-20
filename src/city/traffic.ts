@@ -32,11 +32,15 @@ export class TrafficSystem {
   private group = new THREE.Group();
   private lanes: Lane[] = [];
   private bodies: THREE.InstancedMesh[] = [];
+  private bodyMaterial: THREE.MeshStandardMaterial | null = null;
   private lamps: THREE.InstancedMesh | null = null;
   private max = 0;
   private slots: Array<{ lane: number; off: number; kind: number; inst: number; dir: number }> = [];
   private dummy = new THREE.Object3D();
   private v = new THREE.Vector3();
+  // Pre-allocated colour instances — reused every frame to avoid GC pressure
+  private _headColor = new THREE.Color(0xfff2d0);
+  private _tailColor = new THREE.Color(0xff3020);
   private night = false;
   private enabled = true;
   private lastAssign = 0;
@@ -79,6 +83,7 @@ export class TrafficSystem {
     }
     // Geometry per kind, with vertex colours: body, glass band, dark wheels.
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.25 });
+    this.bodyMaterial = mat;
     for (const k of KINDS) {
       // Body (paint), tapered cabin/glass, wheels, lights; buses get a window band, two-wheelers a rider.
       const parts: Array<[THREE.BufferGeometry, number]> = [];
@@ -144,7 +149,7 @@ export class TrafficSystem {
     if (!show) return;
     const cx = camera.position.x, cz = camera.position.z;
     if (seconds - this.lastAssign > 2.5) { this.lastAssign = seconds; this.assign(cx, cz, Math.max(900, altitude * 1.6)); }
-    const head = new THREE.Color(0xfff2d0), tail = new THREE.Color(0xff3020);
+    const head = this._headColor, tail = this._tailColor;
     let li = 0;
     for (const sl of this.slots) {
       const l = this.lanes[sl.lane];
@@ -175,6 +180,23 @@ export class TrafficSystem {
       if (this.night) { this.lamps.count = li; this.lamps.instanceMatrix.needsUpdate = true; if (this.lamps.instanceColor) this.lamps.instanceColor.needsUpdate = true; }
     }
     void this.v;
+  }
+
+  public dispose(): void {
+    this.group.removeFromParent();
+    for (const b of this.bodies) {
+      b.geometry.dispose();
+    }
+    this.bodies = [];
+    this.bodyMaterial?.dispose();
+    this.bodyMaterial = null;
+    if (this.lamps) {
+      this.lamps.geometry.dispose();
+      (this.lamps.material as THREE.Material).dispose();
+      this.lamps = null;
+    }
+    this.slots = [];
+    this.lanes = [];
   }
 }
 

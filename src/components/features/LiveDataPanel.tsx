@@ -66,6 +66,20 @@ const Unavailable: React.FC<{ reason?: string }> = ({ reason }) => (
   </div>
 );
 
+/** Safely validate external URLs to prevent javascript: or malformed URI execution */
+function safeExternalUrl(url: string | undefined): string {
+  if (!url) return '#';
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return url;
+    }
+  } catch {
+    // Invalid URL format
+  }
+  return '#';
+}
+
 function aqiColor(v: number): string {
   return v <= 50 ? 'text-amber-400' : v <= 100 ? 'text-yellow-400' : v <= 150 ? 'text-orange-400' : v <= 200 ? 'text-rose-400' : 'text-fuchsia-400';
 }
@@ -220,7 +234,7 @@ export const LiveDataPanel: React.FC<LiveDataPanelProps> = ({
           {newsFeed.status !== 'unavailable' && newsFeed.items.length > 0 ? (
             <div className="space-y-1.5 max-h-48 overflow-y-auto">
               {newsFeed.items.slice(0, 12).map(a => (
-                <a key={a.id} href={a.url} target="_blank" rel="noreferrer"
+                <a key={a.id} href={safeExternalUrl(a.url)} target="_blank" rel="noopener noreferrer"
                    className="flex items-start gap-1.5 text-[11px] text-slate-300 hover:text-white py-0.5 border-b border-slate-800/40 last:border-b-0 group">
                   <ExternalLink className="w-3 h-3 mt-0.5 text-slate-600 group-hover:text-violet-400 flex-shrink-0" />
                   <div className="min-w-0">

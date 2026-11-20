@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OSMMapData, RenderStats } from '../types';
 import { getDeviceProfile } from './deviceProfile';
+import { performanceConfig } from './performanceConfig';
 
 /** Lucknow, for the solar position. */
 const LAT = 26.85;
@@ -60,14 +61,20 @@ export class CityRenderer {
     // with MSAA on asks for roughly 9x the fragment work a desktop does, which is
     // what made the city unusable on mobile rather than merely slower.
     const device = getDeviceProfile();
+    this.lastWidth = Math.max(1, Math.floor(width));
+    this.lastHeight = Math.max(1, Math.floor(height));
     this.renderer = new THREE.WebGLRenderer({
-      antialias: device.antialias,
+      antialias: performanceConfig.isMobile ? performanceConfig.config.antialias : device.antialias,
       powerPreference: 'high-performance',
       logarithmicDepthBuffer: true,
     });
-    this.renderer.setSize(width, height);
-    this.renderer.setPixelRatio(device.maxPixelRatio);
-    this.maxRatio = device.maxPixelRatio;
+    // Set drawing buffer dimensions with updateStyle: false so that CSS
+    // dimensions (width: 100%, height: 100%) govern layout, preventing distortion,
+    // black borders, and viewport overflow on mobile browsers.
+    const initRatio = performanceConfig.isMobile ? performanceConfig.getEffectivePixelRatio() : device.maxPixelRatio;
+    this.renderer.setPixelRatio(initRatio);
+    this.renderer.setSize(this.lastWidth, this.lastHeight, false);
+    this.maxRatio = performanceConfig.isMobile ? performanceConfig.config.maxPixelRatio : device.maxPixelRatio;
     this.renderer.shadowMap.enabled = false; // Shadows off by default — enabled adaptively at low altitude
     this.renderer.shadowMap.type = THREE.PCFShadowMap; // PCFSoft is deprecated in r185
     // Explicit colour management. Materials author colours in sRGB, lighting happens
@@ -76,7 +83,16 @@ export class CityRenderer {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
 
-    container.appendChild(this.renderer.domElement);
+    const dom = this.renderer.domElement;
+    dom.style.display = 'block';
+    dom.style.position = 'absolute';
+    dom.style.top = '0';
+    dom.style.left = '0';
+    dom.style.width = '100%';
+    dom.style.height = '100%';
+
+    container.appendChild(dom);
+    this.setupContextRecovery();
 
     // 4. Setup Lighting
     try { this.setupLighting(); } catch (e) { console.error('Lighting setup error:', e); }
@@ -176,23 +192,20 @@ export class CityRenderer {
 
   /** Enable/disable shadows based on camera altitude — huge perf win at zoom-out */
   public setAdaptiveShadows(altitude: number): void {
-    // Shadow maps are a second full scene traversal per frame; mobile GPUs pay
-    // for it in bandwidth they do not have.
+    if (!performanceConfig.config.shadowsEnabled) {
+      if (this.shadowsActive) {
+        this.shadowsActive = false;
+        this.renderer.shadowMap.enabled = false;
+        this.sunLight.castShadow = false;
+      }
+      return;
+    }
     const dp = getDeviceProfile();
     const shouldEnable = dp.allowShadows && altitude < dp.shadowMaxAltitude && !this.isNight;
     if (shouldEnable === this.shadowsActive) return;
     this.shadowsActive = shouldEnable;
     this.renderer.shadowMap.enabled = shouldEnable;
     this.sunLight.castShadow = shouldEnable;
-    // Mark all materials as needing shadow update
-    this.scene.traverse((obj) => {
-      if ((obj as THREE.Mesh).isMesh) {
-        const mat = (obj as THREE.Mesh).material;
-        if (mat && !Array.isArray(mat)) {
-          mat.needsUpdate = true;
-        }
-      }
-    });
   }
 
   public setSkylineStyle(style: 'warm' | 'clear' | 'cyberpunk'): void {
@@ -275,27 +288,68 @@ export class CityRenderer {
   // -------------------------------------------------------------
   // RENDER LOOP & STATS
   // -------------------------------------------------------------
+  private isContextLost = false;
+  private lastWidth = 1;
+  private lastHeight = 1;
+
+  private onContextLost = (e: Event) => {
+    e.preventDefault();
+    console.warn('[CityRenderer] WebGL context lost. Pausing rendering.');
+    this.isContextLost = true;
+  };
+
+  private onContextRestored = () => {
+    console.log('[CityRenderer] WebGL context restored. Rebuilding lighting and shaders.');
+    this.isContextLost = false;
+    try {
+      this.setupLighting();
+      this.renderer.setSize(this.lastWidth, this.lastHeight);
+    } catch (err) {
+      console.error('[CityRenderer] Error restoring WebGL context:', err);
+    }
+  };
+
+  private setupContextRecovery(): void {
+    const canvas = this.renderer.domElement;
+    canvas.addEventListener('webglcontextlost', this.onContextLost, false);
+    canvas.addEventListener('webglcontextrestored', this.onContextRestored, false);
+  }
+
   public update() {
+    if (this.isContextLost) return;
     this.frameCount++;
     const now = performance.now();
+    const ft = now - (this.lastFrameAt || now);
+    this.lastFrameAt = now;
+    if (ft > 0 && ft < 250) {
+      this.ftEma = this.ftEma * 0.92 + ft * 0.08;
+      performanceConfig.recordFrameTime(ft);
+    }
+
     if (now - this.lastFpsTime >= 1000) {
       this.currentFps = Math.round((this.frameCount * 1000) / (now - this.lastFpsTime));
       this.frameCount = 0;
       this.lastFpsTime = now;
     }
 
-    // Dynamic resolution: if frames get slow, render fewer pixels (down to 55% of the device's cap);
-    // recover when there is headroom. Checked every half second on a smoothed frame time.
-    const ft = now - (this.lastFrameAt || now);
-    this.lastFrameAt = now;
-    if (ft > 0 && ft < 250) this.ftEma = this.ftEma * 0.92 + ft * 0.08;
-    if (now - this.lastScaleAt > 500) {
+    if (performanceConfig.isMobile) {
+      // Stable adaptive resolution driven by performanceConfig (hysteresis, no thrash while touching).
+      const targetRatio = performanceConfig.getEffectivePixelRatio();
+      if (Math.abs(targetRatio - this.renderer.getPixelRatio()) > 0.04) {
+        this.renderer.setPixelRatio(targetRatio);
+        this.renderer.setSize(this.lastWidth, this.lastHeight, false);
+      }
+    } else if (now - this.lastScaleAt > 500) {
+      // Desktop / low-end laptops keep the original dynamic resolution (down to 55% of the device cap).
       this.lastScaleAt = now;
       const cap = this.maxRatio;
       let r = this.renderer.getPixelRatio();
       if (this.ftEma > 26 && r > cap * 0.55) r = Math.max(cap * 0.55, r - 0.1);
       else if (this.ftEma < 14 && r < cap) r = Math.min(cap, r + 0.05);
-      if (Math.abs(r - this.renderer.getPixelRatio()) > 0.01) this.renderer.setPixelRatio(r);
+      if (Math.abs(r - this.renderer.getPixelRatio()) > 0.01) {
+        this.renderer.setPixelRatio(r);
+        this.renderer.setSize(this.lastWidth, this.lastHeight, false);
+      }
     }
 
     this.renderer.render(this.scene, this.camera);
@@ -316,12 +370,23 @@ export class CityRenderer {
     };
   }
 
-  public handleResize(width: number, height: number) {
-    const safeWidth = width || 1;
-    const safeHeight = height || 1;
+  public handleResize(width: number, height: number, force = false) {
+    const safeWidth = Math.max(1, Math.floor(width));
+    const safeHeight = Math.max(1, Math.floor(height));
+
+    // Avoid redundant WebGL backbuffer reallocations if dimensions have not changed
+    if (!force && safeWidth === this.lastWidth && safeHeight === this.lastHeight) {
+      return;
+    }
+
+    this.lastWidth = safeWidth;
+    this.lastHeight = safeHeight;
     this.camera.aspect = safeWidth / safeHeight;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(safeWidth, safeHeight);
+
+    // updateStyle: false prevents Three.js from setting inline style pixel dimensions,
+    // keeping CSS width: 100% and height: 100% in charge of the visual canvas element.
+    this.renderer.setSize(safeWidth, safeHeight, false);
   }
 
   /**
@@ -392,12 +457,18 @@ export class CityRenderer {
     // Clean up internal renderer render lists
     this.renderer.renderLists?.dispose?.();
 
+    // Detach WebGL context recovery event listeners
+    const dom = this.renderer.domElement;
+    if (dom) {
+      dom.removeEventListener('webglcontextlost', this.onContextLost);
+      dom.removeEventListener('webglcontextrestored', this.onContextRestored);
+    }
+
     // Dispose WebGLRenderer and force context loss to release GPU resources immediately
     this.renderer.dispose();
     this.renderer.forceContextLoss?.();
 
     // Safely remove canvas DOM element if still connected
-    const dom = this.renderer.domElement;
     if (dom && dom.parentNode) {
       dom.parentNode.removeChild(dom);
     }

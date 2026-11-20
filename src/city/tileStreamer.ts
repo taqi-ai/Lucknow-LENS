@@ -17,6 +17,7 @@ import { RailAirSystem } from './railAir';
 import { buildTreePrototypes, createTreeMaterial, pickSpecies, SPECIES, SPECIES_COUNT } from './treePrototypes';
 import type { TileWorkerRequest, TileWorkerResponse } from './tileWorker';
 import { getDeviceProfile } from './deviceProfile';
+import { performanceConfig } from './performanceConfig';
 
 /**
  * TileStreamer — full-detail streaming for the two close scales.
@@ -401,8 +402,11 @@ export class TileStreamer {
     // Traffic animates every frame (the rest of the streamer is throttled).
     this.traffic.update(now / 1000, camera, camera.position.y);
     this.railAir.update(now / 1000, camera.position.y);
-    if (now - this.lastUpdateTime < this.UPDATE_INTERVAL) {
-      this.cullLoadedTiles();
+
+    const isInteracting = performanceConfig.isInteracting;
+    const updateInterval = isInteracting ? 450 : this.UPDATE_INTERVAL;
+    if (now - this.lastUpdateTime < updateInterval) {
+      if (!isInteracting) this.cullLoadedTiles();
       return;
     }
     const dt = Math.max(1, now - this.lastUpdateTime);
@@ -422,7 +426,8 @@ export class TileStreamer {
     this.materials.setDetail(1 - THREE.MathUtils.clamp((altitude - 300) / 3000, 0, 1));
 
     const hasHlod = this.hlod.hasManifest();
-    const streamRadius = hasHlod ? (STREAM_RADIUS[lod] ?? 0) : Math.max(STREAM_RADIUS[lod] ?? 0, 3200);
+    const baseRadius = hasHlod ? (STREAM_RADIUS[lod] ?? 0) : Math.max(STREAM_RADIUS[lod] ?? 0, 3200);
+    const streamRadius = baseRadius * performanceConfig.config.streamRadiusScale;
 
     // Minor road classes drop out with altitude; major corridors never do.
     this.overlay.update(altitude);
@@ -433,7 +438,9 @@ export class TileStreamer {
 
     if (streamRadius > 0 && this.manifest) {
       this.updateStreamedTiles(camera, lod, streamRadius);
-      this.warmCache(camera.position.x, camera.position.z, streamRadius);
+      if (!isInteracting) {
+        this.warmCache(camera.position.x, camera.position.z, streamRadius);
+      }
     } else {
       this.retireAllStreamedTiles();
     }
@@ -563,18 +570,22 @@ export class TileStreamer {
   private warmed = new Set<string>();
   private lastWarm = 0;
   private warmCache(cx: number, cz: number, radius: number): void {
-    if (!this.manifest || this.queue.length > 0 || this.pending.size > 0) return;
+    if (!this.manifest || this.queue.length > 0 || this.pending.size > 0 || performanceConfig.isInteracting) return;
     const now = performance.now();
-    if (now - this.lastWarm < 400) return;
+    if (now - this.lastWarm < 600) return;
     this.lastWarm = now;
     let n = 0;
-    const r = radius * (getDeviceProfile().tier === 'low' ? 1.3 : 1.9);
-    const near = this.manifest.tiles.filter((t) => !this.warmed.has(t.id) && !this.loadedTiles.has(t.id) && Math.hypot(t.center.x - cx, t.center.z - cz) < r)
-      .sort((a, b) => Math.hypot(a.center.x - cx, a.center.z - cz) - Math.hypot(b.center.x - cx, b.center.z - cz));
-    for (const t of near) {
-      if (n++ >= 4) break;
-      this.warmed.add(t.id);
-      fetch(`/overture_tiles_full/${t.id}.json`, { priority: 'low' } as RequestInit).catch(() => this.warmed.delete(t.id));
+    const r = radius * (getDeviceProfile().tier === 'low' ? 1.3 : 1.8);
+    // Fast linear scan with early break instead of full array allocation and sort
+    for (let i = 0; i < this.manifest.tiles.length; i++) {
+      const t = this.manifest.tiles[i];
+      if (this.warmed.has(t.id) || this.loadedTiles.has(t.id)) continue;
+      const d = Math.hypot(t.center.x - cx, t.center.z - cz);
+      if (d < r) {
+        this.warmed.add(t.id);
+        fetch(`/overture_tiles_full/${t.id}.json`, { priority: 'low' } as RequestInit).catch(() => this.warmed.delete(t.id));
+        if (++n >= 4) break;
+      }
     }
   }
 
@@ -1070,9 +1081,9 @@ export class TileStreamer {
     this.workers = [];
     for (const [id, c] of this.loadedTiles) this.retireTile(id, c);
     this.hlod.dispose();
-    this.landmarks.group.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) m.geometry.dispose(); });
-    this.landmarks.group.removeFromParent();
+    this.landmarks.dispose();
     this.metro.dispose();
+    this.traffic.dispose();
     this.overlay.dispose();
     for (const g of this.treeGeometries) g.dispose();
     this.treeMaterial.dispose();

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { CameraPreset, OSMMapData, RenderStats, CityStreamingStats, SimulatedFlight, SelectedEntity } from '../../types';
 import { CityRenderer } from '../../city/renderer';
@@ -19,6 +19,7 @@ import { EmergencyVisualManager } from '../../city/emergencyVisuals';
 import { loadEmergencyFacilities, EmergencyFacility } from '../../city/emergencyServices';
 import { CampusAmbienceManager } from '../../city/campusAmbience';
 import { getDeviceProfile } from '../../city/deviceProfile';
+import { performanceConfig } from '../../city/performanceConfig';
 
 /**
  * Aircraft geometry and materials are created once at module scope and shared by
@@ -94,6 +95,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
   onSetDestinationWaypoint,
   onRouteDriverReady,
 }) => {
+  const [webglError, setWebglError] = useState(false);
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<CityRenderer | null>(null);
   const streamerRef = useRef<TileStreamer | null>(null);
@@ -141,7 +143,14 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     // effect runs twice and the ref kept the first mount's value, so the second mount's
     // objects never received the user's day/night choice. Force the next pass to snap.
     nightAppliedRef.current = null;
-    const cityRenderer = new CityRenderer(container, mapDataRef.current);
+    let cityRenderer: CityRenderer;
+    try {
+      cityRenderer = new CityRenderer(container, mapDataRef.current);
+    } catch (err) {
+      console.error('[CityViewport] WebGL initialization failed:', err);
+      setWebglError(true);
+      return;
+    }
     rendererRef.current = cityRenderer;
 
     // One shared material system drives every building
@@ -248,7 +257,7 @@ export const CityViewport: React.FC<CityViewportProps> = ({
 
     // DEV INSTRUMENTATION HOOK (window.__LENS) for scripts/visual_harness.mjs:
     // drive the camera, wait for streaming to settle, sample real render stats.
-    if (import.meta.env.DEV) {
+    if (import.meta.env.DEV || (typeof window !== 'undefined' && (new URLSearchParams(window.location.search).has('benchmark') || new URLSearchParams(window.location.search).has('harness')))) {
       (window as unknown as { __LENS?: unknown }).__LENS = {
         setShot(s: { t: [number, number]; az: number; pi: number; d: number; night: boolean; hour?: number }) {
           // Through React state, so the night effect does not revert it; the
@@ -306,10 +315,14 @@ export const CityViewport: React.FC<CityViewportProps> = ({
                 const r = cityRenderer.getRenderStats();
                 const st = streamer.getStats();
                 const mem = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory;
+                const slowFrames = frames.filter((f) => f > 33.3).length;
+                const p99 = frames[Math.floor(frames.length * 0.99)] || frames[frames.length - 1];
                 resolve({
                   fps: Math.round(1000 / (frames.reduce((a, b) => a + b, 0) / frames.length)),
+                  fps1PercentLow: Math.round(1000 / p99),
                   frameMsP50: +frames[Math.floor(frames.length * 0.5)].toFixed(2),
                   frameMsP95: +frames[Math.floor(frames.length * 0.95)].toFixed(2),
+                  framesOver33ms: slowFrames,
                   drawCalls: r.drawCalls,
                   triangles: r.triangles,
                   geometries: r.geometries,
@@ -336,9 +349,15 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     let lastLayerKey = '';
     let lastFrameTime = performance.now();
     const aircraftPool: THREE.Group[] = [];
+    let isPageVisible = !document.hidden;
 
     const animate = (time: number) => {
       animId = requestAnimationFrame(animate);
+
+      // Pause rendering when the browser tab is backgrounded to save GPU/battery.
+      // The RAF itself continues (so it can be re-queued on visibility restore) but
+      // we skip all GPU and state work when the page is hidden.
+      if (!isPageVisible) return;
 
       const deltaSec = Math.min(0.1, (time - lastFrameTime) * 0.001 || 0.016);
       lastFrameTime = time;
@@ -352,14 +371,16 @@ export const CityViewport: React.FC<CityViewportProps> = ({
 
       materials.updateCamera(cityRenderer.camera.position);
 
-      // Adaptive shadows
-      cityRenderer.setAdaptiveShadows(altitude);
+      // Adaptive shadows (deferred during active user interaction to eliminate GPU stalls)
+      if (!performanceConfig.isInteracting) {
+        cityRenderer.setAdaptiveShadows(altitude);
 
-      if (time - lastShadowUpdateTime > 500) {
-        cityRenderer.updateSunShadowTarget(controls.target, altitude);
-        const atmos = cityRenderer.getAtmosphere();
-        materials.setHorizon(atmos.horizon, atmos.strength);
-        lastShadowUpdateTime = time;
+        if (time - lastShadowUpdateTime > 600) {
+          cityRenderer.updateSunShadowTarget(controls.target, altitude);
+          const atmos = cityRenderer.getAtmosphere();
+          materials.setHorizon(atmos.horizon, atmos.strength);
+          lastShadowUpdateTime = time;
+        }
       }
 
       // Update TileStreamer
@@ -455,7 +476,8 @@ export const CityViewport: React.FC<CityViewportProps> = ({
       tweenRef.current?.tick();
       cityRenderer.update();
 
-      if (time - lastStatsTime > 400) {
+      // Throttle React stats updates during active finger drag / interaction to avoid triggering React component tree re-renders
+      if (time - lastStatsTime > 400 && !performanceConfig.isInteracting) {
         onUpdateStatsRef.current(cityRenderer.getRenderStats(), streamingStats);
         lastStatsTime = time;
       }
@@ -658,21 +680,73 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     container.addEventListener('click', handleViewportClick);
     container.addEventListener('contextmenu', handleContextMenu);
 
+    // Pause/resume the render loop when the tab is hidden/visible.
+    // On Android Chrome, a backgrounded tab can still spin RAF at ~1 fps and drain battery.
+    const handleVisibilityChange = () => {
+      isPageVisible = !document.hidden;
+      if (isPageVisible) {
+        // Reset lastFrameTime so the first visible frame doesn't see a huge delta.
+        lastFrameTime = performance.now();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    let resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let pendingW = 0;
+    let pendingH = 0;
+
+    const commitResize = (w: number, h: number) => {
+      if (!rendererRef.current) return;
+      rendererRef.current.handleResize(w, h);
+      labelManager.setViewport(w, h);
+    };
+
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         if (!rendererRef.current) continue;
         const { width, height } = entry.contentRect;
-        rendererRef.current.handleResize(width, height);
-        labelManager.setViewport(width, height);
+        if (width <= 0 || height <= 0) continue;
+
+        const rw = Math.round(width);
+        const rh = Math.round(height);
+
+        // Instantly update camera projection aspect ratio so 3D content never stretches
+        // during continuous transitions (e.g. mobile address bar show/hide)
+        rendererRef.current.camera.aspect = rw / rh;
+        rendererRef.current.camera.updateProjectionMatrix();
+
+        // Debounce WebGL drawing-buffer reallocation to avoid expensive GPU pipeline resets
+        // on every sub-pixel frame of mobile address bar animations
+        pendingW = rw;
+        pendingH = rh;
+        if (resizeDebounceTimer) clearTimeout(resizeDebounceTimer);
+        resizeDebounceTimer = setTimeout(() => {
+          commitResize(pendingW, pendingH);
+          resizeDebounceTimer = null;
+        }, 60);
       }
     });
 
     resizeObserver.observe(container);
 
+    // Immediate orientation-change handler for seamless mobile rotation (portrait <-> landscape)
+    const handleOrientation = () => {
+      setTimeout(() => {
+        if (!container || !rendererRef.current) return;
+        const w = container.clientWidth || window.innerWidth;
+        const h = container.clientHeight || window.innerHeight;
+        commitResize(w, h);
+      }, 80);
+    };
+    window.addEventListener('orientationchange', handleOrientation);
+
     return () => {
+      if (resizeDebounceTimer) clearTimeout(resizeDebounceTimer);
+      window.removeEventListener('orientationchange', handleOrientation);
       resizeObserver.disconnect();
       container.removeEventListener('click', handleViewportClick);
       container.removeEventListener('contextmenu', handleContextMenu);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       cancelAnimationFrame(animId);
       controls.dispose();
       labelManager.dispose();
@@ -818,6 +892,25 @@ export const CityViewport: React.FC<CityViewportProps> = ({
     const isCinematic = Boolean(CINEMATIC_PRESETS[cameraSignal as keyof typeof CINEMATIC_PRESETS]);
     controls.transitionTo(pTarget, pAzimuth, pPitch, pDistance, isCinematic ? 2600 : 1400);
   }, [cameraSignal, mapData]);
+
+  if (webglError) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center bg-[#0e1220] text-paper p-6 text-center select-none">
+        <div className="glass-panel p-8 rounded-3xl max-w-md border border-sand/30 shadow-2xl">
+          <h2 className="font-display text-2xl text-sand mb-3">3D Graphics Unavailable</h2>
+          <p className="text-sm text-paper/70 leading-relaxed mb-5">
+            WebGL hardware acceleration is required to render Lucknow Lens. Please ensure WebGL is enabled in your mobile browser settings.
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="rounded-full bg-sand px-6 py-2.5 text-xs font-semibold text-terrain shadow-lg hover:scale-105 active:scale-95 transition-transform"
+          >
+            Reload Map
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing select-none" />;
 };

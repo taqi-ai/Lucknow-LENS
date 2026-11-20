@@ -50,23 +50,28 @@ for (const f of fs.readdirSync(TILES)) {
   }
 }
 
-const man = JSON.parse(fs.readFileSync(path.join(HLOD, 'hlod_manifest.json'), 'utf8'));
-if (man.buildingFormat !== BUILDING_FORMAT_VERSION) err(`hlod manifest buildingFormat ${man.buildingFormat}`);
+const hlodManifestPath = path.join(HLOD, 'hlod_manifest.json');
 let hlodFiles = 0;
-for (const st of man.superTiles) {
-  for (const kind of ['f', 'r'] as const) {
-    const verts = kind === 'f' ? st.fabricVerts : st.reliefVerts;
-    if (!verts) continue;
-    const file = path.join(HLOD, `s_${st.key}.${kind}.bin`);
-    if (!fs.existsSync(file)) { err(`missing ${path.basename(file)}`); continue; }
-    const buf = fs.readFileSync(file);
-    hlodFiles++;
-    if (buf.readUInt32LE(0) !== 0x304c484c) err(`${path.basename(file)}: bad magic`);
-    if (buf.readUInt32LE(4) !== BUILDING_FORMAT_VERSION) err(`${path.basename(file)}: version ${buf.readUInt32LE(4)}`);
-    const n = buf.readUInt32LE(24);
-    const need = ((32 + n * 6 + 3) & ~3) + n * 4;
-    if (n !== verts || buf.length < need) err(`${path.basename(file)}: ${n} verts / ${buf.length} bytes, manifest ${verts}`);
+if (fs.existsSync(hlodManifestPath)) {
+  const man = JSON.parse(fs.readFileSync(hlodManifestPath, 'utf8'));
+  if (man.buildingFormat !== BUILDING_FORMAT_VERSION) err(`hlod manifest buildingFormat ${man.buildingFormat}`);
+  for (const st of man.superTiles) {
+    for (const kind of ['f', 'r'] as const) {
+      const verts = kind === 'f' ? st.fabricVerts : st.reliefVerts;
+      if (!verts) continue;
+      const file = path.join(HLOD, `s_${st.key}.${kind}.bin`);
+      if (!fs.existsSync(file)) { err(`missing ${path.basename(file)}`); continue; }
+      const buf = fs.readFileSync(file);
+      hlodFiles++;
+      if (buf.readUInt32LE(0) !== 0x304c484c) err(`${path.basename(file)}: bad magic`);
+      if (buf.readUInt32LE(4) !== BUILDING_FORMAT_VERSION) err(`${path.basename(file)}: version ${buf.readUInt32LE(4)}`);
+      const n = buf.readUInt32LE(24);
+      const need = ((32 + n * 6 + 3) & ~3) + n * 4;
+      if (n !== verts || buf.length < need) err(`${path.basename(file)}: ${n} verts / ${buf.length} bytes, manifest ${verts}`);
+    }
   }
+} else {
+  console.log('  [INFO] public/hlod/hlod_manifest.json not present — skipping optional baked HLOD check');
 }
 
 for (const f of ['ground_albedo.jpg', 'ground_class.png', 'ground_meta.json', 'district.bin', 'district_meta.json']) {

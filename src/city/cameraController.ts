@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { project } from '../geo/projection';
+import { performanceConfig } from './performanceConfig';
 
 export const CAMERA_CONFIG = {
   MIN_DISTANCE: 20,
@@ -129,20 +130,22 @@ export class CameraController {
   private onPointerDown = (e: PointerEvent) => {
     e.preventDefault();
     this.presetActive = false; // Cancel preset animation on user input
+    performanceConfig.startInteraction();
+    try { (e.target as HTMLElement)?.setPointerCapture?.(e.pointerId); } catch {}
 
     if (e.pointerType === 'touch') {
       this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (this.activePointers.size === 2) {
-        // Second finger down: leave pan, enter pinch. Seed the baseline here so
-        // the first move frame does not read a spurious scale jump.
+        // Two fingers down: enter pinch zoom & two-finger pan
         this.isDragging = false;
         this.dragMode = null;
         this.seedPinch();
         return;
       }
       if (this.activePointers.size > 2) return;
+      // Single finger on mobile touch: ROTATE map smoothly (azimuth & pitch)
       this.isDragging = true;
-      this.dragMode = 'pan';
+      this.dragMode = 'rotate';
       this.lastMouse.set(e.clientX, e.clientY);
       return;
     }
@@ -168,8 +171,9 @@ export class CameraController {
   }
 
   /**
-   * Two fingers: span drives zoom, midpoint travel drives rotate/tilt. Both are
-   * applied from the same gesture because a phone has no other way to reach them.
+   * Two fingers touch gesture:
+   * 1. Span ratio drives smooth zooming.
+   * 2. Midpoint travel drives two-finger panning across the city.
    */
   private handlePinch(): void {
     const pts = [...this.activePointers.values()];
@@ -179,19 +183,28 @@ export class CameraController {
     const midX = (pts[0].x + pts[1].x) / 2;
     const midY = (pts[0].y + pts[1].y) / 2;
 
+    // Zoom via pinch span ratio: smooth, proportional tracking clamped to safe per-event deltas
     if (this.pinchDistance > 0 && span > 0) {
-      // Ratio-based so the zoom tracks the fingers rather than a pixel delta.
       const ratio = this.pinchDistance / span;
       if (Number.isFinite(ratio) && ratio > 0) {
-        this.destDistance *= Math.pow(ratio, 1.35);
+        const clampedZoom = Math.max(0.85, Math.min(1.18, ratio));
+        this.destDistance *= clampedZoom;
       }
     }
 
+    // Two-finger pan via midpoint delta
     const mdx = midX - this.pinchMidpoint.x;
     const mdy = midY - this.pinchMidpoint.y;
-    const rotSens = 0.005 * this.moveResponsivenessMultiplier;
-    this.destAzimuth -= mdx * rotSens;
-    this.destPitch -= mdy * rotSens;
+    const panSens = this.destDistance * 0.0016 * this.moveResponsivenessMultiplier;
+
+    const rightX = Math.cos(this.destAzimuth);
+    const rightZ = -Math.sin(this.destAzimuth);
+    const fwdX = Math.sin(this.destAzimuth);
+    const fwdZ = Math.cos(this.destAzimuth);
+
+    this.destTarget.x -= (rightX * mdx + fwdX * mdy) * panSens;
+    this.destTarget.z -= (rightZ * mdx + fwdZ * mdy) * panSens;
+    this.softClampPosition();
 
     this.pinchDistance = span;
     this.pinchMidpoint.set(midX, midY);
@@ -201,6 +214,7 @@ export class CameraController {
   private onPointerMove = (e: PointerEvent) => {
     if (e.pointerType === 'touch' && this.activePointers.has(e.pointerId)) {
       this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      performanceConfig.startInteraction();
       if (this.activePointers.size >= 2) {
         e.preventDefault();
         this.handlePinch();
@@ -210,6 +224,7 @@ export class CameraController {
 
     if (!this.isDragging) return;
     e.preventDefault();
+    performanceConfig.startInteraction();
 
     const dx = e.clientX - this.lastMouse.x;
     const dy = e.clientY - this.lastMouse.y;
@@ -219,7 +234,7 @@ export class CameraController {
 
     if (this.dragMode === 'rotate') {
       // Rotation & Tilt sensitivity scaled by move responsiveness
-      const baseRotSens = 0.005;
+      const baseRotSens = 0.0055;
       const rotSens = baseRotSens * this.moveResponsivenessMultiplier;
       
       this.destAzimuth -= dx * rotSens;
@@ -247,23 +262,28 @@ export class CameraController {
   };
 
   private onPointerUp = (e: PointerEvent) => {
+    try { (e.target as HTMLElement)?.releasePointerCapture?.(e.pointerId); } catch {}
     if (e.pointerType === 'touch') {
       this.activePointers.delete(e.pointerId);
       if (this.activePointers.size === 1) {
-        // Lifting one finger of a pinch resumes panning with the finger that is
-        // still down, instead of stranding the gesture until both are released.
+        // Lifting one finger resumes rotation with the finger still down
         const [p] = [...this.activePointers.values()];
         this.lastMouse.set(p.x, p.y);
         this.isDragging = true;
-        this.dragMode = 'pan';
+        this.dragMode = 'rotate';
         return;
       }
       if (this.activePointers.size === 0) {
         this.pinchDistance = 0;
+        this.isDragging = false;
+        this.dragMode = null;
+        performanceConfig.endInteraction();
+        return;
       }
     }
     this.isDragging = false;
     this.dragMode = null;
+    performanceConfig.endInteraction();
   };
 
   private onWheel = (e: WheelEvent) => {
@@ -454,12 +474,12 @@ export class CameraController {
       this.softClampPosition();
 
       // Damping
-      // Base damping factor is 0.15. Adjust with move multiplier for pan/rotate, and zoom multiplier for distance
-      // Clamp to max 1.0 to prevent physics explosion
-      const baseDamping = 0.12;
+      // When actively dragging/touching, use higher damping responsiveness (0.32) for zero-lag finger tracking;
+      // when released, smoothly ease with baseDamping (0.14)
+      const baseDamping = (this.isDragging || this.activePointers.size > 0) ? 0.32 : 0.14;
       const k60 = dt * 60;
-      const tMoveDamp = 1 - Math.pow(1 - Math.min(0.95, baseDamping * this.moveResponsivenessMultiplier), k60);
-      const tZoomDamp = 1 - Math.pow(1 - Math.min(0.95, baseDamping * this.zoomResponsivenessMultiplier), k60);
+      const tMoveDamp = 1 - Math.pow(1 - Math.min(0.98, baseDamping * this.moveResponsivenessMultiplier), k60);
+      const tZoomDamp = 1 - Math.pow(1 - Math.min(0.98, baseDamping * this.zoomResponsivenessMultiplier), k60);
       
       this.target.lerp(this.destTarget, tMoveDamp);
       this.azimuth += (this.destAzimuth - this.azimuth) * tMoveDamp;

@@ -79,17 +79,21 @@ console.log(`  - JSON Errors: ${jsonErrors}`);
 console.log(`  - Out-of-Bounds Coordinate Violations: ${outOfBoundsCoords}`);
 
 console.log("\n=== 3. GRID & COORDINATE SYSTEM ALIGNMENT WITH OLD LUCKNOW_TILES ===");
-const oldTileFiles = fs.readdirSync(OLD_DIR).filter(f => f.startsWith('tile_') && f.endsWith('.json'));
-let matchingGridTiles = 0;
-let checkedOldTiles = 0;
+if (fs.existsSync(OLD_DIR)) {
+  const oldTileFiles = fs.readdirSync(OLD_DIR).filter(f => f.startsWith('tile_') && f.endsWith('.json'));
+  let matchingGridTiles = 0;
+  let checkedOldTiles = 0;
 
-for (const oldFile of oldTileFiles.slice(0, 50)) {
-  checkedOldTiles++;
-  if (fs.existsSync(path.join(FULL_DIR, oldFile))) {
-    matchingGridTiles++;
+  for (const oldFile of oldTileFiles.slice(0, 50)) {
+    checkedOldTiles++;
+    if (fs.existsSync(path.join(FULL_DIR, oldFile))) {
+      matchingGridTiles++;
+    }
   }
+  console.log(`Checked 50 old tiles: ${matchingGridTiles}/${checkedOldTiles} exist in new overture_tiles_full!`);
+} else {
+  console.log(`  [INFO] Legacy directory ${OLD_DIR} not present — skipping backward-compatibility grid diff.`);
 }
-console.log(`Checked 50 old tiles: ${matchingGridTiles}/${checkedOldTiles} exist in new overture_tiles_full!`);
 
 console.log("\n=== 4. BUILDING COUNTS IN DENSE / MEDIUM / SPARSE TILES ===");
 // Sort sampled tiles by bldgsLOD2 count

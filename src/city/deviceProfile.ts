@@ -13,6 +13,8 @@
  * responsive-design mode is not misclassified as a phone.
  */
 
+import { performanceConfig } from './performanceConfig';
+
 export type DeviceTier = 'desktop' | 'mobile' | 'low';
 /** Visual quality tier. Low: massing + ground; medium: roof detail, selective shadows; high: everything. */
 export type QualityTier = 'low' | 'medium' | 'high';
@@ -135,16 +137,21 @@ function build(): DeviceProfile {
   }
 
   if (tier === 'mobile') {
+    const cfg = performanceConfig.config;
     return {
       tier, isTouch,
-      maxPixelRatio: Math.min(dpr, 1.5),
-      antialias: false,
-      workerCount: Math.max(2, Math.min(3, cores - 1)),
-      streamRadiusScale: 0.7,
-      lampDensityScale: 0.7,
-      lampGlow: true,
-      allowShadows: quality !== 'low',
+      maxPixelRatio: Math.min(dpr, cfg.maxPixelRatio),
+      antialias: cfg.antialias,
+      workerCount: cfg.workerCount,
+      streamRadiusScale: cfg.streamRadiusScale,
+      lampDensityScale: cfg.streamRadiusScale,
+      lampGlow: cfg.lampGlow,
+      allowShadows: cfg.shadowsEnabled,
       ...q,
+      detailRadius: cfg.detailRadius,
+      treeNearRadius: cfg.treeNearRadius,
+      shadowMapSize: cfg.shadowMapSize,
+      shadowMaxAltitude: cfg.shadowMaxAltitude,
     };
   }
 

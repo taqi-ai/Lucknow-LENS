@@ -13,6 +13,8 @@ import type { LabelSettings } from '../../city/labelManager';
 import { InfoPanel } from '../features/InfoPanel';
 import { LiveDataPanel } from '../features/LiveDataPanel';
 import { NavigationHUD } from '../features/NavigationHUD';
+import { NavigationPanel } from '../features/NavigationPanel';
+import type { TransportMode, RoutePreference } from '../../navigation/types';
 import { LucknowLensMark } from '../brand/LucknowLensLogo';
 import type { NavigationRoute, NavigatorState, GPSTheme, RouteWaypoint } from '../../navigation/types';
 import { Eye, Search as SearchIcon, PanelLeftOpen, PanelLeftClose } from 'lucide-react';
@@ -63,6 +65,9 @@ interface CityUIProps {
   onChangeTheme?: (theme: GPSTheme) => void;
   onClearRoute?: () => void;
   onSetDestinationWaypoint?: (dest: RouteWaypoint) => void;
+  onFindRoute?: (start: RouteWaypoint, dest: RouteWaypoint, mode: TransportMode, pref: RoutePreference) => Promise<void> | void;
+  onUseMyLocation?: () => Promise<RouteWaypoint | null>;
+  cameraTarget?: { x: number; z: number };
 }
 
 const QUICK = [
@@ -114,8 +119,12 @@ export const CityUI: React.FC<CityUIProps> = ({
   onChangeTheme,
   onClearRoute,
   onSetDestinationWaypoint,
+  onFindRoute,
+  onUseMyLocation,
+  cameraTarget,
 }) => {
   const [isReportOpen, setIsReportOpen] = useState(false);
+  const [navPanelOpen, setNavPanelOpen] = useState(false);
 
   // Panels start minimised (icons only). Expanding is one click and is remembered.
   const [minimal, setMinimal] = useState<boolean>(() => { try { return localStorage.getItem('terralyt.map.ui.expanded') !== '1'; } catch { return true; } });
@@ -241,6 +250,28 @@ export const CityUI: React.FC<CityUIProps> = ({
             Guided tour of Lucknow
           </button>
         </div>
+        {onFindRoute && (
+          <div className="pointer-events-auto">
+            {navPanelOpen ? (
+              <NavigationPanel
+                activeRoute={navigationRoute}
+                onFindRoute={onFindRoute}
+                onClearRoute={onClearRoute ?? (() => {})}
+                onStartSimulation={() => { if (!navigatorState?.isDriving) onToggleDrive?.(); }}
+                onPauseSimulation={() => { if (navigatorState?.isDriving) onToggleDrive?.(); }}
+                isSimulating={!!navigatorState?.isDriving}
+                cameraTarget={cameraTarget ?? { x: 0, z: 0 }}
+                onUseMyLocation={onUseMyLocation}
+                onClose={() => setNavPanelOpen(false)}
+              />
+            ) : (
+              <button onClick={() => setNavPanelOpen(true)}
+                className="glass-panel flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-[13.5px] font-semibold text-paper/90 hover:text-paper">
+                Directions
+              </button>
+            )}
+          </div>
+        )}
         {/* Quick fly-to chips: one tap flies to a highlight. */}
           <div className="pointer-events-auto flex max-w-[calc(100vw-6rem)] sm:max-w-[300px] gap-1.5 overflow-x-auto no-scrollbar pb-0.5" role="list" aria-label="Quick fly to">
             {QUICK.map((q) => (

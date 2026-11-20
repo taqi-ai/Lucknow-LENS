@@ -17,10 +17,11 @@ import {
 import type { SkylineStyle } from './city/buildingMaterial';
 import { DEFAULT_LABEL_SETTINGS, type LabelSettings } from './city/labelManager';
 import { THEMES, themeById, type ThemeId } from './components/ui/themes';
-import { project } from './geo/projection';
 import { Pathfinder } from './navigation/pathfinder';
 import { RouteDriver } from './navigation/routeDriver';
-import type { NavigationRoute, NavigatorState, RouteWaypoint, GPSTheme } from './navigation/types';
+import type { NavigationRoute, NavigatorState, RouteWaypoint, GPSTheme, TransportMode, RoutePreference } from './navigation/types';
+import { GPSService } from './navigation/gpsService';
+import { project } from './geo/projection';
 
 const INITIAL_MAP_DATA: OSMMapData = {
   bounds: {
@@ -310,7 +311,41 @@ export default function MapApp({ entryPreset = 'hero', onProgress, released = tr
     }
   }, [cameraController]);
 
+  // Real device location only (no simulated fix). Null if denied, unavailable, or far outside the mapped city.
+  const handleUseMyLocation = useCallback((): Promise<RouteWaypoint | null> => new Promise((resolve) => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) { resolve(null); return; }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { x, z } = project(pos.coords.latitude, pos.coords.longitude);
+        resolve(Math.hypot(x, z) > 40000 ? null : { x, z, name: 'My location', lat: pos.coords.latitude, lon: pos.coords.longitude });
+      },
+      () => resolve(null),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 },
+    );
+  }), []);
+
+  const handleFindRoute = useCallback(async (start: RouteWaypoint, dest: RouteWaypoint, mode: TransportMode, pref: RoutePreference) => {
+    setDestinationWaypoint(dest);
+    const calculated = await pathfinderRef.current.calculateRoute(start, dest, mode, pref);
+    if (!calculated) return;
+    setNavigationRoute(calculated);
+    const gps = GPSService.getInstance(pathfinderRef.current.getRoadGraph());
+    gps.stopTracking();
+    if (start.name === 'My location') {
+      // Live position: reroute from the real fix when the user leaves the planned path.
+      gps.setActiveRoute(calculated);
+      gps.onRerouteNeeded(async (evt) => {
+        const re = await pathfinderRef.current.calculateRoute(
+          { x: evt.currentPosition.x, z: evt.currentPosition.z, name: 'My location' }, dest, mode, pref);
+        if (re) { setNavigationRoute(re); gps.setActiveRoute(re); }
+      });
+      void gps.startRealGPSTracking();
+    }
+  }, []);
+
   const handleClearRoute = useCallback(() => {
+    GPSService.getInstance().stopTracking();
+    GPSService.getInstance().setActiveRoute(null);
     setNavigationRoute(null);
     setDestinationWaypoint(null);
     setNavigatorState(null);
@@ -523,6 +558,9 @@ export default function MapApp({ entryPreset = 'hero', onProgress, released = tr
         onChangeTheme={handleChangeTheme}
         onClearRoute={handleClearRoute}
         onSetDestinationWaypoint={handleSetDestinationWaypoint}
+        onFindRoute={handleFindRoute}
+        onUseMyLocation={handleUseMyLocation}
+        cameraTarget={cameraController ? { x: cameraController.target.x, z: cameraController.target.z } : undefined}
       />
     </div>
   );

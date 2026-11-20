@@ -22,7 +22,7 @@ import {
   NavigationRoute,
   RouteWaypoint,
 } from '../../navigation/types';
-import { project } from '../../geo/projection';
+import { DESTINATIONS } from '../../city/destinations';
 
 interface NavigationPanelProps {
   activeRoute: NavigationRoute | null;
@@ -37,19 +37,12 @@ interface NavigationPanelProps {
   onPauseSimulation: () => void;
   isSimulating: boolean;
   cameraTarget: { x: number; z: number };
+  /** Resolves the device's real GPS fix, or null (denied / unavailable / outside the mapped area). */
+  onUseMyLocation?: () => Promise<RouteWaypoint | null>;
   onClose: () => void;
 }
 
-const FAMOUS_LANDMARKS: Array<{ name: string; lat: number; lon: number }> = [
-  { name: 'Lucknow Charbagh Railway Grand Terminal', lat: 26.8322, lon: 80.9221 },
-  { name: 'Chaudhary Charan Singh Int\'l Airport (T3)', lat: 26.7606, lon: 80.8893 },
-  { name: 'Hazratganj Central Commercial Crossing', lat: 26.8488, lon: 80.9442 },
-  { name: 'Ambedkar Memorial Park', lat: 26.8465, lon: 80.9754 },
-  { name: 'Vidhan Sabha (Legislative Assembly)', lat: 26.8427, lon: 80.9419 },
-  { name: 'Rumi Darwaza & Bara Imambara', lat: 26.8698, lon: 80.9135 },
-  { name: 'Ekana International Cricket Stadium', lat: 26.8115, lon: 81.0118 },
-  { name: 'Janeshwar Mishra Park (Gomti Nagar)', lat: 26.8385, lon: 80.9890 },
-];
+const FAMOUS_LANDMARKS: Array<{ name: string; x: number; z: number }> = DESTINATIONS.map((d) => ({ name: d.name, x: d.x, z: d.z }));
 
 export const NavigationPanel: React.FC<NavigationPanelProps> = ({
   activeRoute,
@@ -59,18 +52,21 @@ export const NavigationPanel: React.FC<NavigationPanelProps> = ({
   onPauseSimulation,
   isSimulating,
   cameraTarget,
+  onUseMyLocation,
   onClose,
 }) => {
-  const [startType, setStartType] = useState<'current' | 'landmark'>('current');
-  const [selectedStartLandmark, setSelectedStartLandmark] = useState<string>(FAMOUS_LANDMARKS[2].name);
-  const [selectedDestLandmark, setSelectedDestLandmark] = useState<string>(FAMOUS_LANDMARKS[0].name);
+  const [startType, setStartType] = useState<'current' | 'gps' | 'landmark'>('current');
+  const [selectedStartLandmark, setSelectedStartLandmark] = useState<string>(FAMOUS_LANDMARKS[0].name);
+  const [selectedDestLandmark, setSelectedDestLandmark] = useState<string>((FAMOUS_LANDMARKS[1] ?? FAMOUS_LANDMARKS[0]).name);
 
   const [transportMode, setTransportMode] = useState<TransportMode>('car');
   const [preference, setPreference] = useState<RoutePreference>('fastest');
   const [loading, setLoading] = useState(false);
+  const [gpsError, setGpsError] = useState<string | null>(null);
 
   const handleCalculate = async () => {
     setLoading(true);
+    setGpsError(null);
 
     // 1. Resolve Origin Point
     let startPoint: RouteWaypoint;
@@ -78,24 +74,24 @@ export const NavigationPanel: React.FC<NavigationPanelProps> = ({
       startPoint = {
         x: cameraTarget.x,
         z: cameraTarget.z,
-        name: 'Current Camera / GPS Location',
+        name: 'Map centre',
       };
+    } else if (startType === 'gps') {
+      const fix = onUseMyLocation ? await onUseMyLocation() : null;
+      if (!fix) {
+        setGpsError("Couldn't get your location (permission denied, unavailable, or outside Lucknow). Pick another start.");
+        setLoading(false);
+        return;
+      }
+      startPoint = fix;
     } else {
-      const lm = FAMOUS_LANDMARKS.find((l) => l.name === selectedStartLandmark) || FAMOUS_LANDMARKS[2];
-      const { x, z } = project(lm.lat, lm.lon);
-      startPoint = { x, z, name: lm.name, lat: lm.lat, lon: lm.lon };
+      const lm = FAMOUS_LANDMARKS.find((l) => l.name === selectedStartLandmark) || FAMOUS_LANDMARKS[0];
+      startPoint = { x: lm.x, z: lm.z, name: lm.name };
     }
 
     // 2. Resolve Destination Point
-    const destLm = FAMOUS_LANDMARKS.find((l) => l.name === selectedDestLandmark) || FAMOUS_LANDMARKS[0];
-    const { x: dx, z: dz } = project(destLm.lat, destLm.lon);
-    const destPoint: RouteWaypoint = {
-      x: dx,
-      z: dz,
-      name: destLm.name,
-      lat: destLm.lat,
-      lon: destLm.lon,
-    };
+    const destLm = FAMOUS_LANDMARKS.find((l) => l.name === selectedDestLandmark) || FAMOUS_LANDMARKS[1] || FAMOUS_LANDMARKS[0];
+    const destPoint: RouteWaypoint = { x: destLm.x, z: destLm.z, name: destLm.name };
 
     await onFindRoute(startPoint, destPoint, transportMode, preference);
     setLoading(false);
@@ -111,7 +107,7 @@ export const NavigationPanel: React.FC<NavigationPanelProps> = ({
           </div>
           <div>
             <h3 className="text-xs font-black text-white uppercase tracking-wider">
-              GTA-STYLE INTELLIGENT NAVIGATION
+              Directions
             </h3>
             <span className="text-[9px] font-bold text-purple-400/90 block">
               Road-Network A* Topological Routing Engine
@@ -132,7 +128,7 @@ export const NavigationPanel: React.FC<NavigationPanelProps> = ({
           <MapPin className="w-3 h-3 text-cyan-400" />
           <span>Starting Location:</span>
         </label>
-        <div className="grid grid-cols-2 gap-1.5">
+        <div className="grid grid-cols-3 gap-1.5">
           <button
             onClick={() => setStartType('current')}
             className={`p-2 rounded-xl text-left border text-xs font-bold transition-all ${
@@ -141,8 +137,20 @@ export const NavigationPanel: React.FC<NavigationPanelProps> = ({
                 : 'bg-slate-900/40 border-slate-800 text-slate-400 hover:bg-slate-800'
             }`}
           >
-            📍 Current / Map View
+            📍 Map view
           </button>
+          {onUseMyLocation && (
+            <button
+              onClick={() => setStartType('gps')}
+              className={`p-2 rounded-xl text-left border text-xs font-bold transition-all ${
+                startType === 'gps'
+                  ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300 shadow-[0_0_12px_rgba(6,182,212,0.25)]'
+                  : 'bg-slate-900/40 border-slate-800 text-slate-400 hover:bg-slate-800'
+              }`}
+            >
+              🎯 My location
+            </button>
+          )}
           <button
             onClick={() => setStartType('landmark')}
             className={`p-2 rounded-xl text-left border text-xs font-bold transition-all ${
@@ -151,9 +159,11 @@ export const NavigationPanel: React.FC<NavigationPanelProps> = ({
                 : 'bg-slate-900/40 border-slate-800 text-slate-400 hover:bg-slate-800'
             }`}
           >
-            🏛️ Choose Landmark
+            🏛️ Landmark
           </button>
         </div>
+
+        {gpsError && startType === 'gps' && <p className="text-[11px] text-amber-300">{gpsError}</p>}
 
         {startType === 'landmark' && (
           <select
@@ -334,7 +344,7 @@ export const NavigationPanel: React.FC<NavigationPanelProps> = ({
               className="flex-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 border border-slate-700 transition-colors"
             >
               {isSimulating ? <Pause className="w-3.5 h-3.5 text-amber-400" /> : <Play className="w-3.5 h-3.5 text-emerald-400" />}
-              <span>{isSimulating ? 'Pause Drive' : 'Simulate GPS'}</span>
+              <span>{isSimulating ? 'Pause Drive' : 'Preview drive'}</span>
             </button>
 
             <button
